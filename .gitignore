@@ -1,0 +1,39 @@
+references/
+.commandcode
+.claude
+
+# Dependencies
+node_modules/
+node_modules.bun
+
+**/**/node_modules
+
+# Build output
+dist/
+
+# Monorepo cache
+.turbo/
+
+# Environment & secrets
+.env
+.env.*
+*.env
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Testing & coverage
+coverage/
+**/**/coverage/
+
+# Database / local runtime
+*.sqlite
+*.db
+data/
+**/**/data/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
