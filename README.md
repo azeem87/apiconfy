@@ -88,37 +88,35 @@ Instead of writing integration-specific code, developers **register** a componen
 
 > **Note on `context`:** `context` is an arbitrary JSON payload — its shape is entirely up to the caller and the component definition's mapping rules. It is not a fixed schema. The `customer`/`id` fields used throughout these examples are illustrative only, to keep the examples concrete and easy to follow.
 
-**Register a component:**
+**Register a service:**
 
 ```
-POST /components/register
+POST /api/v1/services
 Content-Type: application/json
 
 {
-  "serviceName": "customer-service",
-  "serviceType": "create_customer",
-  "component": "rest",
-  "serviceDetails": {
+  "service": "customer-service",
+  "action": "create_customer",
+  "componentType": "rest",
+  "config": {
     "url": "https://example.com/customer",
     "method": "POST",
-    "request": {
-      "mapping": {
-        "customerId": "$.context.id"
-      }
+    "payloadTemplate": {
+      "customerId": "$.context.id"
     },
     "response": {
-      "mapping": {
-        "customerId": "$.response.id"
+      "transformation": {
+        "customerId": "$.id"
       }
     }
   }
 }
 ```
 
-**Invoke the registered component:**
+**Invoke the registered service:**
 
 ```
-POST /components/invoke/customer-service/rest/create_customer
+POST /api/v1/services/customer-service/create_customer/execute
 Content-Type: application/json
 
 {
@@ -167,7 +165,7 @@ Each component's response is merged back into a shared execution context before 
 > 🚧 **Planned / target design — not yet implemented.**
 
 ```
-POST /workflows/invoke/customer-onboarding
+POST /api/v1/workflows/customer-onboarding/execute
 Content-Type: application/json
 
 {
