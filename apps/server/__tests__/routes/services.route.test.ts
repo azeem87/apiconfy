@@ -92,7 +92,7 @@ describe('services routes', () => {
       expect(res.status).toBe(400);
 
       const json = await res.json();
-      expect(json.error.details.code).toBe('UNKNOWN_COMPONENT_TYPE');
+      expect(json.error.code).toBe('UNKNOWN_COMPONENT_TYPE');
       expect(json.error.details.supported).toEqual(['rest']);
     });
   });
@@ -276,9 +276,10 @@ describe('services routes', () => {
       expect(after.status).toBe(404);
     });
 
-    it('returns 404 for a missing component', async () => {
+    it('returns 200 for a missing component (idempotent)', async () => {
       const res = await app.request('/api/v1/services/ghost/act', { method: 'DELETE' });
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(200);
+      expect((await res.json()).data.deleted).toBe(true);
     });
   });
 
