@@ -366,7 +366,9 @@ pnpm build
 
 The server starts on `http://localhost:3000` with a health check at `GET /health` and API docs at `/docs`.
 
-**Database:** SQLite is the default — no configuration needed. The database file is created automatically at `data/apiconfy.db` on first run. To use PostgreSQL instead, set `DATABASE_URL=postgres://user:pass@host:5432/db` in your environment before starting.
+**Database:** SQLite is the default for local development — no configuration needed. The database file is created automatically at `data/apiconfy.db` on first run. The `data/` directory is gitignored and only used locally.
+
+**Production / Cloud:** Use PostgreSQL by setting `DATABASE_URL=postgres://user:pass@host:5432/db` before starting. The SQLite adapter is bypassed entirely when `DATABASE_URL` is configured.
 
 ---
 
