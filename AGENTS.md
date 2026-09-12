@@ -75,6 +75,11 @@ CI (`.github/workflows/ci.yml`) runs exactly:
 * Extract complex conditions into meaningful boolean variables
 * Use optional chaining (`?.`) as much as possible and wherever applicable to avoid if/else and else-if logic. Use the guard pattern (early return) to handle null/undefined cases cleanly.
 
+## Git & Commits
+
+* Follow Conventional Commits format (`feat:`, `fix:`, `docs:`, `chore:`, etc.)
+* **Never** add `Co-Authored-By` lines to commit messages
+
 ## Architecture Notes
 
 Add important architectural decisions and patterns here.
