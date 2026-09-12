@@ -1,4 +1,5 @@
 import type { Context, Next } from 'hono';
+import { AuthError } from '@/lib/index.js';
 
 export function authMiddleware(apiKey?: string) {
   return async (c: Context, next: Next) => {
@@ -12,10 +13,7 @@ export function authMiddleware(apiKey?: string) {
       : null;
 
     if (!key || key !== apiKey) {
-      return c.json(
-        { success: false, error: { code: 'AUTH_FAILED', message: 'Invalid or missing API key' } },
-        401
-      );
+      throw new AuthError('Invalid or missing API key');
     }
 
     return next();

@@ -161,7 +161,7 @@ Notification Component
 
 Each component's response is merged back into a shared execution context before the next component runs. That means every step in the chain can read the output of any step before it — not just the one immediately prior. Once the last component finishes, the runtime returns a single final response to the caller (optionally shaped by a workflow-level response mapping), rather than requiring the caller to poll or stitch results together manually.
 
-> 🚧 **Planned — workflow registration and execution are Phase 5.** The service CRUD routes above are Phase 1 (in progress).
+> 🚧 **Planned — workflow registration and execution are Phase 5.** The service CRUD routes above are Phase 1 (complete).
 
 **Register a workflow:**
 
@@ -364,7 +364,7 @@ pnpm run test:coverage
 pnpm build
 ```
 
-The server starts on `http://localhost:3000` with a health check at `GET /health` and API docs at `/docs`.
+The server starts on `http://localhost:3000` with a health check at `GET /health`.
 
 **Database:** SQLite is the default for local development — no configuration needed. The database file is created automatically at `data/apiconfy.db` on first run. The `data/` directory is gitignored and only used locally.
 

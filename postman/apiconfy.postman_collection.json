@@ -108,7 +108,7 @@
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services", "user-service", "get_user"]
                 },
-                "description": "Deletes the component. Returns 404 if not found."
+                "description": "Deletes the component. Idempotent — returns 200 whether or not it existed."
               }
             }
           ]

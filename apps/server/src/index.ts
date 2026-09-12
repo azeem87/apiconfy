@@ -35,4 +35,7 @@ async function main() {
   logger.info({ port: server.port }, 'Server ready');
 }
 
-main();
+main().catch((err) => {
+  process.stderr.write(`Fatal startup error: ${err instanceof Error ? err.stack : String(err)}\n`);
+  process.exit(1);
+});

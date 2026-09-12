@@ -117,8 +117,8 @@ describe('ComponentRegistryService', () => {
       const err = await expectAppError(() =>
         service.register({ ...validBody, componentType: 'carrier-pigeon' }));
       expect(err.statusCode).toBe(400);
+      expect(err.code).toBe('UNKNOWN_COMPONENT_TYPE');
       const details = err.details as Record<string, unknown>;
-      expect(details.code).toBe('UNKNOWN_COMPONENT_TYPE');
       expect(details.supported).toEqual(['rest']);
     });
 
@@ -220,9 +220,8 @@ describe('ComponentRegistryService', () => {
       expect(await repo.findByKey('customer-service', 'create_customer')).toBeNull();
     });
 
-    it('throws 404 for a missing component', async () => {
-      const err = await expectAppError(() => service.remove('ghost', 'act'));
-      expect(err.statusCode).toBe(404);
+    it('is idempotent — silently succeeds for a missing component', async () => {
+      await expect(service.remove('ghost', 'act')).resolves.toBeUndefined();
     });
   });
 });

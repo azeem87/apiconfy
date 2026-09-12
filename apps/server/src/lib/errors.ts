@@ -16,6 +16,17 @@ export class BadRequestError extends AppError {
   }
 }
 
+export class UnknownComponentTypeError extends AppError {
+  constructor(componentType: string, supported: string[]) {
+    super(
+      `Unknown componentType: ${componentType}. Supported: ${supported.join(', ')}`,
+      'UNKNOWN_COMPONENT_TYPE',
+      400,
+      { componentType, supported }
+    );
+  }
+}
+
 export class NotFoundError extends AppError {
   constructor(message: string, details?: Record<string, unknown> | unknown[]) {
     super(message, 'NOT_FOUND', 404, details);

@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import type { z } from 'zod';
 import type { ComponentRepository, RegisterOutcome } from '@/core/db/repositories/component.repository.js';
 import type { SchemaRegistry } from '@/core/schema/index.js';
 import { RegisterServiceRequestSchema } from '@/core/schema/index.js';
@@ -6,7 +6,7 @@ import { collectEnvRefIssues } from '@/core/env-ref/index.js';
 import type {
   ComponentView, ListFilters, PagedResult, RegisterServiceRequest,
 } from '@/core/types.js';
-import { BadRequestError, NotFoundError, ValidationError } from '@/lib/index.js';
+import { NotFoundError, UnknownComponentTypeError, ValidationError } from '@/lib/index.js';
 
 export interface ComponentRegistry {
   register(body: unknown): Promise<RegisterOutcome>;
@@ -35,13 +35,9 @@ export class ComponentRegistryService implements ComponentRegistry {
 
     const configSchema = this.schemas.get(request.componentType);
     if (!configSchema) {
-      throw new BadRequestError(
-        `Unsupported componentType: ${request.componentType}`,
-        {
-          code: 'UNKNOWN_COMPONENT_TYPE',
-          componentType: request.componentType,
-          supported: this.schemas.registeredTypes(),
-        }
+      throw new UnknownComponentTypeError(
+        request.componentType,
+        this.schemas.registeredTypes()
       );
     }
 
@@ -81,9 +77,13 @@ export class ComponentRegistryService implements ComponentRegistry {
     return record;
   }
 
+  /**
+   * Idempotent: a missing row is a no-op, not a 404. `deleted: true` means
+   * "no such component exists now", so a retried DELETE after a timeout is safe.
+   */
   async remove(service: string, action: string): Promise<void> {
     const record = await this.repository.findByKey(service, action);
-    if (!record) throw new NotFoundError(`Service not found: ${service}/${action}`);
+    if (!record) return;
     await this.repository.delete(record.id);
   }
 }
