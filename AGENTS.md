@@ -83,6 +83,10 @@ Add important architectural decisions and patterns here.
 
 Document frequently used workflows and commands here.
 
+## API Testing
+
+Postman collection at `postman/apiconfy.postman_collection.json` — committed to the repo, updated as each phase is completed. Import into Postman to test all implemented endpoints. Collection variables: `base_url` (default `http://localhost:3000`), `api_key` (Bearer token if `API_KEY` env is set). Organized by phase with simple examples, complex scenarios, and error cases.
+
 ## Karpathy Coding Guidelines
 
 ---

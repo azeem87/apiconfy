@@ -1,0 +1,257 @@
+{
+  "info": {
+    "name": "Apiconfy",
+    "description": "API collection for Apiconfy integration runtime.\n\n## Setup\n1. Start the server: `pnpm dev`\n2. Set `base_url` variable (default: http://localhost:3000)\n3. Set `api_key` variable if API_KEY env is configured\n\n## Phases\n- **Phase 1** — Component Registry (register, list, get, delete services)\n- More phases coming soon.\n\nUpdated as each phase is completed.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000", "type": "string" },
+    { "key": "api_key", "value": "", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{api_key}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "No auth required. Returns server status and DB connection info."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Phase 1 — Component Registry",
+      "item": [
+        {
+          "name": "Simple Examples",
+          "item": [
+            {
+              "name": "Register — simple REST component",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"user-service\",\n  \"action\": \"get_user\",\n  \"componentType\": \"rest\",\n  \"description\": \"Fetch user by ID from upstream API\",\n  \"config\": {\n    \"uri\": \"https://jsonplaceholder.typicode.com/users/{{id}}\",\n    \"method\": \"GET\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Register a minimal REST component. Returns 201 on create, 200 on upsert (update)."
+              }
+            },
+            {
+              "name": "List all services",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services?limit=20&offset=0",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"],
+                  "query": [
+                    { "key": "limit", "value": "20" },
+                    { "key": "offset", "value": "0" }
+                  ]
+                },
+                "description": "Paginated list. Optional filters: `service`, `componentType`."
+              }
+            },
+            {
+              "name": "List actions for a service",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services/user-service",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services", "user-service"]
+                },
+                "description": "Returns all actions registered under `user-service`."
+              }
+            },
+            {
+              "name": "Get single component",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services/user-service/get_user",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services", "user-service", "get_user"]
+                },
+                "description": "Returns the component definition. `$env.` values are masked to `****`."
+              }
+            },
+            {
+              "name": "Delete component",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services/user-service/get_user",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services", "user-service", "get_user"]
+                },
+                "description": "Deletes the component. Returns 404 if not found."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Complex Example",
+          "item": [
+            {
+              "name": "Register — full-featured REST component",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Create order in upstream system with auth, retry, and response mapping\",\n  \"config\": {\n    \"uri\": \"https://api.example.com/orders\",\n    \"method\": \"POST\",\n    \"contentType\": \"application/json\",\n    \"headers\": {\n      \"X-Tenant-Id\": \"acme-corp\"\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 30000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504]\n    },\n    \"auth\": {\n      \"oauth2\": {\n        \"clientId\": \"$env.ORDER_API_CLIENT_ID\",\n        \"clientSecret\": \"$env.ORDER_API_CLIENT_SECRET\",\n        \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n        \"scope\": \"orders:write\"\n      }\n    },\n    \"payloadTemplate\": {\n      \"customerId\": \"$.context.customerId\",\n      \"items\": \"$.context.items\",\n      \"totalAmount\": \"$.context.totalAmount\"\n    },\n    \"response\": {\n      \"transformation\": {\n        \"orderId\": \"$.id\",\n        \"status\": \"$.status\",\n        \"createdAt\": \"$.created_at\"\n      }\n    }\n  },\n  \"metaData\": {\n    \"owner\": \"platform-team\",\n    \"slack\": \"#orders-alerts\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Full-featured example showing:\n- OAuth2 auth with `$env.` references (masked in response)\n- Retry with exponential backoff\n- Timeout config\n- Custom headers\n- Payload template with context mapping\n- Response transformation\n- Metadata"
+              }
+            },
+            {
+              "name": "Upsert — update existing component",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Updated: increased timeout and added circuit breaker\",\n  \"config\": {\n    \"uri\": \"https://api.example.com/orders\",\n    \"method\": \"POST\",\n    \"contentType\": \"application/json\",\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 60000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504],\n      \"circuitBreaker\": {\n        \"failureThreshold\": 5,\n        \"windowSize\": 60000,\n        \"openDuration\": 30000,\n        \"halfOpenMaxAttempts\": 3\n      }\n    },\n    \"auth\": {\n      \"oauth2\": {\n        \"clientId\": \"$env.ORDER_API_CLIENT_ID\",\n        \"clientSecret\": \"$env.ORDER_API_CLIENT_SECRET\",\n        \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n        \"scope\": \"orders:write\"\n      }\n    },\n    \"payloadTemplate\": {\n      \"customerId\": \"$.context.customerId\",\n      \"items\": \"$.context.items\",\n      \"totalAmount\": \"$.context.totalAmount\"\n    },\n    \"response\": {\n      \"transformation\": {\n        \"orderId\": \"$.id\",\n        \"status\": \"$.status\",\n        \"createdAt\": \"$.created_at\"\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Send the same (service, action) again to upsert. Returns 200 (not 201) on update."
+              }
+            },
+            {
+              "name": "Filter by componentType",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services?componentType=rest",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"],
+                  "query": [
+                    { "key": "componentType", "value": "rest" }
+                  ]
+                },
+                "description": "Filter list by componentType. Also supports `service` filter."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error Cases",
+          "item": [
+            {
+              "name": "Validation error — missing required fields",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"bad-service\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Returns 400 with `VALIDATION_FAILED` and field-level details."
+              }
+            },
+            {
+              "name": "Validation error — unsupported componentType",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"test-service\",\n  \"action\": \"test_action\",\n  \"componentType\": \"graphql\",\n  \"config\": {\n    \"uri\": \"https://example.com/graphql\",\n    \"method\": \"POST\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Returns 400 with `UNKNOWN_COMPONENT_TYPE` and list of supported types."
+              }
+            },
+            {
+              "name": "Validation error — invalid URL-safe name",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"bad service name!\",\n  \"action\": \"do_thing\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"uri\": \"https://example.com\",\n    \"method\": \"GET\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Service/action must be URL-safe (letters, numbers, _, - only)."
+              }
+            },
+            {
+              "name": "Not found — get non-existent component",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services/no-such-service/no_action",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services", "no-such-service", "no_action"]
+                },
+                "description": "Returns 404 with `NOT_FOUND`."
+              }
+            },
+            {
+              "name": "Auth failure — missing API key",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "If API_KEY env is set, requests without a valid Bearer token get 401."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

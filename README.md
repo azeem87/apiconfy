@@ -370,15 +370,30 @@ The server starts on `http://localhost:3000` with a health check at `GET /health
 
 ---
 
+## Testing the API
+
+A [Postman collection](postman/apiconfy.postman_collection.json) is included for manual and exploratory testing. It covers every implemented endpoint with simple and complex examples.
+
+**Import:**
+1. Open Postman → **Import** → select `postman/apiconfy.postman_collection.json`
+2. Set the `base_url` collection variable (default: `http://localhost:3000`)
+3. If `API_KEY` is configured, set the `api_key` collection variable for Bearer auth
+4. Start the server (`pnpm dev`) and run the requests
+
+The collection is organized by phase — each phase adds new folders as features are implemented. Error cases (validation, auth, not-found) are included to verify error handling.
+
+---
+
 ## Project Status
 
-🚧 **Early Development — Phase 0 Complete**
+🚧 **Early Development — Phase 1 Complete**
 
-Phase 0 (Foundation) is done: monorepo scaffolded, Hono API server running, SQLite/Postgres DB layer operational, CI pipeline active.
+- ✅ Phase 0 (Foundation): monorepo scaffolded, Hono API server running, SQLite/Postgres DB layer operational, CI pipeline active.
+- ✅ Phase 1 (Component Registry): register, list, get, and delete component definitions via REST API.
 
 See the [Implementation Roadmap](plans/roadmap.md) for phase-by-phase details.
 
-**Next milestone:** Phase 1 — Component Registry (register, lookup, and manage component definitions).
+**Next milestone:** Phase 2 — Service Invocation (execute registered components against external systems).
 
 ---
 
@@ -411,6 +426,8 @@ apiconfy/
 │
 │                          # (no packages/ dir — all code lives in apps/server/src until a
 │                          #  second consumer needs it. See folder-structure.md in .commandcode/plans/)
+│
+├── postman/               # Postman collection for API testing
 │
 ├── plans/                 # PRD and phased implementation roadmap
 │
