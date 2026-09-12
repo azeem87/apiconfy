@@ -2,10 +2,16 @@
   "private": true,
 
   "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
   "scripts": {
+    "preinstall": "npx --yes only-allow pnpm",
     "dev": "turbo dev",
     "build": "turbo build",
     "test": "turbo test",
+    "test:coverage": "turbo test:coverage",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "clean": "turbo clean"

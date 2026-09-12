@@ -1,25 +1,29 @@
 import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import type { CompensationFailureConfig, OnFailureMode } from '../adapter.js';
 
 export const componentDefinitions = sqliteTable('component_definitions', {
   id: text('id').primaryKey(),
-  serviceName: text('service_name').notNull(),
-  serviceType: text('service_type').notNull(),
-  component: text('component').notNull(),
+  service: text('service').notNull(),
+  action: text('action').notNull(),
+  componentType: text('component_type').notNull(),
   description: text('description'),
-  serviceDetails: text('service_details', { mode: 'json' }).notNull().$type<Record<string, unknown>>(),
+  config: text('config', { mode: 'json' }).notNull().$type<Record<string, unknown>>(),
   condition: text('condition'),
   metaData: text('meta_data', { mode: 'json' }).$type<Record<string, unknown>>(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
-  naturalKeyIdx: uniqueIndex('natural_key_idx').on(table.serviceName, table.component, table.serviceType),
+  naturalKeyIdx: uniqueIndex('natural_key_idx').on(table.service, table.action),
 }));
 
 export const workflowDefinitions = sqliteTable('workflow_definitions', {
   id: text('id').primaryKey(),
   name: text('name').notNull().unique(),
+  groupId: text('group_id'),
   description: text('description'),
   responseMapping: text('response_mapping', { mode: 'json' }).$type<Record<string, unknown>>(),
+  maxDurationMs: integer('max_duration_ms'),
+  compensationFailureConfig: text('compensation_failure_config', { mode: 'json' }).$type<CompensationFailureConfig>(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
@@ -27,22 +31,26 @@ export const workflowDefinitions = sqliteTable('workflow_definitions', {
 export const workflowSteps = sqliteTable('workflow_steps', {
   id: text('id').primaryKey(),
   workflowId: text('workflow_id').notNull().references(() => workflowDefinitions.id, { onDelete: 'cascade' }),
+  name: text('name'),
   stepOrder: integer('step_order').notNull(),
   stepGroup: integer('step_group').notNull().default(0),
   componentId: text('component_id').notNull().references(() => componentDefinitions.id),
   dependsOnStepId: text('depends_on_step_id'),
-  rollbackServiceName: text('rollback_service_name'),
-  rollbackServiceType: text('rollback_service_type'),
-  rollbackAllPrevious: integer('rollback_all_previous', { mode: 'boolean' }).notNull().default(false),
+  compensationService: text('compensation_service'),
+  compensationAction: text('compensation_action'),
+  condition: text('condition'),
+  onFailure: text('on_failure').notNull().default('halt').$type<OnFailureMode>(),
+  idempotencyKeyHeader: text('idempotency_key_header'),
+  verifyAction: text('verify_action'),
 });
 
 export const executionLogs = sqliteTable('execution_logs', {
   id: text('id').primaryKey(),
   executionId: text('execution_id').notNull(),
   workflowName: text('workflow_name'),
-  serviceName: text('service_name'),
-  serviceType: text('service_type'),
-  component: text('component'),
+  service: text('service'),
+  action: text('action'),
+  componentType: text('component_type'),
   stepOrder: integer('step_order'),
   status: text('status').notNull().$type<'success' | 'failed' | 'skipped'>(),
   // Stored as plain text — may be JSON or raw response body, intentionally not auto-parsed

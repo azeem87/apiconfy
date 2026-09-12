@@ -1,3 +1,6 @@
 packages:
   - 'apps/*'
-  - 'packages/*'
+  # No 'packages/*' glob: the directory does not exist and is not planned for now.
+  # See .commandcode/plans/folder-structure.md — all code lives in apps/server/src
+  # until a second consumer needs it. Re-add this line when creating packages/<name>,
+  # otherwise the new package is silently not part of the workspace.

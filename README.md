@@ -72,7 +72,6 @@ Examples:
 - REST API Component
 - Queue Producer Component
 - Queue Consumer Component
-- FTP/SFTP Component
 - Database Component
 - Scheduler Component
 - Webhook Component
@@ -116,7 +115,7 @@ Content-Type: application/json
 **Invoke the registered service:**
 
 ```
-POST /api/v1/services/customer-service/create_customer/execute
+POST /api/v1/services/customer-service/create_customer/invoke
 Content-Type: application/json
 
 {
@@ -138,7 +137,7 @@ The runtime looks up the stored definition, executes it against the external sys
 
 ### Component Composition (Sequential & Parallel)
 
-> **Scope note:** Apiconfy is **not** a general-purpose workflow engine (like Temporal or Netflix Conductor). It does not aim to provide durable execution history, human-in-the-loop tasks, a visual workflow designer, or a full state-machine DSL. Its scope is intentionally narrower: **combine registered components and execute them sequentially or in parallel**, driven entirely by the component's configuration. Anything resembling "orchestration" here means config-driven execution ordering, not a standalone workflow engine.
+> **Scope note:** Apiconfy is **not** a general-purpose workflow engine (like Temporal or Netflix Conductor). It does not provide durable execution history with replay, a visual drag-and-drop workflow designer, or a full state-machine DSL. Its scope is intentionally narrower but powerful: **compose registered components into sequential and parallel workflows with config-driven execution ordering, shared context threading, conditional execution, response validation, and compensation (saga-style rollback)**. Workflows are defined declaratively and executed in-process — no external orchestration service required.
 
 Multiple components can be composed together and executed — any component can be chained after any other, regardless of type (a REST call feeding a queue, a file drop triggering a database write, and so on). Components in the same group can run in parallel; components with a declared dependency run sequentially.
 
@@ -162,7 +161,48 @@ Notification Component
 
 Each component's response is merged back into a shared execution context before the next component runs. That means every step in the chain can read the output of any step before it — not just the one immediately prior. Once the last component finishes, the runtime returns a single final response to the caller (optionally shaped by a workflow-level response mapping), rather than requiring the caller to poll or stitch results together manually.
 
-> 🚧 **Planned / target design — not yet implemented.**
+> 🚧 **Planned — workflow registration and execution are Phase 5.** The service CRUD routes above are Phase 1 (in progress).
+
+**Register a workflow:**
+
+```
+POST /api/v1/workflows
+Content-Type: application/json
+
+{
+  "name": "customer-onboarding",
+  "groupId": "customer-group-1",
+  "steps": [
+    {
+      "name": "Create Customer",
+      "service": "customer-service",
+      "action": "create_customer",
+      "compensationAction": "delete_customer",
+      "onFailure": "halt"
+    },
+    {
+      "name": "Publish Event",
+      "service": "queue-service",
+      "action": "publish_customer_created",
+      "onFailure": "continue"
+    },
+    {
+      "name": "Send Welcome Email",
+      "service": "notification-service",
+      "action": "send_welcome_email",
+      "compensationAction": "send_apology_email",
+      "onFailure": "compensate"
+    }
+  ],
+  "responseTransformation": {
+    "customerId": "$.customerId",
+    "messageId": "$.messageId",
+    "status": "$.status"
+  }
+}
+```
+
+**Execute the workflow:**
 
 ```
 POST /api/v1/workflows/customer-onboarding/execute
@@ -170,12 +210,13 @@ Content-Type: application/json
 
 {
   "context": {
-    "id": "12345"
+    "id": "12345",
+    "name": "John"
   }
 }
 ```
 
-Internally, this might execute as:
+Internally, this executes as:
 
 ```
 Step 1 — REST API Component (create_customer)
@@ -195,17 +236,25 @@ Step 3 — Notification Component (send_welcome_email)
 
 ```json
 {
-  "customerId": "12345",
-  "messageId": "msg-98231",
-  "status": "sent"
+  "success": true,
+  "data": {
+    "customerId": "12345",
+    "messageId": "msg-98231",
+    "status": "sent"
+  },
+  "meta": {
+    "executionId": "uuid",
+    "workflowName": "customer-onboarding",
+    "workflowStatus": "COMPLETED"
+  }
 }
 ```
 
-If any step fails, the workflow can be configured to roll back prior steps (compensating actions) rather than leaving the system in a partial state — see [Event-Driven Execution](#event-driven-execution) below.
+**Compensation on failure:** If a step with `onFailure: "compensate"` fails, all previously completed steps execute their `compensationAction` in reverse order (saga pattern). Steps with `onFailure: "halt"` (default) stop execution immediately without compensation. Steps with `onFailure: "continue"` are logged and skipped, allowing the workflow to proceed.
 
 This enables building reusable integration flows for:
 
-- Business processes
+- Business processes (with saga-style rollback on failure)
 - Data synchronization
 - System integration
 - Event-driven automation
@@ -213,7 +262,7 @@ This enables building reusable integration flows for:
 
 ### Event-Driven Execution
 
-Apiconfy is designed around event-driven execution. An event can trigger one or more component actions.
+Apiconfy is designed around event-driven execution. An event can trigger pre-configured component chains without knowing the implementation details.
 
 Example:
 
@@ -230,7 +279,7 @@ Publish Message
 Send Notification
 ```
 
-Planned capabilities include event listeners, message consumers, scheduled triggers, and background workers.
+Planned capabilities include event listeners, message consumers, scheduled triggers (cron-based via the scheduler component), and background workers.
 
 ---
 
@@ -244,9 +293,9 @@ Capabilities: request transformation, response transformation, authentication ha
 Examples: message queues, event streams
 Capabilities: publish messages, consume events, trigger workflows
 
-**File Integrations**
-Examples: FTP, SFTP, file processing
-Capabilities: file generation, file transfer, data transformation
+**File / Object Storage Integrations**
+Examples: S3 object storage, file generation and processing
+Capabilities: file generation, object upload/download, data transformation
 
 **Automation**
 Examples: scheduled jobs, timed execution, background processing
@@ -266,7 +315,7 @@ Examples: scheduled jobs, timed execution, background processing
                             |
                     External Systems
 
-         REST | Queue | FTP | Database | Events | APIs
+         REST | Queue | Storage | Database | Events | APIs
 ```
 
 ### Extensible Plugin Architecture
@@ -294,7 +343,9 @@ The runtime focuses on execution — components provide the capabilities.
 
 ## Getting Started
 
-**Prerequisites:** Bun (≥1.x) and pnpm (≥9.x).
+**Prerequisites:** Bun (1.4.x) and pnpm (≥9.x).
+
+> **Use `pnpm` for installs — not `bun install`.** The workspace is declared in `pnpm-workspace.yaml`, which bun does not read, so `bun install` would install only the root devDependencies and leave `apps/server` without its runtime dependencies. `pnpm-lock.yaml` is the single lockfile; `bun.lock` is gitignored. Bun is the runtime and test runner only.
 
 ```bash
 # Clone and install
@@ -302,11 +353,12 @@ git clone https://github.com/apiconfy/apiconfy.git
 cd apiconfy
 pnpm install
 
-# Start the dev server (SQLite by default, zero config)
+# Start the dev server
 pnpm dev
 
 # Run tests
 pnpm test
+pnpm run test:coverage
 
 # Build for production
 pnpm build
@@ -314,7 +366,7 @@ pnpm build
 
 The server starts on `http://localhost:3000` with a health check at `GET /health` and API docs at `/docs`.
 
-For PostgreSQL, set `DATABASE_URL=postgres://user:pass@host:5432/db` in your environment before starting.
+**Database:** SQLite is the default — no configuration needed. The database file is created automatically at `data/apiconfy.db` on first run. To use PostgreSQL instead, set `DATABASE_URL=postgres://user:pass@host:5432/db` in your environment before starting.
 
 ---
 
@@ -357,7 +409,8 @@ apiconfy/
 │       │   └── index.ts
 │       └── __tests__/
 │
-├── packages/              # Shared packages (db, shared, auth, components, runtime, etc.)
+│                          # (no packages/ dir — all code lives in apps/server/src until a
+│                          #  second consumer needs it. See folder-structure.md in .commandcode/plans/)
 │
 ├── plans/                 # PRD and phased implementation roadmap
 │

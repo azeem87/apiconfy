@@ -2,11 +2,11 @@ export type DbType = 'sqlite' | 'postgres';
 
 export interface ComponentRecord {
   id: string;
-  serviceName: string;
-  serviceType: string;
-  component: string;
+  service: string;
+  action: string;
+  componentType: string;
   description?: string;
-  serviceDetails: Record<string, unknown>;
+  config: Record<string, unknown>;
   condition?: string;
   metaData?: Record<string, unknown>;
   createdAt: string;
@@ -16,31 +16,46 @@ export interface ComponentRecord {
 export interface WorkflowRecord {
   id: string;
   name: string;
+  groupId?: string;
   description?: string;
   responseMapping?: Record<string, unknown>;
+  maxDurationMs?: number;
+  compensationFailureConfig?: CompensationFailureConfig;
   createdAt: string;
   updatedAt: string;
+}
+
+export type OnFailureMode = 'halt' | 'continue' | 'compensate';
+
+export interface CompensationFailureConfig {
+  maxRetries: number;
+  onExhausted: 'deadLetter' | 'alert' | 'ignore';
 }
 
 export interface WorkflowStepRecord {
   id: string;
   workflowId: string;
+  name?: string;
   stepOrder: number;
   stepGroup: number;
   componentId: string;
   dependsOnStepId?: string;
-  rollbackServiceName?: string;
-  rollbackServiceType?: string;
-  rollbackAllPrevious: boolean;
+  /** Defaults to the step's own component service when omitted. */
+  compensationService?: string;
+  compensationAction?: string;
+  condition?: string;
+  onFailure: OnFailureMode;
+  idempotencyKeyHeader?: string;
+  verifyAction?: string;
 }
 
 export interface ExecutionLogRecord {
   id: string;
   executionId: string;
   workflowName?: string;
-  serviceName?: string;
-  serviceType?: string;
-  component?: string;
+  service?: string;
+  action?: string;
+  componentType?: string;
   stepOrder?: number;
   status: 'success' | 'failed' | 'skipped';
   requestData?: string;
@@ -50,6 +65,8 @@ export interface ExecutionLogRecord {
   createdAt: string;
 }
 
+export interface ComponentFilters { service?: string; componentType?: string }
+
 export interface DBAdapter {
   type: DbType;
   connect(): Promise<void>;
@@ -57,8 +74,9 @@ export interface DBAdapter {
 
   saveComponent(comp: ComponentRecord): Promise<ComponentRecord>;
   getComponent(id: string): Promise<ComponentRecord | null>;
-  findComponent(serviceName: string, component: string, serviceType: string): Promise<ComponentRecord | null>;
-  listComponents(filters?: { serviceName?: string; component?: string }, limit?: number, offset?: number): Promise<ComponentRecord[]>;
+  findComponent(service: string, action: string): Promise<ComponentRecord | null>;
+  listComponents(filters?: ComponentFilters, limit?: number, offset?: number): Promise<ComponentRecord[]>;
+  countComponents(filters?: ComponentFilters): Promise<number>;
   updateComponent(id: string, changes: Partial<ComponentRecord>): Promise<ComponentRecord>;
   deleteComponent(id: string): Promise<void>;
 
