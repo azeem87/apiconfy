@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import type { z } from 'zod';
 import type { ComponentRepository, RegisterOutcome } from '@/core/db/repositories/component.repository.js';
 import type { SchemaRegistry } from '@/core/schema/index.js';
 import { RegisterServiceRequestSchema } from '@/core/schema/index.js';
@@ -77,6 +77,10 @@ export class ComponentRegistryService implements ComponentRegistry {
     return record;
   }
 
+  /**
+   * Idempotent: a missing row is a no-op, not a 404. `deleted: true` means
+   * "no such component exists now", so a retried DELETE after a timeout is safe.
+   */
   async remove(service: string, action: string): Promise<void> {
     const record = await this.repository.findByKey(service, action);
     if (!record) return;

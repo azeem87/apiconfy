@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { AppError, type Logger } from '@/lib/index.js';
 
 export function errorHandler(logger: Logger) {
@@ -14,7 +15,7 @@ export function errorHandler(logger: Logger) {
             details: err.details,
           },
         },
-        err.statusCode as any
+        err.statusCode as ContentfulStatusCode
       );
     }
 

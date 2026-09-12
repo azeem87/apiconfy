@@ -19,7 +19,7 @@ export class BadRequestError extends AppError {
 export class UnknownComponentTypeError extends AppError {
   constructor(componentType: string, supported: string[]) {
     super(
-      `Unsupported componentType: ${componentType}`,
+      `Unknown componentType: ${componentType}. Supported: ${supported.join(', ')}`,
       'UNKNOWN_COMPONENT_TYPE',
       400,
       { componentType, supported }
