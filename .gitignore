@@ -1,12 +1,24 @@
 references/
 .commandcode
 .claude
+.qwen
+.copilot
+
+CLAUDE.md
+QWEN.md
 
 # Dependencies
 node_modules/
 node_modules.bun
 
 **/**/node_modules
+
+# Lockfiles — pnpm owns installs (see README "Getting Started").
+# bun is the runtime/test runner only and must not produce a second lockfile.
+bun.lock
+bun.lockb
+**/bun.lock
+**/bun.lockb
 
 # Build output
 dist/
@@ -39,3 +51,5 @@ data/
 Thumbs.db
 
 plans/
+
+.qwenignore

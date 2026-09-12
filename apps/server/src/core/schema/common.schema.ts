@@ -1,0 +1,92 @@
+import { z } from 'zod';
+
+export const TimeoutConfigSchema = z.object({
+  connect: z.number().int().positive().optional(),
+  socket: z.number().int().positive().optional(),
+  response: z.number().int().positive().optional(),
+  idle: z.number().int().positive().optional(),
+}).strict();
+
+export const CircuitBreakerConfigSchema = z.object({
+  failureThreshold: z.number().int().positive(),
+  windowSize: z.number().int().positive(),
+  openDuration: z.number().int().positive(),
+  halfOpenMaxAttempts: z.number().int().positive(),
+}).strict();
+
+export const ResilienceConfigSchema = z.object({
+  retryCount: z.number().int().min(0).optional(),
+  retryDelay: z.number().int().positive().optional(),
+  backoff: z.enum(['fixed', 'exponential']).optional(),
+  maxDelay: z.number().int().positive().optional(),
+  retryOn: z.array(z.number().int()).optional(),
+  circuitBreaker: CircuitBreakerConfigSchema.optional(),
+}).strict();
+
+export const ValidationRuleSchema = z.object({
+  expression: z.string().min(1),
+  message: z.string().optional(),
+  errorPath: z.string().optional(),
+}).strict();
+
+export const ResponseConfigSchema = z.object({
+  transformation: z.record(z.unknown()).optional(),
+  validation: z.object({
+    rules: z.array(ValidationRuleSchema).optional(),
+  }).strict().optional(),
+  default: z.record(z.unknown()).optional(),
+}).strict();
+
+export const SSLConfigSchema = z.object({
+  cert: z.string().min(1),
+  key: z.string().min(1),
+  ca: z.string().optional(),
+  passphrase: z.string().optional(),
+}).strict();
+
+export const BasicAuthSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(1),
+}).strict();
+
+export const OAuth2ConfigSchema = z.object({
+  clientId: z.string().min(1),
+  clientSecret: z.string().min(1),
+  accessTokenUri: z.string().min(1),
+  scope: z.string().optional(),
+}).strict();
+
+export const JwtExternalConfigSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(1),
+  credentialPlacement: z.enum(['header', 'body']).optional(),
+  accessTokenUri: z.string().min(1),
+  contentType: z.string().optional(),
+  requestBody: z.record(z.unknown()).optional(),
+  disableSSL: z.boolean().optional(),
+  responsePath: z.string().optional(),
+  requestHeader: z.string().optional(),
+  tokenPrefix: z.string().optional(),
+}).strict();
+
+export const JwtLocalConfigSchema = z.object({
+  algorithm: z.enum(['HS256', 'HS384', 'HS512', 'RS256']),
+  secretOrPrivateKey: z.string().min(1),
+  requestHeader: z.string().optional(),
+  tokenPrefix: z.string().optional(),
+}).strict();
+
+export const AuthConfigSchema = z.object({
+  basic: BasicAuthSchema.optional(),
+  oauth2: OAuth2ConfigSchema.optional(),
+  jwt: z.object({
+    external: JwtExternalConfigSchema.optional(),
+    local: JwtLocalConfigSchema.optional(),
+  }).strict().refine(
+    (jwt) => [jwt.external, jwt.local].filter(Boolean).length === 1,
+    { message: 'jwt requires exactly one of external or local' }
+  ).optional(),
+}).strict().refine(
+  (auth) => [auth.basic, auth.oauth2, auth.jwt].filter(Boolean).length <= 1,
+  { message: 'Only one of basic, oauth2, or jwt may be configured' }
+);

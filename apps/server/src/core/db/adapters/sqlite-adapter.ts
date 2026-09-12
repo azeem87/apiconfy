@@ -1,8 +1,8 @@
 import { Database } from 'bun:sqlite';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, count } from 'drizzle-orm';
 import { generateId } from '@/lib/id.js';
-import type { DBAdapter, ComponentRecord, WorkflowRecord, WorkflowStepRecord, ExecutionLogRecord } from '../adapter.js';
+import type { DBAdapter, ComponentRecord, ComponentFilters, WorkflowRecord, WorkflowStepRecord, ExecutionLogRecord } from '../adapter.js';
 import * as schema from '../schema/index.js';
 
 // TODO: replace with drizzle-kit migrations when ready to productionize.
@@ -10,23 +10,26 @@ import * as schema from '../schema/index.js';
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS component_definitions (
   id TEXT PRIMARY KEY,
-  service_name TEXT NOT NULL,
-  service_type TEXT NOT NULL,
-  component TEXT NOT NULL,
+  service TEXT NOT NULL,
+  action TEXT NOT NULL,
+  component_type TEXT NOT NULL,
   description TEXT,
-  service_details TEXT NOT NULL DEFAULT '{}',
+  config TEXT NOT NULL DEFAULT '{}',
   condition TEXT,
   meta_data TEXT DEFAULT '{}',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS natural_key_idx ON component_definitions(service_name, component, service_type);
+CREATE UNIQUE INDEX IF NOT EXISTS natural_key_idx ON component_definitions(service, action);
 
 CREATE TABLE IF NOT EXISTS workflow_definitions (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
+  group_id TEXT,
   description TEXT,
   response_mapping TEXT DEFAULT '{}',
+  max_duration_ms INTEGER,
+  compensation_failure_config TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -34,22 +37,26 @@ CREATE TABLE IF NOT EXISTS workflow_definitions (
 CREATE TABLE IF NOT EXISTS workflow_steps (
   id TEXT PRIMARY KEY,
   workflow_id TEXT NOT NULL REFERENCES workflow_definitions(id) ON DELETE CASCADE,
+  name TEXT,
   step_order INTEGER NOT NULL,
   step_group INTEGER NOT NULL DEFAULT 0,
   component_id TEXT NOT NULL REFERENCES component_definitions(id),
   depends_on_step_id TEXT,
-  rollback_service_name TEXT,
-  rollback_service_type TEXT,
-  rollback_all_previous INTEGER NOT NULL DEFAULT 0
+  compensation_service TEXT,
+  compensation_action TEXT,
+  condition TEXT,
+  on_failure TEXT NOT NULL DEFAULT 'halt',
+  idempotency_key_header TEXT,
+  verify_action TEXT
 );
 
 CREATE TABLE IF NOT EXISTS execution_logs (
   id TEXT PRIMARY KEY,
   execution_id TEXT NOT NULL,
   workflow_name TEXT,
-  service_name TEXT,
-  service_type TEXT,
-  component TEXT,
+  service TEXT,
+  action TEXT,
+  component_type TEXT,
   step_order INTEGER,
   status TEXT NOT NULL,
   request_data TEXT,
@@ -81,11 +88,11 @@ function nullable<T>(v: T | null): T | undefined {
 function toComponent(row: ComponentRow): ComponentRecord {
   return {
     id: row.id,
-    serviceName: row.serviceName,
-    serviceType: row.serviceType,
-    component: row.component,
+    service: row.service,
+    action: row.action,
+    componentType: row.componentType,
     description: nullable(row.description),
-    serviceDetails: row.serviceDetails as Record<string, unknown>,
+    config: row.config as Record<string, unknown>,
     condition: nullable(row.condition),
     metaData: nullable(row.metaData) as Record<string, unknown> | undefined,
     createdAt: row.createdAt,
@@ -97,8 +104,11 @@ function toWorkflow(row: WorkflowRow): WorkflowRecord {
   return {
     id: row.id,
     name: row.name,
+    groupId: nullable(row.groupId),
     description: nullable(row.description),
     responseMapping: nullable(row.responseMapping) as Record<string, unknown> | undefined,
+    maxDurationMs: nullable(row.maxDurationMs),
+    compensationFailureConfig: nullable(row.compensationFailureConfig),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -108,13 +118,17 @@ function toStep(row: StepRow): WorkflowStepRecord {
   return {
     id: row.id,
     workflowId: row.workflowId,
+    name: nullable(row.name),
     stepOrder: row.stepOrder,
     stepGroup: row.stepGroup,
     componentId: row.componentId,
     dependsOnStepId: nullable(row.dependsOnStepId),
-    rollbackServiceName: nullable(row.rollbackServiceName),
-    rollbackServiceType: nullable(row.rollbackServiceType),
-    rollbackAllPrevious: row.rollbackAllPrevious,
+    compensationService: nullable(row.compensationService),
+    compensationAction: nullable(row.compensationAction),
+    condition: nullable(row.condition),
+    onFailure: row.onFailure,
+    idempotencyKeyHeader: nullable(row.idempotencyKeyHeader),
+    verifyAction: nullable(row.verifyAction),
   };
 }
 
@@ -123,9 +137,9 @@ function toLog(row: LogRow): ExecutionLogRecord {
     id: row.id,
     executionId: row.executionId,
     workflowName: nullable(row.workflowName),
-    serviceName: nullable(row.serviceName),
-    serviceType: nullable(row.serviceType),
-    component: nullable(row.component),
+    service: nullable(row.service),
+    action: nullable(row.action),
+    componentType: nullable(row.componentType),
     stepOrder: nullable(row.stepOrder),
     status: row.status,
     requestData: nullable(row.requestData),
@@ -138,6 +152,16 @@ function toLog(row: LogRow): ExecutionLogRecord {
 
 function now(): string {
   return new Date().toISOString();
+}
+
+function componentFilters(
+  t: typeof schema,
+  filters?: ComponentFilters
+) {
+  const conditions: ReturnType<typeof eq>[] = [];
+  if (filters?.service) conditions.push(eq(t.componentDefinitions.service, filters.service));
+  if (filters?.componentType) conditions.push(eq(t.componentDefinitions.componentType, filters.componentType));
+  return conditions.length ? and(...conditions) : undefined;
 }
 
 export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
@@ -165,11 +189,11 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
     async saveComponent(comp) {
       const row = db.insert(t.componentDefinitions).values({
         id: comp.id,
-        serviceName: comp.serviceName,
-        serviceType: comp.serviceType,
-        component: comp.component,
+        service: comp.service,
+        action: comp.action,
+        componentType: comp.componentType,
         description: comp.description ?? null,
-        serviceDetails: comp.serviceDetails,
+        config: comp.config,
         condition: comp.condition ?? null,
         metaData: comp.metaData ?? null,
         createdAt: comp.createdAt,
@@ -183,40 +207,42 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
       return row ? toComponent(row) : null;
     },
 
-    async findComponent(serviceName, component, serviceType) {
+    async findComponent(service, action) {
       const row = db.select().from(t.componentDefinitions).where(
         and(
-          eq(t.componentDefinitions.serviceName, serviceName),
-          eq(t.componentDefinitions.serviceType, serviceType),
-          eq(t.componentDefinitions.component, component),
+          eq(t.componentDefinitions.service, service),
+          eq(t.componentDefinitions.action, action),
         )
       ).get();
       return row ? toComponent(row) : null;
     },
 
     async listComponents(filters, limit = 50, offset = 0) {
-      const conditions: ReturnType<typeof eq>[] = [];
-      if (filters?.serviceName) conditions.push(eq(t.componentDefinitions.serviceName, filters.serviceName));
-      if (filters?.component) conditions.push(eq(t.componentDefinitions.component, filters.component));
-
       const rows = db.select().from(t.componentDefinitions)
-        .where(conditions.length ? and(...conditions) : undefined)
-        .orderBy(t.componentDefinitions.createdAt)
+        .where(componentFilters(t, filters))
+        .orderBy(t.componentDefinitions.createdAt, t.componentDefinitions.id)
         .limit(limit).offset(offset)
         .all();
       return rows.map(toComponent);
     },
 
+    async countComponents(filters) {
+      const row = db.select({ value: count() }).from(t.componentDefinitions)
+        .where(componentFilters(t, filters))
+        .get();
+      return row?.value ?? 0;
+    },
+
     async updateComponent(id, changes) {
       const ts = now();
       const set: Record<string, unknown> = { updatedAt: ts };
-      if (changes.serviceName !== undefined) set.serviceName = changes.serviceName;
-      if (changes.serviceType !== undefined) set.serviceType = changes.serviceType;
-      if (changes.component !== undefined) set.component = changes.component;
-      if (changes.description !== undefined) set.description = changes.description;
-      if (changes.serviceDetails !== undefined) set.serviceDetails = changes.serviceDetails;
-      if (changes.condition !== undefined) set.condition = changes.condition;
-      if (changes.metaData !== undefined) set.metaData = changes.metaData;
+      if ('service' in changes) set.service = changes.service;
+      if ('action' in changes) set.action = changes.action;
+      if ('componentType' in changes) set.componentType = changes.componentType;
+      if ('description' in changes) set.description = changes.description ?? null;
+      if ('config' in changes) set.config = changes.config;
+      if ('condition' in changes) set.condition = changes.condition ?? null;
+      if ('metaData' in changes) set.metaData = changes.metaData ?? null;
 
       const rows = db.update(t.componentDefinitions).set(set).where(eq(t.componentDefinitions.id, id)).returning().all();
       if (!rows.length) throw new Error(`Component ${id} not found`);
@@ -231,8 +257,11 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
       const row = db.insert(t.workflowDefinitions).values({
         id: wf.id,
         name: wf.name,
+        groupId: wf.groupId ?? null,
         description: wf.description ?? null,
         responseMapping: wf.responseMapping ?? null,
+        maxDurationMs: wf.maxDurationMs ?? null,
+        compensationFailureConfig: wf.compensationFailureConfig ?? null,
         createdAt: wf.createdAt,
         updatedAt: wf.updatedAt,
       }).returning().get();
@@ -261,8 +290,11 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
       const ts = now();
       const set: Record<string, unknown> = { updatedAt: ts };
       if (changes.name !== undefined) set.name = changes.name;
+      if (changes.groupId !== undefined) set.groupId = changes.groupId;
       if (changes.description !== undefined) set.description = changes.description;
       if (changes.responseMapping !== undefined) set.responseMapping = changes.responseMapping;
+      if (changes.maxDurationMs !== undefined) set.maxDurationMs = changes.maxDurationMs;
+      if (changes.compensationFailureConfig !== undefined) set.compensationFailureConfig = changes.compensationFailureConfig;
 
       const rows = db.update(t.workflowDefinitions).set(set).where(eq(t.workflowDefinitions.id, id)).returning().all();
       if (!rows.length) throw new Error(`Workflow ${id} not found`);
@@ -277,13 +309,17 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
       const row = db.insert(t.workflowSteps).values({
         id: step.id,
         workflowId: step.workflowId,
+        name: step.name ?? null,
         stepOrder: step.stepOrder,
         stepGroup: step.stepGroup,
         componentId: step.componentId,
         dependsOnStepId: step.dependsOnStepId ?? null,
-        rollbackServiceName: step.rollbackServiceName ?? null,
-        rollbackServiceType: step.rollbackServiceType ?? null,
-        rollbackAllPrevious: step.rollbackAllPrevious,
+        compensationService: step.compensationService ?? null,
+        compensationAction: step.compensationAction ?? null,
+        condition: step.condition ?? null,
+        onFailure: step.onFailure,
+        idempotencyKeyHeader: step.idempotencyKeyHeader ?? null,
+        verifyAction: step.verifyAction ?? null,
       }).returning().get();
       return toStep(row);
     },
@@ -305,9 +341,9 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
         id: log.id,
         executionId: log.executionId,
         workflowName: log.workflowName ?? null,
-        serviceName: log.serviceName ?? null,
-        serviceType: log.serviceType ?? null,
-        component: log.component ?? null,
+        service: log.service ?? null,
+        action: log.action ?? null,
+        componentType: log.componentType ?? null,
         stepOrder: log.stepOrder ?? null,
         status: log.status,
         requestData: log.requestData ?? null,
