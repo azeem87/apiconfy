@@ -12,7 +12,7 @@ const body = (overrides: Record<string, unknown> = {}) => ({
   action: 'create_customer',
   componentType: 'rest',
   description: 'Creates a customer in the CRM',
-  config: { uri: 'https://api.example.com/customers', method: 'POST' },
+  config: { request: { uri: 'https://api.example.com/customers', method: 'POST' } },
   ...overrides,
 });
 
@@ -68,7 +68,7 @@ describe('services routes', () => {
     });
 
     it('returns 400 with an issue array for an invalid config', async () => {
-      const res = await post(app, body({ config: { method: 'POST' } }));
+      const res = await post(app, body({ config: { request: { method: 'POST' } } }));
       expect(res.status).toBe(400);
 
       const json = await res.json();
@@ -100,51 +100,53 @@ describe('services routes', () => {
   describe('credential masking', () => {
     const withSecrets = body({
       config: {
-        uri: 'https://api.example.com/customers',
-        method: 'POST',
-        auth: { basic: { username: 'svc-account', password: '$env.CRM_PASSWORD' } },
+        request: {
+          uri: 'https://api.example.com/customers',
+          method: 'POST',
+          auth: { basic: { username: 'svc-account', password: '$env.CRM_PASSWORD' } },
+        },
       },
     });
 
     it('masks an $env. reference in the POST response', async () => {
       const json = await (await post(app, withSecrets)).json();
-      expect(json.data.config.auth.basic.password).toBe('****');
-      expect(json.data.config.auth.basic.username).toBe('svc-account');
+      expect(json.data.config.request.auth.basic.password).toBe('****');
+      expect(json.data.config.request.auth.basic.username).toBe('svc-account');
     });
 
     it('masks it on GET one action', async () => {
       await post(app, withSecrets);
       const one = await (await app.request('/api/v1/services/customer-service/create_customer')).json();
-      expect(one.data.config.auth.basic.password).toBe('****');
+      expect(one.data.config.request.auth.basic.password).toBe('****');
     });
 
     it('masks it on GET by service', async () => {
       await post(app, withSecrets);
       const byService = await (await app.request('/api/v1/services/customer-service')).json();
-      expect(byService.data[0].config.auth.basic.password).toBe('****');
+      expect(byService.data[0].config.request.auth.basic.password).toBe('****');
     });
 
     it('masks it on GET list', async () => {
       await post(app, withSecrets);
       const list = await (await app.request('/api/v1/services')).json();
-      expect(list.data[0].config.auth.basic.password).toBe('****');
+      expect(list.data[0].config.request.auth.basic.password).toBe('****');
     });
 
     it('rejects a re-submitted masked value instead of destroying the reference', async () => {
       await post(app, body({
-        config: { uri: 'https://x.test', method: 'POST', auth: { basic: { username: 'u', password: '$env.CRM_PASSWORD' } } },
+        config: { request: { uri: 'https://x.test', method: 'POST', auth: { basic: { username: 'u', password: '$env.CRM_PASSWORD' } } } },
       }));
 
       const fetched = await (await app.request('/api/v1/services/customer-service/create_customer')).json();
-      expect(fetched.data.config.auth.basic.password).toBe('****');
+      expect(fetched.data.config.request.auth.basic.password).toBe('****');
 
       const res = await post(app, body({ description: 'edited', config: fetched.data.config }));
       expect(res.status).toBe(400);
       const json = await res.json();
-      expect(json.error.details[0].path).toEqual(['config', 'auth', 'basic', 'password']);
+      expect(json.error.details[0].path).toEqual(['config', 'request', 'auth', 'basic', 'password']);
 
       const stored = await db.findComponent('customer-service', 'create_customer');
-      expect((stored!.config as any).auth.basic.password).toBe('$env.CRM_PASSWORD');
+      expect((stored!.config as any).request.auth.basic.password).toBe('$env.CRM_PASSWORD');
     });
 
     it('returns metaData verbatim, including an $env. string — it is not scanned', async () => {
@@ -157,19 +159,21 @@ describe('services routes', () => {
       await post(app, body({
         action: 'literal_secret',
         config: {
-          uri: 'https://x.test', method: 'POST',
-          auth: { basic: { username: 'u', password: 'hunter2' } },
+          request: {
+            uri: 'https://x.test', method: 'POST',
+            auth: { basic: { username: 'u', password: 'hunter2' } },
+          },
         },
       }));
 
       const json = await (await app.request('/api/v1/services/customer-service/literal_secret')).json();
-      expect(json.data.config.auth.basic.password).toBe('hunter2');
+      expect(json.data.config.request.auth.basic.password).toBe('hunter2');
     });
 
     it('keeps the real reference in the database — masking is display-only', async () => {
       await post(app, withSecrets);
       const stored = await db.findComponent('customer-service', 'create_customer');
-      expect((stored!.config as any).auth.basic.password).toBe('$env.CRM_PASSWORD');
+      expect((stored!.config as any).request.auth.basic.password).toBe('$env.CRM_PASSWORD');
     });
   });
 

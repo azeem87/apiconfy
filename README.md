@@ -105,7 +105,7 @@ Content-Type: application/json
     },
     "response": {
       "transformation": {
-        "customerId": "$.id"
+        "customerId": "$.response.id"
       }
     }
   }
@@ -195,9 +195,9 @@ Content-Type: application/json
     }
   ],
   "responseTransformation": {
-    "customerId": "$.customerId",
-    "messageId": "$.messageId",
-    "status": "$.status"
+    "customerId": "$.context.output.createCustomerResponse.customerId",
+    "messageId": "$.context.output.publishEventResponse.messageId",
+    "status": "$.context.output.sendEmailResponse.status"
   }
 }
 ```

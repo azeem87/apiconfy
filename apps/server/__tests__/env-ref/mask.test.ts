@@ -44,8 +44,8 @@ describe('maskEnvRefs', () => {
     expect(maskEnvRefs({ password: '$env.' })).toEqual({ password: '$env.' });
   });
 
-  it('does not touch user data in payloadTemplate that merely has a secret-ish key', () => {
-    const config = { payloadTemplate: { apiKey: '$.context.apiKey', password: '$.context.pw' } };
+  it('does not touch user data in request.payloadTemplate that merely has a secret-ish key', () => {
+    const config = { request: { payloadTemplate: { apiKey: '$.context.apiKey', password: '$.context.pw' } } };
     expect(maskEnvRefs(config)).toEqual(config);
   });
 });

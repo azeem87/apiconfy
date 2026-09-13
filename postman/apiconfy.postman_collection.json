@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Apiconfy",
-    "description": "API collection for Apiconfy integration runtime.\n\n## Setup\n1. Start the server: `pnpm dev`\n2. Set `base_url` variable (default: http://localhost:3000)\n3. Set `api_key` variable if API_KEY env is configured\n\n## Phases\n- **Phase 1** — Component Registry (register, list, get, delete services)\n- More phases coming soon.\n\nUpdated as each phase is completed.",
+    "description": "API collection for Apiconfy integration runtime.\n\n## Setup\n1. Start the server: `pnpm dev`\n2. Set `base_url` variable (default: http://localhost:3000)\n3. Set `api_key` variable if API_KEY env is configured\n\n## Structure\n- **Health** — server health check\n- **Service Management** — generic CRUD operations (list, get, delete) for all component types\n- **REST** — REST component registration examples\n- **Mapper** — Mapper component registration examples (Phase 2)\n- **Database** — Database component registration examples (Phase 2)\n- **Script** — Script component registration examples (Phase 2)\n- **SQS** — SQS component registration examples (Phase 10)\n\nEach component type folder contains:\n- **Simple Examples** — minimal working requests\n- **Complex Examples** — full-featured scenarios with auth, resilience, mapping\n- **Error Cases** — validation, auth, not-found scenarios\n\n## Data Bag Convention\nAll components follow the same input/output lifecycle:\n- Input: `$.context.*` (original invoke payload)\n- Raw external response: `$.response.*` (ephemeral, per-step)\n- Response transformation: reads `$.response.*`, wraps output under unique key\n- Output: merged into `$.context.output.<uniqueKey>` (always, success or failure)\n\nExample:\n```json\n{\n  \"response\": {\n    \"transformation\": {\n      \"createOrderResponse\": {\n        \"orderId\": \"$.response.id\",\n        \"status\": \"$.response.status\"\n      }\n    }\n  }\n}\n```\n\nThis prevents collisions when multiple components return similar fields.\n\nUpdated as each phase is completed.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "version": "1.0.0"
   },
@@ -33,104 +33,142 @@
       ]
     },
     {
-      "name": "Phase 1 — Component Registry",
+      "name": "Service Management",
+      "item": [
+        {
+          "name": "List all services",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/services?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "services"],
+              "query": [
+                { "key": "limit", "value": "20" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "Paginated list of all registered services. Optional filters: `service`, `componentType`."
+          }
+        },
+        {
+          "name": "List actions for a service",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/services/user-service",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "services", "user-service"]
+            },
+            "description": "Returns all actions registered under a specific service."
+          }
+        },
+        {
+          "name": "Get single component",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/services/user-service/get_user",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "services", "user-service", "get_user"]
+            },
+            "description": "Returns the component definition. `$env.` values are masked to `****`."
+          }
+        },
+        {
+          "name": "Delete component",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/services/user-service/get_user",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "services", "user-service", "get_user"]
+            },
+            "description": "Deletes the component. Idempotent — returns 200 whether or not it existed."
+          }
+        },
+        {
+          "name": "Filter by componentType",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/services?componentType=rest",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "services"],
+              "query": [
+                { "key": "componentType", "value": "rest" }
+              ]
+            },
+            "description": "Filter list by componentType. Also supports `service` filter."
+          }
+        }
+      ]
+    },
+    {
+      "name": "REST",
       "item": [
         {
           "name": "Simple Examples",
           "item": [
             {
-              "name": "Register — simple REST component",
+              "name": "Register — simple REST GET",
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"user-service\",\n  \"action\": \"get_user\",\n  \"componentType\": \"rest\",\n  \"description\": \"Fetch user by ID from upstream API\",\n  \"config\": {\n    \"uri\": \"https://jsonplaceholder.typicode.com/users/{{id}}\",\n    \"method\": \"GET\"\n  }\n}"
+                  "raw": "{\n  \"service\": \"user-service\",\n  \"action\": \"get_user\",\n  \"componentType\": \"rest\",\n  \"description\": \"Fetch user by ID from upstream API\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://jsonplaceholder.typicode.com/users/$.context.id\",\n      \"method\": \"GET\"\n    },\n    \"response\": {\n      \"transformation\": {\n        \"getUserResponse\": {\n          \"userId\": \"$.response.id\",\n          \"userName\": \"$.response.name\",\n          \"userEmail\": \"$.response.email\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Register a minimal REST component. Returns 201 on create, 200 on upsert (update)."
+                "description": "Register a minimal REST GET component. Response transformation wraps output under unique key `getUserResponse`. Returns 201 on create, 200 on upsert."
               }
             },
             {
-              "name": "List all services",
+              "name": "Register — simple REST POST",
               "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/services?limit=20&offset=0",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "v1", "services"],
-                  "query": [
-                    { "key": "limit", "value": "20" },
-                    { "key": "offset", "value": "0" }
-                  ]
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"post-service\",\n  \"action\": \"create_post\",\n  \"componentType\": \"rest\",\n  \"description\": \"Create a post in upstream API\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://jsonplaceholder.typicode.com/posts\",\n      \"method\": \"POST\",\n      \"payloadTemplate\": {\n        \"title\": \"$.context.title\",\n        \"body\": \"$.context.body\",\n        \"userId\": \"$.context.userId\"\n      }\n    },\n    \"response\": {\n      \"transformation\": {\n        \"createPostResponse\": {\n          \"postId\": \"$.response.id\",\n          \"status\": \"created\"\n        }\n      }\n    }\n  }\n}"
                 },
-                "description": "Paginated list. Optional filters: `service`, `componentType`."
-              }
-            },
-            {
-              "name": "List actions for a service",
-              "request": {
-                "method": "GET",
-                "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/v1/services/user-service",
+                  "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
-                  "path": ["api", "v1", "services", "user-service"]
+                  "path": ["api", "v1", "services"]
                 },
-                "description": "Returns all actions registered under `user-service`."
-              }
-            },
-            {
-              "name": "Get single component",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/services/user-service/get_user",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "v1", "services", "user-service", "get_user"]
-                },
-                "description": "Returns the component definition. `$env.` values are masked to `****`."
-              }
-            },
-            {
-              "name": "Delete component",
-              "request": {
-                "method": "DELETE",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/services/user-service/get_user",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "v1", "services", "user-service", "get_user"]
-                },
-                "description": "Deletes the component. Idempotent — returns 200 whether or not it existed."
+                "description": "Register a minimal REST POST component with payload template. Response transformation wraps output under unique key `createPostResponse`."
               }
             }
           ]
         },
         {
-          "name": "Complex Example",
+          "name": "Complex Examples",
           "item": [
             {
-              "name": "Register — full-featured REST component",
+              "name": "Register — full-featured REST with auth, retry, transformation",
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Create order in upstream system with auth, retry, and response mapping\",\n  \"config\": {\n    \"uri\": \"https://api.example.com/orders\",\n    \"method\": \"POST\",\n    \"contentType\": \"application/json\",\n    \"headers\": {\n      \"X-Tenant-Id\": \"acme-corp\"\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 30000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504]\n    },\n    \"auth\": {\n      \"oauth2\": {\n        \"clientId\": \"$env.ORDER_API_CLIENT_ID\",\n        \"clientSecret\": \"$env.ORDER_API_CLIENT_SECRET\",\n        \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n        \"scope\": \"orders:write\"\n      }\n    },\n    \"payloadTemplate\": {\n      \"customerId\": \"$.context.customerId\",\n      \"items\": \"$.context.items\",\n      \"totalAmount\": \"$.context.totalAmount\"\n    },\n    \"response\": {\n      \"transformation\": {\n        \"orderId\": \"$.id\",\n        \"status\": \"$.status\",\n        \"createdAt\": \"$.created_at\"\n      }\n    }\n  },\n  \"metaData\": {\n    \"owner\": \"platform-team\",\n    \"slack\": \"#orders-alerts\"\n  }\n}"
+                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Create order in upstream system with auth, retry, and response mapping\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": {\n        \"X-Tenant-Id\": \"$.context.tenantId\",\n        \"X-Request-Id\": \"$.context.requestId\"\n      },\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"$env.ORDER_API_CLIENT_ID\",\n          \"clientSecret\": \"$env.ORDER_API_CLIENT_SECRET\",\n          \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n          \"scope\": \"orders:write\"\n        }\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"$.context.customerId\",\n        \"items\": \"$.context.items\",\n        \"totalAmount\": \"$.context.totalAmount\"\n      }\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 30000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504]\n    },\n    \"response\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"$.response.id != null\", \"message\": \"Order ID is missing\" },\n          { \"expression\": \"$.response.status == 'created'\", \"message\": \"Order not created\" }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"$.response.id\",\n          \"status\": \"$.response.status\",\n          \"createdAt\": \"$.response.created_at\"\n        }\n      }\n    }\n  },\n  \"condition\": \"$.context.customerId != null\",\n  \"metaData\": {\n    \"owner\": \"platform-team\",\n    \"slack\": \"#orders-alerts\"\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Full-featured example showing:\n- OAuth2 auth with `$env.` references (masked in response)\n- Retry with exponential backoff\n- Timeout config\n- Custom headers\n- Payload template with context mapping\n- Response transformation\n- Metadata"
+                "description": "Full-featured REST component showing:\n- OAuth2 auth with `$env.` references (masked in response)\n- Retry with exponential backoff\n- Timeout config\n- Dynamic headers from `$.context.*`\n- Payload template with context mapping\n- Response validation rules\n- Response transformation wraps output under unique key `createOrderResponse`\n- Condition for conditional execution\n- Metadata"
               }
             },
             {
@@ -140,30 +178,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Updated: increased timeout and added circuit breaker\",\n  \"config\": {\n    \"uri\": \"https://api.example.com/orders\",\n    \"method\": \"POST\",\n    \"contentType\": \"application/json\",\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 60000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504],\n      \"circuitBreaker\": {\n        \"failureThreshold\": 5,\n        \"windowSize\": 60000,\n        \"openDuration\": 30000,\n        \"halfOpenMaxAttempts\": 3\n      }\n    },\n    \"auth\": {\n      \"oauth2\": {\n        \"clientId\": \"$env.ORDER_API_CLIENT_ID\",\n        \"clientSecret\": \"$env.ORDER_API_CLIENT_SECRET\",\n        \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n        \"scope\": \"orders:write\"\n      }\n    },\n    \"payloadTemplate\": {\n      \"customerId\": \"$.context.customerId\",\n      \"items\": \"$.context.items\",\n      \"totalAmount\": \"$.context.totalAmount\"\n    },\n    \"response\": {\n      \"transformation\": {\n        \"orderId\": \"$.id\",\n        \"status\": \"$.status\",\n        \"createdAt\": \"$.created_at\"\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Updated: increased timeout and added circuit breaker\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"$env.ORDER_API_CLIENT_ID\",\n          \"clientSecret\": \"$env.ORDER_API_CLIENT_SECRET\",\n          \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n          \"scope\": \"orders:write\"\n        }\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"$.context.customerId\",\n        \"items\": \"$.context.items\",\n        \"totalAmount\": \"$.context.totalAmount\"\n      }\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 60000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504],\n      \"circuitBreaker\": {\n        \"failureThreshold\": 5,\n        \"windowSize\": 60000,\n        \"openDuration\": 30000,\n        \"halfOpenMaxAttempts\": 3\n      }\n    },\n    \"response\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"$.response.id != null\", \"message\": \"Order ID is missing\" },\n          { \"expression\": \"$.response.status == 'created'\", \"message\": \"Order not created\" }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"$.response.id\",\n          \"status\": \"$.response.status\",\n          \"createdAt\": \"$.response.created_at\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Send the same (service, action) again to upsert. Returns 200 (not 201) on update."
-              }
-            },
-            {
-              "name": "Filter by componentType",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/services?componentType=rest",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "v1", "services"],
-                  "query": [
-                    { "key": "componentType", "value": "rest" }
-                  ]
-                },
-                "description": "Filter list by componentType. Also supports `service` filter."
+                "description": "Send the same (service, action) again to upsert. Returns 200 (not 201) on update. Includes response validation and transformation wraps output under unique key `createOrderResponse`."
               }
             }
           ]
@@ -189,64 +211,338 @@
               }
             },
             {
-              "name": "Validation error — unsupported componentType",
+              "name": "Validation error — invalid URI",
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"test-service\",\n  \"action\": \"test_action\",\n  \"componentType\": \"graphql\",\n  \"config\": {\n    \"uri\": \"https://example.com/graphql\",\n    \"method\": \"POST\"\n  }\n}"
+                  "raw": "{\n  \"service\": \"test-service\",\n  \"action\": \"test_action\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"method\": \"GET\"\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Returns 400 with `UNKNOWN_COMPONENT_TYPE` and list of supported types."
+                "description": "Returns 400 — `request.uri` is required for REST components."
               }
             },
             {
-              "name": "Validation error — invalid URL-safe name",
+              "name": "Validation error — invalid HTTP method",
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"bad service name!\",\n  \"action\": \"do_thing\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"uri\": \"https://example.com\",\n    \"method\": \"GET\"\n  }\n}"
+                  "raw": "{\n  \"service\": \"test-service\",\n  \"action\": \"test_action\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://example.com\",\n      \"method\": \"INVALID\"\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Service/action must be URL-safe (letters, numbers, _, - only)."
+                "description": "Returns 400 — request.method must be GET, POST, PUT, PATCH, or DELETE."
               }
             },
             {
-              "name": "Not found — get non-existent component",
+              "name": "Validation error — conflicting SSL config",
               "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/services/no-such-service/no_action",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "v1", "services", "no-such-service", "no_action"]
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"test-service\",\n  \"action\": \"test_action\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://example.com\",\n      \"method\": \"GET\",\n      \"disableSSL\": true,\n      \"ssl\": {\n        \"cert\": \"...\",\n        \"key\": \"...\"\n      }\n    }\n  }\n}"
                 },
-                "description": "Returns 404 with `NOT_FOUND`."
-              }
-            },
-            {
-              "name": "Auth failure — missing API key",
-              "request": {
-                "auth": { "type": "noauth" },
-                "method": "GET",
-                "header": [],
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "If API_KEY env is set, requests without a valid Bearer token get 401."
+                "description": "Returns 400 — `request.disableSSL` and `request.ssl` are mutually exclusive."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Mapper",
+      "item": [
+        {
+          "name": "Simple Examples",
+          "item": [
+            {
+              "name": "Register — simple mapper component",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"data-mapper\",\n  \"action\": \"transform_user\",\n  \"componentType\": \"mapper\",\n  \"description\": \"Transform user data format\",\n  \"config\": {\n    \"template\": {\n      \"fullName\": \"$.context.firstName $.context.lastName\",\n      \"contact\": {\n        \"email\": \"$.context.email\",\n        \"phone\": \"$.context.phone\"\n      }\n    },\n    \"response\": {\n      \"transformation\": {\n        \"transformUserResponse\": {\n          \"fullName\": \"$.context.output.transformUserResponse.fullName\",\n          \"email\": \"$.context.output.transformUserResponse.contact.email\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Register a mapper component that reshapes context data. Mapper reads from $.context, transforms, and writes to $.context.output. Response transformation wraps output under unique key `transformUserResponse`. (Phase 2)"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Complex Examples",
+          "item": [
+            {
+              "name": "Register — mapper with condition",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"data-mapper\",\n  \"action\": \"enrich_order\",\n  \"componentType\": \"mapper\",\n  \"description\": \"Enrich order data with computed fields\",\n  \"config\": {\n    \"template\": {\n      \"orderId\": \"$.context.orderId\",\n      \"totalWithTax\": \"$.context.subtotal * 1.1\",\n      \"itemCount\": \"$.context.items.length\"\n    },\n    \"condition\": \"$.context.orderId != null\",\n    \"response\": {\n      \"transformation\": {\n        \"enrichOrderResponse\": {\n          \"orderId\": \"$.context.output.enrichOrderResponse.orderId\",\n          \"totalWithTax\": \"$.context.output.enrichOrderResponse.totalWithTax\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Mapper with condition — only executes if orderId is present. Response transformation wraps output under unique key `enrichOrderResponse`. (Phase 2)"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error Cases",
+          "item": [
+            {
+              "name": "Validation error — missing template",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"data-mapper\",\n  \"action\": \"bad_mapper\",\n  \"componentType\": \"mapper\",\n  \"config\": {\n    \"condition\": \"$.context.id != null\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Returns 400 — `template` is required for mapper components. (Phase 2)"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Database",
+      "item": [
+        {
+          "name": "Simple Examples",
+          "item": [
+            {
+              "name": "Register — simple database SELECT",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"customer-db\",\n  \"action\": \"get_customer\",\n  \"componentType\": \"database\",\n  \"description\": \"Fetch customer by ID\",\n  \"config\": {\n    \"operation\": \"SELECT\",\n    \"query\": \"SELECT * FROM customers WHERE id = $id\",\n    \"parameters\": {\n      \"id\": \"$.context.customerId\"\n    },\n    \"response\": {\n      \"transformation\": {\n        \"getCustomerResponse\": {\n          \"customer\": \"$.response.rows[0]\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Register a database SELECT component. Response transformation wraps output under unique key `getCustomerResponse`. (Phase 2)"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Complex Examples",
+          "item": [
+            {
+              "name": "Register — database INSERT with transformation",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"order-db\",\n  \"action\": \"save_order\",\n  \"componentType\": \"database\",\n  \"description\": \"Save order to database\",\n  \"config\": {\n    \"operation\": \"INSERT\",\n    \"query\": \"INSERT INTO orders (customer_id, total, status) VALUES ($customerId, $total, $status) RETURNING *\",\n    \"parameters\": {\n      \"customerId\": \"$.context.customerId\",\n      \"total\": \"$.context.total\",\n      \"status\": \"$.context.status\"\n    },\n    \"response\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"$.response.rows != null\", \"message\": \"Order not saved\" }\n        ]\n      },\n      \"transformation\": {\n        \"saveOrderResponse\": {\n          \"orderId\": \"$.response.rows[0].id\",\n          \"createdAt\": \"$.response.rows[0].created_at\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Database INSERT with response validation and transformation. Output wrapped under unique key `saveOrderResponse`. (Phase 2)"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error Cases",
+          "item": [
+            {
+              "name": "Validation error — missing query",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"customer-db\",\n  \"action\": \"bad_query\",\n  \"componentType\": \"database\",\n  \"config\": {\n    \"operation\": \"SELECT\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Returns 400 — `query` is required for database components. (Phase 2)"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Script",
+      "item": [
+        {
+          "name": "Simple Examples",
+          "item": [
+            {
+              "name": "Register — simple script component",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"calculate_total\",\n  \"componentType\": \"script\",\n  \"description\": \"Calculate order total with tax\",\n  \"config\": {\n    \"expression\": \"(function($context){ return { total: $context.subtotal * 1.1 }; })()\",\n    \"response\": {\n      \"transformation\": {\n        \"calculateTotalResponse\": {\n          \"total\": \"$.response.total\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Register a script component that executes JavaScript. Response transformation wraps output under unique key `calculateTotalResponse`. (Phase 2)"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Complex Examples",
+          "item": [
+            {
+              "name": "Register — script with condition and validation",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"calculate_discount\",\n  \"componentType\": \"script\",\n  \"description\": \"Calculate discount based on customer tier\",\n  \"config\": {\n    \"expression\": \"(function($context){ const discount = $context.tier === 'gold' ? 0.2 : 0.1; return { discount: $context.subtotal * discount, tier: $context.tier }; })()\",\n    \"condition\": \"$.context.subtotal != null && $.context.tier != null\",\n    \"response\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"$.response.discount >= 0\", \"message\": \"Invalid discount calculated\" }\n        ]\n      },\n      \"transformation\": {\n        \"calculateDiscountResponse\": {\n          \"discount\": \"$.response.discount\",\n          \"tier\": \"$.response.tier\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Script with condition and response validation. Output wrapped under unique key `calculateDiscountResponse`. (Phase 2)"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error Cases",
+          "item": [
+            {
+              "name": "Validation error — missing expression",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"bad_script\",\n  \"componentType\": \"script\",\n  \"config\": {\n    \"condition\": \"$.context.id != null\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Returns 400 — `expression` is required for script components. (Phase 2)"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "SQS",
+      "item": [
+        {
+          "name": "Simple Examples",
+          "item": [
+            {
+              "name": "Register — simple SQS push",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"notification-queue\",\n  \"action\": \"send_notification\",\n  \"componentType\": \"sqs\",\n  \"description\": \"Push notification message to SQS queue\",\n  \"config\": {\n    \"queueName\": \"notification-queue\",\n    \"messageBody\": {\n      \"userId\": \"$.context.userId\",\n      \"message\": \"$.context.message\"\n    },\n    \"response\": {\n      \"transformation\": {\n        \"sendNotificationResponse\": {\n          \"messageId\": \"$.response.messageId\",\n          \"status\": \"sent\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Register an SQS push component. Response transformation wraps output under unique key `sendNotificationResponse`. (Phase 10)"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Complex Examples",
+          "item": [
+            {
+              "name": "Register — SQS with FIFO queue and condition",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"order-queue\",\n  \"action\": \"enqueue_order\",\n  \"componentType\": \"sqs\",\n  \"description\": \"Push order to FIFO queue\",\n  \"config\": {\n    \"queueName\": \"order-queue.fifo\",\n    \"isFifo\": true,\n    \"groupId\": \"$.context.orderGroupId\",\n    \"messageBody\": {\n      \"orderId\": \"$.context.orderId\",\n      \"customerId\": \"$.context.customerId\",\n      \"total\": \"$.context.total\"\n    },\n    \"condition\": \"$.context.orderId != null\",\n    \"response\": {\n      \"transformation\": {\n        \"enqueueOrderResponse\": {\n          \"messageId\": \"$.response.messageId\",\n          \"sequenceNumber\": \"$.response.sequenceNumber\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "SQS FIFO queue with message group ID and condition. Output wrapped under unique key `enqueueOrderResponse`. (Phase 10)"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error Cases",
+          "item": [
+            {
+              "name": "Validation error — missing queueName",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"notification-queue\",\n  \"action\": \"bad_sqs\",\n  \"componentType\": \"sqs\",\n  \"config\": {\n    \"messageBody\": {\n      \"test\": \"data\"\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "services"]
+                },
+                "description": "Returns 400 — `queueName` is required for SQS components. (Phase 10)"
               }
             }
           ]

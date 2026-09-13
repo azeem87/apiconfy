@@ -90,7 +90,34 @@ Document frequently used workflows and commands here.
 
 ## API Testing
 
-Postman collection at `postman/apiconfy.postman_collection.json` — committed to the repo, updated as each phase is completed. Import into Postman to test all implemented endpoints. Collection variables: `base_url` (default `http://localhost:3000`), `api_key` (Bearer token if `API_KEY` env is set). Organized by phase with simple examples, complex scenarios, and error cases.
+Postman collection at `postman/apiconfy.postman_collection.json` — committed to the repo, updated as each phase is completed. Import into Postman to test all implemented endpoints. Collection variables: `base_url` (default `http://localhost:3000`), `api_key` (Bearer token if `API_KEY` env is set).
+
+### Postman Collection Structure
+
+Organized by **component type** (not phase). Each component type folder contains:
+- **Simple Examples** — minimal working requests
+- **Complex Examples** — full-featured scenarios with auth, resilience, mapping, validation
+- **Error Cases** — validation, auth, not-found scenarios
+
+### Postman Example Rules
+
+**MANDATORY: Every component registration example in the Postman collection MUST include ALL applicable config sections for that component type.** This is not optional — the Postman collection is the reference for users, and incomplete examples mislead them.
+
+**Simple examples** — minimal required fields only (uri, method for REST; template for Mapper; etc.)
+
+**Complex examples** — MUST include every applicable config section:
+- `uri`, `method`, `contentType`, `headers` (with `$.context.*` expressions)
+- `timeout`, `resilience` (retry, backoff, circuitBreaker)
+- `auth` (oauth2/basic/jwt with `$env.` references)
+- `payloadTemplate` (with `$.context.*` expressions)
+- `response.validation.rules` (with `$.response.*` expressions)
+- `response.transformation` (wraps output under unique key, reads `$.response.*`)
+- `condition` (with `$.context.*` expressions)
+- `metaData`
+
+**Response transformation** — ALWAYS wraps output under a unique key (e.g., `createOrderResponse`, `getUserResponse`) to prevent collisions when multiple components return similar fields.
+
+**Data bag convention** — All examples follow: `$.context.*` (input) → `$.response` (ephemeral) → transformation → `$.context.output.<uniqueKey>`.
 
 ## Karpathy Coding Guidelines
 

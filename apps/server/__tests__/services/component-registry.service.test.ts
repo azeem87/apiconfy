@@ -56,7 +56,7 @@ const validBody = {
   service: 'customer-service',
   action: 'create_customer',
   componentType: 'rest',
-  config: { uri: 'https://api.example.com/customers', method: 'POST' },
+  config: { request: { uri: 'https://api.example.com/customers', method: 'POST' } },
 };
 
 async function expectAppError(fn: () => Promise<unknown>): Promise<AppError> {
@@ -124,13 +124,13 @@ describe('ComponentRegistryService', () => {
 
     it('rejects a config that fails the type-specific schema', async () => {
       const err = await expectAppError(() =>
-        service.register({ ...validBody, config: { method: 'POST' } }));
+        service.register({ ...validBody, config: { request: { method: 'POST' } } }));
       expect(err.code).toBe('VALIDATION_FAILED');
     });
 
     it('prefixes config issue paths with "config"', async () => {
       const err = await expectAppError(() =>
-        service.register({ ...validBody, config: { method: 'POST' } }));
+        service.register({ ...validBody, config: { request: { method: 'POST' } } }));
       const issues = err.details as Array<{ path: string[] }>;
       expect(issues[0].path[0]).toBe('config');
       expect(issues[0].path).toContain('uri');
@@ -152,15 +152,15 @@ describe('ComponentRegistryService', () => {
     it('accepts a well-formed reference and stores it verbatim', async () => {
       const { record } = await service.register({
         ...validBody,
-        config: { ...validBody.config, auth: { basic: { username: 'u', password: '$env.CRM_PW' } } },
+        config: { request: { ...validBody.config.request, auth: { basic: { username: 'u', password: '$env.CRM_PW' } } } },
       });
-      expect((record.config as any).auth.basic.password).toBe('$env.CRM_PW');
+      expect((record.config as any).request.auth.basic.password).toBe('$env.CRM_PW');
     });
 
     it('rejects a malformed reference instead of storing it as a literal', async () => {
       const err = await expectAppError(() => service.register({
         ...validBody,
-        config: { ...validBody.config, auth: { basic: { username: 'u', password: '$env.' } } },
+        config: { request: { ...validBody.config.request, auth: { basic: { username: 'u', password: '$env.' } } } },
       }));
       expect(err.code).toBe('VALIDATION_FAILED');
       expect(err.message).toContain('$env.');
@@ -169,9 +169,9 @@ describe('ComponentRegistryService', () => {
     it('accepts a literal secret without complaint — that is the policy', async () => {
       const { record } = await service.register({
         ...validBody,
-        config: { ...validBody.config, auth: { basic: { username: 'u', password: 'hunter2' } } },
+        config: { request: { ...validBody.config.request, auth: { basic: { username: 'u', password: 'hunter2' } } } },
       });
-      expect((record.config as any).auth.basic.password).toBe('hunter2');
+      expect((record.config as any).request.auth.basic.password).toBe('hunter2');
     });
   });
 
