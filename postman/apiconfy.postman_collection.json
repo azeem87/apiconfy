@@ -122,7 +122,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"user-service\",\n  \"action\": \"get_user\",\n  \"componentType\": \"rest\",\n  \"description\": \"Fetch user by ID from upstream API\",\n  \"config\": {\n    \"uri\": \"https://jsonplaceholder.typicode.com/users/$.context.id\",\n    \"method\": \"GET\",\n    \"response\": {\n      \"transformation\": {\n        \"getUserResponse\": {\n          \"userId\": \"$.response.id\",\n          \"userName\": \"$.response.name\",\n          \"userEmail\": \"$.response.email\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"user-service\",\n  \"action\": \"get_user\",\n  \"componentType\": \"rest\",\n  \"description\": \"Fetch user by ID from upstream API\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://jsonplaceholder.typicode.com/users/$.context.id\",\n      \"method\": \"GET\"\n    },\n    \"response\": {\n      \"transformation\": {\n        \"getUserResponse\": {\n          \"userId\": \"$.response.id\",\n          \"userName\": \"$.response.name\",\n          \"userEmail\": \"$.response.email\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
@@ -139,7 +139,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"post-service\",\n  \"action\": \"create_post\",\n  \"componentType\": \"rest\",\n  \"description\": \"Create a post in upstream API\",\n  \"config\": {\n    \"uri\": \"https://jsonplaceholder.typicode.com/posts\",\n    \"method\": \"POST\",\n    \"payloadTemplate\": {\n      \"title\": \"$.context.title\",\n      \"body\": \"$.context.body\",\n      \"userId\": \"$.context.userId\"\n    },\n    \"response\": {\n      \"transformation\": {\n        \"createPostResponse\": {\n          \"postId\": \"$.response.id\",\n          \"status\": \"created\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"post-service\",\n  \"action\": \"create_post\",\n  \"componentType\": \"rest\",\n  \"description\": \"Create a post in upstream API\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://jsonplaceholder.typicode.com/posts\",\n      \"method\": \"POST\",\n      \"payloadTemplate\": {\n        \"title\": \"$.context.title\",\n        \"body\": \"$.context.body\",\n        \"userId\": \"$.context.userId\"\n      }\n    },\n    \"response\": {\n      \"transformation\": {\n        \"createPostResponse\": {\n          \"postId\": \"$.response.id\",\n          \"status\": \"created\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
@@ -161,7 +161,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Create order in upstream system with auth, retry, and response mapping\",\n  \"config\": {\n    \"uri\": \"https://api.example.com/orders\",\n    \"method\": \"POST\",\n    \"contentType\": \"application/json\",\n    \"headers\": {\n      \"X-Tenant-Id\": \"$.context.tenantId\",\n      \"X-Request-Id\": \"$.context.requestId\"\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 30000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504]\n    },\n    \"auth\": {\n      \"oauth2\": {\n        \"clientId\": \"$env.ORDER_API_CLIENT_ID\",\n        \"clientSecret\": \"$env.ORDER_API_CLIENT_SECRET\",\n        \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n        \"scope\": \"orders:write\"\n      }\n    },\n    \"payloadTemplate\": {\n      \"customerId\": \"$.context.customerId\",\n      \"items\": \"$.context.items\",\n      \"totalAmount\": \"$.context.totalAmount\"\n    },\n    \"response\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"$.response.id != null\", \"message\": \"Order ID is missing\" },\n          { \"expression\": \"$.response.status == 'created'\", \"message\": \"Order not created\" }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"$.response.id\",\n          \"status\": \"$.response.status\",\n          \"createdAt\": \"$.response.created_at\"\n        }\n      }\n    }\n  },\n  \"condition\": \"$.context.customerId != null\",\n  \"metaData\": {\n    \"owner\": \"platform-team\",\n    \"slack\": \"#orders-alerts\"\n  }\n}"
+                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Create order in upstream system with auth, retry, and response mapping\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": {\n        \"X-Tenant-Id\": \"$.context.tenantId\",\n        \"X-Request-Id\": \"$.context.requestId\"\n      },\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"$env.ORDER_API_CLIENT_ID\",\n          \"clientSecret\": \"$env.ORDER_API_CLIENT_SECRET\",\n          \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n          \"scope\": \"orders:write\"\n        }\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"$.context.customerId\",\n        \"items\": \"$.context.items\",\n        \"totalAmount\": \"$.context.totalAmount\"\n      }\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 30000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504]\n    },\n    \"response\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"$.response.id != null\", \"message\": \"Order ID is missing\" },\n          { \"expression\": \"$.response.status == 'created'\", \"message\": \"Order not created\" }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"$.response.id\",\n          \"status\": \"$.response.status\",\n          \"createdAt\": \"$.response.created_at\"\n        }\n      }\n    }\n  },\n  \"condition\": \"$.context.customerId != null\",\n  \"metaData\": {\n    \"owner\": \"platform-team\",\n    \"slack\": \"#orders-alerts\"\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
@@ -178,7 +178,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Updated: increased timeout and added circuit breaker\",\n  \"config\": {\n    \"uri\": \"https://api.example.com/orders\",\n    \"method\": \"POST\",\n    \"contentType\": \"application/json\",\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 60000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504],\n      \"circuitBreaker\": {\n        \"failureThreshold\": 5,\n        \"windowSize\": 60000,\n        \"openDuration\": 30000,\n        \"halfOpenMaxAttempts\": 3\n      }\n    },\n    \"auth\": {\n      \"oauth2\": {\n        \"clientId\": \"$env.ORDER_API_CLIENT_ID\",\n        \"clientSecret\": \"$env.ORDER_API_CLIENT_SECRET\",\n        \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n        \"scope\": \"orders:write\"\n      }\n    },\n    \"payloadTemplate\": {\n      \"customerId\": \"$.context.customerId\",\n      \"items\": \"$.context.items\",\n      \"totalAmount\": \"$.context.totalAmount\"\n    },\n    \"response\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"$.response.id != null\", \"message\": \"Order ID is missing\" },\n          { \"expression\": \"$.response.status == 'created'\", \"message\": \"Order not created\" }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"$.response.id\",\n          \"status\": \"$.response.status\",\n          \"createdAt\": \"$.response.created_at\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Updated: increased timeout and added circuit breaker\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"$env.ORDER_API_CLIENT_ID\",\n          \"clientSecret\": \"$env.ORDER_API_CLIENT_SECRET\",\n          \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n          \"scope\": \"orders:write\"\n        }\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"$.context.customerId\",\n        \"items\": \"$.context.items\",\n        \"totalAmount\": \"$.context.totalAmount\"\n      }\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 60000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504],\n      \"circuitBreaker\": {\n        \"failureThreshold\": 5,\n        \"windowSize\": 60000,\n        \"openDuration\": 30000,\n        \"halfOpenMaxAttempts\": 3\n      }\n    },\n    \"response\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"$.response.id != null\", \"message\": \"Order ID is missing\" },\n          { \"expression\": \"$.response.status == 'created'\", \"message\": \"Order not created\" }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"$.response.id\",\n          \"status\": \"$.response.status\",\n          \"createdAt\": \"$.response.created_at\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
@@ -217,14 +217,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"test-service\",\n  \"action\": \"test_action\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"method\": \"GET\"\n  }\n}"
+                  "raw": "{\n  \"service\": \"test-service\",\n  \"action\": \"test_action\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"method\": \"GET\"\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Returns 400 — `uri` is required for REST components."
+                "description": "Returns 400 — `request.uri` is required for REST components."
               }
             },
             {
@@ -234,14 +234,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"test-service\",\n  \"action\": \"test_action\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"uri\": \"https://example.com\",\n    \"method\": \"INVALID\"\n  }\n}"
+                  "raw": "{\n  \"service\": \"test-service\",\n  \"action\": \"test_action\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://example.com\",\n      \"method\": \"INVALID\"\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Returns 400 — method must be GET, POST, PUT, PATCH, or DELETE."
+                "description": "Returns 400 — request.method must be GET, POST, PUT, PATCH, or DELETE."
               }
             },
             {
@@ -251,14 +251,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"test-service\",\n  \"action\": \"test_action\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"uri\": \"https://example.com\",\n    \"method\": \"GET\",\n    \"disableSSL\": true,\n    \"ssl\": {\n      \"cert\": \"...\",\n      \"key\": \"...\"\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"test-service\",\n  \"action\": \"test_action\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://example.com\",\n      \"method\": \"GET\",\n      \"disableSSL\": true,\n      \"ssl\": {\n        \"cert\": \"...\",\n        \"key\": \"...\"\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Returns 400 — `disableSSL` and `ssl` are mutually exclusive."
+                "description": "Returns 400 — `request.disableSSL` and `request.ssl` are mutually exclusive."
               }
             }
           ]
