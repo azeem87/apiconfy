@@ -293,6 +293,14 @@ describe('Phase 2 invocation API', () => {
     expect(unknown.error.code).toBe('UNKNOWN_COMPONENT_TYPE');
     expect((await recorded(unknown)).attempts).toBe(0);
     await db.updateComponent(row!.id, { componentType: 'rest' });
+    await db.updateComponent(row!.id, {
+      config: { request: { uri: 'https://example.test/$.context.missing', method: 'POST' } },
+    });
+    const unresolved = await (await invoke({ context: { id: 7 } })).json();
+    expect(unresolved.error.code).toBe('TRANSFORMATION_ERROR');
+    expect((await recorded(unresolved)).attempts).toBe(1);
+    expect(calls).toHaveLength(0);
+    await db.updateComponent(row!.id, { config: { request, response } });
     build({ handlers: createCoreHandlerRegistry().register({
       componentType: 'rest', displayName: 'Broken',
       async execute() { throw new Error('never leak this'); },

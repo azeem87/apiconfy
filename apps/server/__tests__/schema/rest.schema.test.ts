@@ -127,6 +127,27 @@ describe('RestConfigSchema', () => {
     expect(RestConfigSchema.safeParse({ ...minimal, timeout: { connect: -1 } }).success).toBe(false);
   });
 
+  it('rejects retryCount, maxDelay and timeout.response above their caps', () => {
+    expect(RestConfigSchema.safeParse({
+      ...minimal, resilience: { retryCount: 11 },
+    }).success).toBe(false);
+    expect(RestConfigSchema.safeParse({
+      ...minimal, resilience: { maxDelay: 61_000 },
+    }).success).toBe(false);
+    expect(RestConfigSchema.safeParse({
+      ...minimal, timeout: { response: 120_001 },
+    }).success).toBe(false);
+  });
+
+  it('accepts retryCount, maxDelay and timeout.response at their caps', () => {
+    expect(RestConfigSchema.safeParse({
+      ...minimal, resilience: { retryCount: 10, maxDelay: 60_000 },
+    }).success).toBe(true);
+    expect(RestConfigSchema.safeParse({
+      ...minimal, timeout: { response: 120_000 },
+    }).success).toBe(true);
+  });
+
   it('accepts an $env. reference in a string-typed field', () => {
     const result = RestConfigSchema.safeParse({
       request: {

@@ -75,6 +75,15 @@ export interface InvocationResult {
   meta: { executionId: string; durationMs: number };
 }
 
+/** Wire contract for the invoke route's catch-all failure envelope (HTTP-level, not the
+ * in-band `StandardError` injected into `data` by the response pipeline). */
+export interface InvocationFailure {
+  success: false;
+  data: null;
+  error: { code: string; message: string; details?: unknown };
+  meta: { executionId: string; durationMs: number };
+}
+
 export type ExecutionType = 'saga' | 'service';
 export type ExecutionStatus =
   | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'COMPENSATING' | 'COMPENSATED' | 'STUCK';

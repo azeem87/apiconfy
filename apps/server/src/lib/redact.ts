@@ -27,6 +27,12 @@ export function redactSensitiveFields<T>(
 
 /** Scrub values even under innocent keys or inside serialized bodies and URLs. */
 export function scrubSecretValues<T>(value: T, secrets: readonly string[]): T {
+  // A secret this long or longer cannot plausibly be an unrelated word's substring, so it is
+  // scrubbed wherever it appears (including glued to other alphanumerics, e.g. "abc12xyz").
+  // Shorter secrets (e.g. a 1-char `$env.` value) are word-boundary-guarded instead: they are
+  // still scrubbed as a delimited token, but never eat into an unrelated word that merely
+  // contains them as a substring (e.g. "e" inside "response").
+  const MIN_BOUNDARY_FREE_LENGTH = 6;
   const variants = [...new Set(secrets.filter(Boolean).flatMap(secret => [
     secret,
     encodeURIComponent(secret),
@@ -34,11 +40,13 @@ export function scrubSecretValues<T>(value: T, secrets: readonly string[]): T {
     JSON.stringify(secret).slice(1, -1),
   ]))].sort((left, right) => right.length - left.length);
   if (variants.length === 0) return value;
-  const escaped = variants.map(secret => secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  // Word-boundary guards: a short secret (e.g. a 1-char `$env.` value) must still be scrubbed
-  // wherever it appears as a delimited token, but must never eat into an unrelated word that
-  // merely contains it as a substring (e.g. "e" inside "response").
-  const pattern = new RegExp(`(?<![A-Za-z0-9_])(?:${escaped.join('|')})(?![A-Za-z0-9_])`, 'g');
+  const alternatives = variants.map(secret => {
+    const escaped = secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return secret.length >= MIN_BOUNDARY_FREE_LENGTH
+      ? escaped
+      : `(?<![A-Za-z0-9_])${escaped}(?![A-Za-z0-9_])`;
+  });
+  const pattern = new RegExp(alternatives.join('|'), 'g');
   function walk(node: unknown): unknown {
     if (typeof node === 'string') return node.replace(pattern, '***');
     if ((typeof node === 'number' || typeof node === 'boolean') && secrets.includes(String(node))) return '***';

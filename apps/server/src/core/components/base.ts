@@ -2,7 +2,8 @@ import type { ExecutionContext } from '@/core/runtime/types.js';
 
 export interface ComponentHandler {
   readonly componentType: string;
-  readonly displayName: string;
+  /** Human-readable label for future admin/UI surfaces; not read by the runtime today. */
+  readonly displayName?: string;
   assertExecutable?(config: Record<string, unknown>): void;
   execute(params: ComponentExecuteParams): Promise<ComponentExecuteResult>;
 }

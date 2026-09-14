@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import type { RuntimeExecutor } from '@/core/runtime/runtime-executor.js';
+import type { InvocationFailure } from '@/core/types.js';
 import { AppError, ValidationError, generateId } from '@/lib/index.js';
 
 const InvocationRequestSchema = z.object({ context: z.record(z.unknown()) }).strict();
@@ -31,11 +32,12 @@ export function invokeRoute(executor: RuntimeExecutor): Hono {
       const error = caught instanceof AppError ? caught : new AppError('Internal server error', 'INTERNAL_ERROR');
       const retryAfter = (error.details as { retryAfterSeconds?: number } | undefined)?.retryAfterSeconds;
       if (error.code === 'RATE_LIMITED' && retryAfter) c.header('Retry-After', String(retryAfter));
-      return c.json({
+      const failure: InvocationFailure = {
         success: false, data: null,
         error: { code: error.code, message: error.message, details: error.details },
         meta: { executionId, durationMs: Date.now() - startedAtMs },
-      }, error.statusCode as ContentfulStatusCode);
+      };
+      return c.json(failure, error.statusCode as ContentfulStatusCode);
     }
   });
   return router;
