@@ -27,9 +27,6 @@ export function redactSensitiveFields<T>(
 
 /** Scrub values even under innocent keys or inside serialized bodies and URLs. */
 export function scrubSecretValues<T>(value: T, secrets: readonly string[]): T {
-  // Secrets shorter than this are exact-matched only — substring replacement on
-  // short values (e.g. "qa", "e") would mangle unrelated text that merely contains them.
-  const MIN_SUBSTRING_LENGTH = 6;
   const variants = [...new Set(secrets.filter(Boolean).flatMap(secret => [
     secret,
     encodeURIComponent(secret),
@@ -37,20 +34,18 @@ export function scrubSecretValues<T>(value: T, secrets: readonly string[]): T {
     JSON.stringify(secret).slice(1, -1),
   ]))].sort((left, right) => right.length - left.length);
   if (variants.length === 0) return value;
-  const shortSecrets = new Set(variants.filter(secret => secret.length < MIN_SUBSTRING_LENGTH));
-  const longVariants = variants.filter(secret => secret.length >= MIN_SUBSTRING_LENGTH);
-  const escaped = longVariants.map(secret => secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const pattern = escaped.length > 0 ? new RegExp(escaped.join('|'), 'g') : null;
+  const escaped = variants.map(secret => secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  // Word-boundary guards: a short secret (e.g. a 1-char `$env.` value) must still be scrubbed
+  // wherever it appears as a delimited token, but must never eat into an unrelated word that
+  // merely contains it as a substring (e.g. "e" inside "response").
+  const pattern = new RegExp(`(?<![A-Za-z0-9_])(?:${escaped.join('|')})(?![A-Za-z0-9_])`, 'g');
   function walk(node: unknown): unknown {
-    if (typeof node === 'string') {
-      if (shortSecrets.has(node)) return '***';
-      return pattern ? node.replace(pattern, '***') : node;
-    }
+    if (typeof node === 'string') return node.replace(pattern, '***');
     if ((typeof node === 'number' || typeof node === 'boolean') && secrets.includes(String(node))) return '***';
     if (Array.isArray(node)) return node.map(walk);
     if (node !== null && typeof node === 'object') {
       return Object.fromEntries(Object.entries(node).map(
-        ([key, child]) => [pattern ? key.replace(pattern, '***') : key, walk(child)]
+        ([key, child]) => [key.replace(pattern, '***'), walk(child)]
       ));
     }
     return node;

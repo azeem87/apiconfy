@@ -28,6 +28,16 @@ it('scrubs secrets echoed as non-string JSON scalars', () => {
   expect(result).toEqual({ code: '***', flag: '***', other: 7 });
 });
 
+it('scrubs a short secret embedded in a larger message, but never a word that merely contains it', () => {
+  const embedded = scrubSecretValues(
+    { message: 'Invalid credential: abc12 rejected' }, ['abc12']
+  ) as { message: string };
+  expect(embedded.message).toBe('Invalid credential: *** rejected');
+
+  const unrelated = scrubSecretValues({ note: 'the response was empty' }, ['e']) as { note: string };
+  expect(unrelated.note).toBe('the response was empty');
+});
+
 it('retains a private secret collection when a later reference is missing', () => {
   const secrets: string[] = [];
   expect(() => resolveEnvRefsDetailed(
