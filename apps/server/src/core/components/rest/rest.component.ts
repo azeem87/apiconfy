@@ -48,6 +48,7 @@ export class RestComponent implements ComponentHandler {
     const request = params.config.request as RequestConfig;
     const uri = resolveTemplate(request.uri, params.context);
     if (typeof uri !== 'string') throw new TransformationError('Resolved uri is not a string');
+    if (uri.includes('$.')) throw new TransformationError('Resolved uri contains an unresolved path expression');
 
     let payload: unknown;
     let body: string | undefined;

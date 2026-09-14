@@ -271,8 +271,8 @@ describe('Phase 2 invocation API', () => {
 
   it('does not send runtime output in fallback JSON/form payloads and GET has no body', async () => {
     await register({ request: { ...request, contentType: 'application/x-www-form-urlencoded' } });
-    await invoke({ context: { a: 1, nested: { b: 2 }, none: null } });
-    expect(calls[0].init?.body).toBe('a=1&nested=%7B%22b%22%3A2%7D');
+    await invoke({ context: { id: 7, a: 1, nested: { b: 2 }, none: null } });
+    expect(calls[0].init?.body).toBe('id=7&a=1&nested=%7B%22b%22%3A2%7D');
     await register({ request });
     await invoke();
     expect(calls[1].init?.body).toBe('{"id":7}');
@@ -338,11 +338,11 @@ describe('Phase 2 invocation API', () => {
     build({ env: { TOKEN: 'a' } });
     upstream = async () => json({ password: 'hunter2' });
     await register({ request: { ...request, headers: { Authorization: '$env.TOKEN' } } });
-    const result = await (await invoke({ context: { password: 'hunter2' } })).json();
+    const result = await (await invoke({ context: { id: 7, password: 'hunter2' } })).json();
     expect(JSON.stringify(result)).not.toContain('hunter2');
     const audit = JSON.stringify([await recorded(result), await db.getExecutionLogs(result.meta.executionId)]);
     expect(audit).not.toContain('hunter2');
-    expect(calls[0].init?.body).toBe('{"password":"hunter2"}');
+    expect(calls[0].init?.body).toBe('{"id":7,"password":"hunter2"}');
   });
 
   it('retains secrets during partial resolution failure, including failed transformed output', async () => {

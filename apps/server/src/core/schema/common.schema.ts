@@ -4,7 +4,7 @@ import { assertValidExpression, assertValidPath } from '@/core/transform/index.j
 export const TimeoutConfigSchema = z.object({
   connect: z.number().int().positive().optional(),
   socket: z.number().int().positive().optional(),
-  response: z.number().int().positive().optional(),
+  response: z.number().int().positive().max(120_000).optional(),
   idle: z.number().int().positive().optional(),
 }).strict();
 
@@ -21,10 +21,10 @@ export const RateLimitConfigSchema = z.object({
 }).strict();
 
 export const ResilienceConfigSchema = z.object({
-  retryCount: z.number().int().min(0).optional(),
+  retryCount: z.number().int().min(0).max(10).optional(),
   retryDelay: z.number().int().positive().optional(),
   backoff: z.enum(['fixed', 'exponential']).optional(),
-  maxDelay: z.number().int().positive().optional(),
+  maxDelay: z.number().int().positive().max(60_000).optional(),
   retryOn: z.array(z.number().int()).optional(),
   rateLimit: RateLimitConfigSchema.optional(),
   circuitBreaker: CircuitBreakerConfigSchema.optional(),

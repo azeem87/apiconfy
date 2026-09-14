@@ -72,7 +72,6 @@ export interface InvocationResult {
   success: boolean;
   data: unknown;
   skippedExecution?: boolean;
-  error?: { code: string; message: string; details?: unknown };
   meta: { executionId: string; durationMs: number };
 }
 

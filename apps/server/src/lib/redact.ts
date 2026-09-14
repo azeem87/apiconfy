@@ -27,6 +27,9 @@ export function redactSensitiveFields<T>(
 
 /** Scrub values even under innocent keys or inside serialized bodies and URLs. */
 export function scrubSecretValues<T>(value: T, secrets: readonly string[]): T {
+  // Secrets shorter than this are exact-matched only — substring replacement on
+  // short values (e.g. "qa", "e") would mangle unrelated text that merely contains them.
+  const MIN_SUBSTRING_LENGTH = 6;
   const variants = [...new Set(secrets.filter(Boolean).flatMap(secret => [
     secret,
     encodeURIComponent(secret),
@@ -34,15 +37,20 @@ export function scrubSecretValues<T>(value: T, secrets: readonly string[]): T {
     JSON.stringify(secret).slice(1, -1),
   ]))].sort((left, right) => right.length - left.length);
   if (variants.length === 0) return value;
-  const escaped = variants.map(secret => secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const pattern = new RegExp(escaped.join('|'), 'g');
+  const shortSecrets = new Set(variants.filter(secret => secret.length < MIN_SUBSTRING_LENGTH));
+  const longVariants = variants.filter(secret => secret.length >= MIN_SUBSTRING_LENGTH);
+  const escaped = longVariants.map(secret => secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const pattern = escaped.length > 0 ? new RegExp(escaped.join('|'), 'g') : null;
   function walk(node: unknown): unknown {
-    if (typeof node === 'string') return node.replace(pattern, '***');
+    if (typeof node === 'string') {
+      if (shortSecrets.has(node)) return '***';
+      return pattern ? node.replace(pattern, '***') : node;
+    }
     if ((typeof node === 'number' || typeof node === 'boolean') && secrets.includes(String(node))) return '***';
     if (Array.isArray(node)) return node.map(walk);
     if (node !== null && typeof node === 'object') {
       return Object.fromEntries(Object.entries(node).map(
-        ([key, child]) => [key.replace(pattern, '***'), walk(child)]
+        ([key, child]) => [pattern ? key.replace(pattern, '***') : key, walk(child)]
       ));
     }
     return node;

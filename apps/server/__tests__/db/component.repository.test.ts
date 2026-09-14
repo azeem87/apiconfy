@@ -169,10 +169,10 @@ describe('DbComponentRepository', () => {
       service: 'svc',
       action: 'act',
       componentType: 'rest',
-      config: { request: { uri: 'https://x.test', method: 'POST' }, auth: { basic: { username: 'u', password: '$env.PW' } } },
+      config: { request: { uri: 'https://x.test', method: 'POST', auth: { basic: { username: 'u', password: '$env.PW' } } } },
     });
     const reread = await repo.findByKey('svc', 'act');
-    expect((reread!.config as any).auth.basic.password).toBe('$env.PW');
-    expect((record.config as any).auth.basic.password).toBe('$env.PW');
+    expect((reread!.config as any).request.auth.basic.password).toBe('$env.PW');
+    expect((record.config as any).request.auth.basic.password).toBe('$env.PW');
   });
 });
