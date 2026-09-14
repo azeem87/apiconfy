@@ -33,12 +33,39 @@ export function resolveEnvRefs<T>(
   }
 
   if (value !== null && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = resolveEnvRefs(child, env, [...path, key]);
-    }
-    return out as unknown as T;
+    return Object.fromEntries(Object.entries(value).map(
+      ([key, child]) => [key, resolveEnvRefs(child, env, [...path, key])]
+    )) as T;
   }
 
   return value;
+}
+
+/** Resolve and capture in one walk; values are private to the invocation's sanitizer. */
+export function resolveEnvRefsDetailed<T>(
+  value: T,
+  env: Record<string, string | undefined> = process.env,
+  onSecret?: (secret: string) => void
+): { config: T; secrets: string[] } {
+  const secrets = new Set<string>();
+  function walk(node: unknown, path: string[]): unknown {
+    const name = parseEnvRef(node);
+    if (name !== null) {
+      const resolved = env[name];
+      if (resolved === undefined) throw new EnvRefResolutionError(name, path);
+      if (resolved.length > 0 && !secrets.has(resolved)) {
+        secrets.add(resolved);
+        onSecret?.(resolved);
+      }
+      return resolved;
+    }
+    if (Array.isArray(node)) return node.map((item, index) => walk(item, [...path, String(index)]));
+    if (node !== null && typeof node === 'object') {
+      return Object.fromEntries(Object.entries(node).map(
+        ([key, child]) => [key, walk(child, [...path, key])]
+      ));
+    }
+    return node;
+  }
+  return { config: walk(value, []) as T, secrets: [...secrets] };
 }

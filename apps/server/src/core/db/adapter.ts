@@ -1,3 +1,5 @@
+import type { ExecutionStatus, ExecutionStep } from '@/core/types.js';
+
 export type DbType = 'sqlite' | 'postgres';
 
 export interface ComponentRecord {
@@ -49,6 +51,26 @@ export interface WorkflowStepRecord {
   verifyAction?: string;
 }
 
+export interface ExecutionRecord {
+  executionId: string;
+  type: 'saga' | 'service';
+  refName: string;
+  service?: string;
+  action?: string;
+  groupId?: string;
+  status: ExecutionStatus;
+  context: Record<string, unknown>;
+  steps?: ExecutionStep[];
+  result?: unknown;
+  maxDurationMs?: number;
+  error?: { code: string; message: string; details?: unknown };
+  attempts?: number;
+  startedAt: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ExecutionLogRecord {
   id: string;
   executionId: string;
@@ -90,6 +112,9 @@ export interface DBAdapter {
   saveWorkflowStep(step: WorkflowStepRecord): Promise<WorkflowStepRecord>;
   getWorkflowSteps(workflowId: string): Promise<WorkflowStepRecord[]>;
   deleteWorkflowSteps(workflowId: string): Promise<void>;
+
+  saveExecution(record: ExecutionRecord): Promise<ExecutionRecord>;
+  getExecution(executionId: string): Promise<ExecutionRecord | null>;
 
   saveExecutionLog(log: ExecutionLogRecord): Promise<ExecutionLogRecord>;
   getExecutionLogs(executionId: string): Promise<ExecutionLogRecord[]>;

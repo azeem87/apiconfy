@@ -3,6 +3,7 @@ const DEFAULT_SENSITIVE_KEYS = [
   'apiKey', 'api_key', 'apiSecret', 'api_secret',
   'clientSecret', 'client_secret', 'privateKey', 'private_key',
   'accessToken', 'access_token', 'refreshToken', 'refresh_token',
+  'authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'passphrase',
 ];
 
 export function redactSensitiveFields<T>(
@@ -15,11 +16,54 @@ export function redactSensitiveFields<T>(
   }
   const result = { ...obj } as Record<string, unknown>;
   for (const [key, value] of Object.entries(result)) {
-    if (sensitiveKeys.includes(key)) {
+    if (sensitiveKeys.some(sensitive => sensitive.toLowerCase() === key.toLowerCase())) {
       result[key] = '***';
     } else if (value !== null && typeof value === 'object') {
       result[key] = redactSensitiveFields(value, sensitiveKeys);
     }
   }
   return result as unknown as T;
+}
+
+/** Scrub values even under innocent keys or inside serialized bodies and URLs. */
+export function scrubSecretValues<T>(value: T, secrets: readonly string[]): T {
+  const variants = [...new Set(secrets.filter(Boolean).flatMap(secret => [
+    secret,
+    encodeURIComponent(secret),
+    new URLSearchParams({ value: secret }).toString().slice(6),
+    JSON.stringify(secret).slice(1, -1),
+  ]))].sort((left, right) => right.length - left.length);
+  if (variants.length === 0) return value;
+  const escaped = variants.map(secret => secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const pattern = new RegExp(escaped.join('|'), 'g');
+  function walk(node: unknown): unknown {
+    if (typeof node === 'string') return node.replace(pattern, '***');
+    if ((typeof node === 'number' || typeof node === 'boolean') && secrets.includes(String(node))) return '***';
+    if (Array.isArray(node)) return node.map(walk);
+    if (node !== null && typeof node === 'object') {
+      return Object.fromEntries(Object.entries(node).map(
+        ([key, child]) => [key.replace(pattern, '***'), walk(child)]
+      ));
+    }
+    return node;
+  }
+  return walk(value) as T;
+}
+
+/** Capture credential-shaped values before mappings can move them under unrelated keys. */
+export function collectSensitiveValues(value: unknown): string[] {
+  const secrets = new Set<string>();
+  function walk(node: unknown, sensitive = false): void {
+    if (node !== null && typeof node === 'object') {
+      for (const [key, child] of Object.entries(node)) {
+        walk(child, sensitive || DEFAULT_SENSITIVE_KEYS.some(candidate => candidate.toLowerCase() === key.toLowerCase()));
+      }
+      return;
+    }
+    if (sensitive && node !== null && node !== undefined && String(node).length > 0) {
+      secrets.add(String(node));
+    }
+  }
+  walk(value);
+  return [...secrets];
 }

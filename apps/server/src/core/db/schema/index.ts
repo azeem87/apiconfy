@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import type { CompensationFailureConfig, OnFailureMode } from '../adapter.js';
+import type { ExecutionStatus, ExecutionStep } from '@/core/types.js';
 
 export const componentDefinitions = sqliteTable('component_definitions', {
   id: text('id').primaryKey(),
@@ -42,6 +43,28 @@ export const workflowSteps = sqliteTable('workflow_steps', {
   onFailure: text('on_failure').notNull().default('halt').$type<OnFailureMode>(),
   idempotencyKeyHeader: text('idempotency_key_header'),
   verifyAction: text('verify_action'),
+});
+
+export const executions = sqliteTable('executions', {
+  executionId: text('execution_id').primaryKey(),
+  type: text('type').notNull().$type<'saga' | 'service'>(),
+  refName: text('ref_name').notNull(),
+  service: text('service'),
+  action: text('action'),
+  groupId: text('group_id'),
+  status: text('status').notNull().$type<ExecutionStatus>(),
+  context: text('context', { mode: 'json' }).notNull().$type<Record<string, unknown>>(),
+  steps: text('steps', { mode: 'json' }).$type<ExecutionStep[]>(),
+  result: text('result', { mode: 'json' }).$type<unknown>(),
+  maxDurationMs: integer('max_duration_ms'),
+  errorCode: text('error_code'),
+  errorMessage: text('error_message'),
+  errorDetails: text('error_details', { mode: 'json' }).$type<unknown>(),
+  attempts: integer('attempts').default(1),
+  startedAt: text('started_at').notNull(),
+  completedAt: text('completed_at'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
 });
 
 export const executionLogs = sqliteTable('execution_logs', {

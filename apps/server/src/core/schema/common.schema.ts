@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { assertValidExpression, assertValidPath } from '@/core/transform/index.js';
 
 export const TimeoutConfigSchema = z.object({
   connect: z.number().int().positive().optional(),
@@ -14,12 +15,18 @@ export const CircuitBreakerConfigSchema = z.object({
   halfOpenMaxAttempts: z.number().int().positive(),
 }).strict();
 
+export const RateLimitConfigSchema = z.object({
+  requests: z.number().int().positive(),
+  windowMs: z.number().int().positive(),
+}).strict();
+
 export const ResilienceConfigSchema = z.object({
   retryCount: z.number().int().min(0).optional(),
   retryDelay: z.number().int().positive().optional(),
   backoff: z.enum(['fixed', 'exponential']).optional(),
   maxDelay: z.number().int().positive().optional(),
   retryOn: z.array(z.number().int()).optional(),
+  rateLimit: RateLimitConfigSchema.optional(),
   circuitBreaker: CircuitBreakerConfigSchema.optional(),
 }).strict();
 
@@ -35,7 +42,26 @@ export const ResponseConfigSchema = z.object({
     rules: z.array(ValidationRuleSchema).optional(),
   }).strict().optional(),
   default: z.record(z.unknown()).optional(),
-}).strict();
+}).strict().superRefine((config, ctx) => {
+  for (const [index, rule] of (config.validation?.rules ?? []).entries()) {
+    for (const [field, validate] of [
+      ['expression', assertValidExpression],
+      ['errorPath', assertValidPath],
+    ] as const) {
+      const source = rule[field];
+      if (source === undefined) continue;
+      try {
+        validate(source);
+      } catch (error) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['validation', 'rules', index, field],
+          message: error instanceof Error ? error.message : 'Invalid expression',
+        });
+      }
+    }
+  }
+});
 
 export const SSLConfigSchema = z.object({
   cert: z.string().min(1),

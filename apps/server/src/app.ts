@@ -2,16 +2,31 @@ import { Hono } from 'hono';
 import { createLogger, type Logger } from '@/lib/index.js';
 import { healthRoute } from '@/routes/health.js';
 import { servicesRoute } from '@/routes/services.route.js';
+import { invokeRoute } from '@/routes/invoke.route.js';
+import { executionsRoute } from '@/routes/executions.route.js';
 import { authMiddleware } from '@/middleware/auth.js';
 import { errorHandler } from '@/middleware/error.js';
 import { requestLogger } from '@/middleware/logger.js';
-import { createCoreSchemaRegistry } from '@/core/schema/index.js';
+import { createCoreSchemaRegistry, type SchemaRegistry } from '@/core/schema/index.js';
+import { createCoreHandlerRegistry } from '@/core/components/index.js';
+import {
+  type ComponentHandlerRegistry, DefaultResilienceExecutor,
+  DefaultRuntimeExecutor, InMemoryTokenBucketRateLimiter,
+} from '@/core/runtime/index.js';
 import { DbComponentRepository } from '@/core/db/repositories/component.repository.js';
+import { DbExecutionRepository } from '@/core/db/repositories/execution.repository.js';
 import { ComponentRegistryService } from '@/services/component-registry.service.js';
 import type { AppConfig } from '@/config.js';
 import type { DBAdapter } from '@/core/db/adapter.js';
 
-export function createApp(config: AppConfig, db?: DBAdapter): { app: Hono; logger: Logger } {
+export interface AppDependencies {
+  schemas?: SchemaRegistry;
+  handlers?: ComponentHandlerRegistry;
+  fetch?: typeof fetch;
+  env?: Record<string, string | undefined>;
+}
+
+export function createApp(config: AppConfig, db: DBAdapter, deps: AppDependencies = {}): { app: Hono; logger: Logger } {
   const logger = createLogger('server', config.logLevel);
   const app = new Hono();
 
@@ -21,16 +36,22 @@ export function createApp(config: AppConfig, db?: DBAdapter): { app: Hono; logge
 
   app.route('/', healthRoute(db));
 
-  if (db) {
-    const registry = new ComponentRegistryService(
-      new DbComponentRepository(db),
-      createCoreSchemaRegistry()
-    );
-    app.route('/api', servicesRoute(registry));
-  }
-
-  // app.route('/api', invokeRoute());      // Phase 2
-  // app.route('/api', workflowsRoute());   // Phase 5
+  const components = new DbComponentRepository(db);
+  const executions = new DbExecutionRepository(db);
+  const executor = new DefaultRuntimeExecutor({
+    lookup: components,
+    handlers: deps.handlers ?? createCoreHandlerRegistry(deps.fetch),
+    resilience: new DefaultResilienceExecutor(),
+    rateLimiter: new InMemoryTokenBucketRateLimiter(),
+    recorder: executions,
+    logger,
+    env: deps.env,
+  });
+  app.route('/api', servicesRoute(new ComponentRegistryService(
+    components, deps.schemas ?? createCoreSchemaRegistry()
+  )));
+  app.route('/api', invokeRoute(executor));
+  app.route('/api', executionsRoute(executions));
 
   return { app, logger };
 }

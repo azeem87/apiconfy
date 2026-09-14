@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { assertValidExpression } from '@/core/transform/index.js';
 
 /**
  * Stage-1 envelope validation. `config` is deliberately `z.record(z.unknown())` here —
@@ -12,6 +13,17 @@ export const RegisterServiceRequestSchema = z.object({
   config: z.record(z.unknown()),
   condition: z.string().min(1).optional(),
   metaData: z.record(z.unknown()).optional(),
-}).strict();
+}).strict().superRefine((body, ctx) => {
+  if (!body.condition) return;
+  try {
+    assertValidExpression(body.condition);
+  } catch (error) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['condition'],
+      message: error instanceof Error ? error.message : 'Invalid expression',
+    });
+  }
+});
 
 export type RegisterServiceRequestInput = z.infer<typeof RegisterServiceRequestSchema>;
