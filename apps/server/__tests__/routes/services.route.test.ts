@@ -22,6 +22,20 @@ const post = (app: Hono, payload: unknown) => app.request('/api/v1/services', {
   body: JSON.stringify(payload),
 });
 
+const put = (app: Hono, service: string, action: string, payload: unknown) =>
+  app.request(`/api/v1/services/${service}/actions/${action}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+const updateBody = (overrides: Record<string, unknown> = {}) => ({
+  componentType: 'rest',
+  description: 'Creates a customer in the CRM',
+  config: { request: { uri: 'https://api.example.com/customers', method: 'POST' } },
+  ...overrides,
+});
+
 describe('services routes', () => {
   let db: DBAdapter;
   let app: Hono;
@@ -36,8 +50,8 @@ describe('services routes', () => {
     await db.disconnect();
   });
 
-  describe('POST /api/v1/services', () => {
-    it('registers and returns 201 in the standard envelope', async () => {
+  describe('POST /api/v1/services (create)', () => {
+    it('creates and returns 201 in the standard envelope', async () => {
       const res = await post(app, body());
       expect(res.status).toBe(201);
 
@@ -45,26 +59,17 @@ describe('services routes', () => {
       expect(json.success).toBe(true);
       expect(json.data.service).toBe('customer-service');
       expect(json.data.id).toBeTruthy();
+      expect(json.data.version).toBe(1);
       expect(json.meta).toEqual({});
     });
 
-    it('returns 200, not 201, when the upsert updated an existing definition', async () => {
+    it('returns 409 when creating a duplicate', async () => {
       const first = await post(app, body());
       expect(first.status).toBe(201);
       const second = await post(app, body({ description: 'changed' }));
-      expect(second.status).toBe(200);
-      expect((await second.json()).data.description).toBe('changed');
-    });
-
-    it('upserts on repeat rather than creating a duplicate', async () => {
-      const first = await (await post(app, body())).json();
-      const second = await (await post(app, body({ description: 'changed' }))).json();
-
-      expect(second.data.id).toBe(first.data.id);
-      expect(second.data.description).toBe('changed');
-
-      const list = await (await app.request('/api/v1/services')).json();
-      expect(list.meta.total).toBe(1);
+      expect(second.status).toBe(409);
+      const json = await second.json();
+      expect(json.error.code).toBe('VERSION_CONFLICT');
     });
 
     it('returns 400 with an issue array for an invalid config', async () => {
@@ -97,6 +102,55 @@ describe('services routes', () => {
     });
   });
 
+  describe('PUT /api/v1/services/:service/actions/:action (update)', () => {
+    it('updates and returns 200 with incremented version', async () => {
+      await post(app, body());
+      const res = await put(app, 'customer-service', 'create_customer', updateBody({
+        description: 'changed',
+        version: 1,
+      }));
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.data.description).toBe('changed');
+      expect(json.data.version).toBe(2);
+    });
+
+    it('returns 404 when updating a non-existent component', async () => {
+      const res = await put(app, 'ghost', 'act', updateBody({ version: 1 }));
+      expect(res.status).toBe(404);
+      const json = await res.json();
+      expect(json.error.code).toBe('NOT_FOUND');
+    });
+
+    it('returns 409 on version mismatch', async () => {
+      await post(app, body());
+      const res = await put(app, 'customer-service', 'create_customer', updateBody({
+        version: 999,
+      }));
+      expect(res.status).toBe(409);
+      const json = await res.json();
+      expect(json.error.code).toBe('VERSION_CONFLICT');
+      expect(json.error.details.expected).toBe(999);
+      expect(json.error.details.current).toBe(1);
+    });
+
+    it('returns 400 when version is missing', async () => {
+      await post(app, body());
+      const res = await put(app, 'customer-service', 'create_customer', {
+        componentType: 'rest',
+        config: { request: { uri: 'https://api.example.com/customers', method: 'POST' } },
+      });
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error.code).toBe('VALIDATION_FAILED');
+    });
+
+    it('does not create a new component — only updates existing', async () => {
+      const res = await put(app, 'new-svc', 'new-act', updateBody({ version: 1 }));
+      expect(res.status).toBe(404);
+    });
+  });
+
   describe('credential masking', () => {
     const withSecrets = body({
       config: {
@@ -114,15 +168,31 @@ describe('services routes', () => {
       expect(json.data.config.request.auth.basic.username).toBe('svc-account');
     });
 
+    it('masks a {$env.} reference in the PUT response', async () => {
+      await post(app, body());
+      const json = await (await put(app, 'customer-service', 'create_customer', updateBody({
+        version: 1,
+        config: {
+          request: {
+            uri: 'https://api.example.com/customers',
+            method: 'POST',
+            auth: { basic: { username: 'svc-account', password: '{$env.CRM_PASSWORD}' } },
+          },
+        },
+      }))).json();
+      expect(json.data.config.request.auth.basic.password).toBe('****');
+      expect(json.data.config.request.auth.basic.username).toBe('svc-account');
+    });
+
     it('masks it on GET one action', async () => {
       await post(app, withSecrets);
-      const one = await (await app.request('/api/v1/services/customer-service/create_customer')).json();
+      const one = await (await app.request('/api/v1/services/customer-service/actions/create_customer')).json();
       expect(one.data.config.request.auth.basic.password).toBe('****');
     });
 
     it('masks it on GET by service', async () => {
       await post(app, withSecrets);
-      const byService = await (await app.request('/api/v1/services/customer-service')).json();
+      const byService = await (await app.request('/api/v1/services/customer-service/actions')).json();
       expect(byService.data[0].config.request.auth.basic.password).toBe('****');
     });
 
@@ -137,10 +207,14 @@ describe('services routes', () => {
         config: { request: { uri: 'https://x.test', method: 'POST', auth: { basic: { username: 'u', password: '{$env.CRM_PASSWORD}' } } } },
       }));
 
-      const fetched = await (await app.request('/api/v1/services/customer-service/create_customer')).json();
+      const fetched = await (await app.request('/api/v1/services/customer-service/actions/create_customer')).json();
       expect(fetched.data.config.request.auth.basic.password).toBe('****');
 
-      const res = await post(app, body({ description: 'edited', config: fetched.data.config }));
+      const res = await put(app, 'customer-service', 'create_customer', updateBody({
+        description: 'edited',
+        version: 1,
+        config: fetched.data.config,
+      }));
       expect(res.status).toBe(400);
       const json = await res.json();
       expect(json.error.details[0].path).toEqual(['config', 'request', 'auth', 'basic', 'password']);
@@ -166,7 +240,7 @@ describe('services routes', () => {
         },
       }));
 
-      const json = await (await app.request('/api/v1/services/customer-service/literal_secret')).json();
+      const json = await (await app.request('/api/v1/services/customer-service/actions/literal_secret')).json();
       expect(json.data.config.request.auth.basic.password).toBe('hunter2');
     });
 
@@ -233,33 +307,33 @@ describe('services routes', () => {
     });
   });
 
-  describe('GET /api/v1/services/:service', () => {
+  describe('GET /api/v1/services/:service/actions', () => {
     it('returns every action for the service, unpaginated with empty meta', async () => {
       await post(app, body({ action: 'a' }));
       await post(app, body({ action: 'b' }));
 
-      const json = await (await app.request('/api/v1/services/customer-service')).json();
+      const json = await (await app.request('/api/v1/services/customer-service/actions')).json();
       expect(json.data).toHaveLength(2);
       expect(json.meta).toEqual({});
     });
 
     it('returns 200 with an empty array for an unknown service', async () => {
-      const res = await app.request('/api/v1/services/ghost-service');
+      const res = await app.request('/api/v1/services/ghost-service/actions');
       expect(res.status).toBe(200);
       expect((await res.json()).data).toEqual([]);
     });
   });
 
-  describe('GET /api/v1/services/:service/:action', () => {
+  describe('GET /api/v1/services/:service/actions/:action', () => {
     it('returns the component', async () => {
       await post(app, body());
-      const json = await (await app.request('/api/v1/services/customer-service/create_customer')).json();
+      const json = await (await app.request('/api/v1/services/customer-service/actions/create_customer')).json();
       expect(json.data.action).toBe('create_customer');
       expect(json.meta).toEqual({});
     });
 
     it('returns 404 with the natural key in the message', async () => {
-      const res = await app.request('/api/v1/services/ghost/act');
+      const res = await app.request('/api/v1/services/ghost/actions/act');
       expect(res.status).toBe(404);
 
       const json = await res.json();
@@ -268,20 +342,20 @@ describe('services routes', () => {
     });
   });
 
-  describe('DELETE /api/v1/services/:service/:action', () => {
+  describe('DELETE /api/v1/services/:service/actions/:action', () => {
     it('deletes and makes the component unreachable', async () => {
       await post(app, body());
 
-      const res = await app.request('/api/v1/services/customer-service/create_customer', { method: 'DELETE' });
+      const res = await app.request('/api/v1/services/customer-service/actions/create_customer', { method: 'DELETE' });
       expect(res.status).toBe(200);
       expect((await res.json()).data.deleted).toBe(true);
 
-      const after = await app.request('/api/v1/services/customer-service/create_customer');
+      const after = await app.request('/api/v1/services/customer-service/actions/create_customer');
       expect(after.status).toBe(404);
     });
 
     it('returns 200 for a missing component (idempotent)', async () => {
-      const res = await app.request('/api/v1/services/ghost/act', { method: 'DELETE' });
+      const res = await app.request('/api/v1/services/ghost/actions/act', { method: 'DELETE' });
       expect(res.status).toBe(200);
       expect((await res.json()).data.deleted).toBe(true);
     });
@@ -298,6 +372,12 @@ describe('services routes', () => {
         headers: { Authorization: 'Bearer secret-key' },
       });
       expect(authed.status).toBe(200);
+    });
+
+    it('protects PUT with API_KEY', async () => {
+      const secured = createApp({ ...config, apiKey: 'secret-key' }, db).app;
+      const res = await secured.request('/api/v1/services/svc/act', { method: 'PUT' });
+      expect(res.status).toBe(401);
     });
   });
 });

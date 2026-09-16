@@ -24,6 +24,7 @@ describe('SQLite Adapter', () => {
         action: 'get_user',
         componentType: 'rest',
         config: { request: { uri: 'https://example.com', method: 'GET' } },
+        version: 1,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
@@ -34,7 +35,7 @@ describe('SQLite Adapter', () => {
 
     it('finds component by natural key', async () => {
       const id = generateId();
-      await adapter.saveComponent({ id, service: 'customer-svc', action: 'create', componentType: 'rest', config: {}, createdAt: now(), updatedAt: now() });
+      await adapter.saveComponent({ id, service: 'customer-svc', action: 'create', componentType: 'rest', config: {}, version: 1, createdAt: now(), updatedAt: now() });
       const found = await adapter.findComponent('customer-svc', 'create');
       expect(found).not.toBeNull();
       expect(found!.id).toBe(id);
@@ -45,13 +46,14 @@ describe('SQLite Adapter', () => {
     });
 
     it('updates a component', async () => {
-      const comp = await adapter.saveComponent({ id: generateId(), service: 'upd', action: 'x', componentType: 'rest', config: {}, createdAt: now(), updatedAt: now() });
-      const updated = await adapter.updateComponent(comp.id, { description: 'new desc' });
+      const comp = await adapter.saveComponent({ id: generateId(), service: 'upd', action: 'x', componentType: 'rest', config: {}, version: 1, createdAt: now(), updatedAt: now() });
+      const updated = await adapter.updateComponent(comp.id, { description: 'new desc', version: comp.version });
       expect(updated.description).toBe('new desc');
+      expect(updated.version).toBe(2);
     });
 
     it('deletes a component', async () => {
-      const comp = await adapter.saveComponent({ id: generateId(), service: 'del', action: 'x', componentType: 'rest', config: {}, createdAt: now(), updatedAt: now() });
+      const comp = await adapter.saveComponent({ id: generateId(), service: 'del', action: 'x', componentType: 'rest', config: {}, version: 1, createdAt: now(), updatedAt: now() });
       await adapter.deleteComponent(comp.id);
       expect(await adapter.getComponent(comp.id)).toBeNull();
     });
@@ -64,7 +66,7 @@ describe('SQLite Adapter', () => {
     });
 
     it('filters by service', async () => {
-      await adapter.saveComponent({ id: generateId(), service: 'filter-me', action: 'x', componentType: 'rest', config: {}, createdAt: now(), updatedAt: now() });
+      await adapter.saveComponent({ id: generateId(), service: 'filter-me', action: 'x', componentType: 'rest', config: {}, version: 1, createdAt: now(), updatedAt: now() });
       const results = await adapter.listComponents({ service: 'filter-me' });
       expect(results.every(r => r.service === 'filter-me')).toBe(true);
     });
@@ -78,6 +80,7 @@ describe('SQLite Adapter', () => {
         groupId: 'group-a',
         maxDurationMs: 30000,
         compensationFailureConfig: { maxRetries: 3, onExhausted: 'deadLetter' },
+        version: 1,
         createdAt: now(),
         updatedAt: now(),
       });
@@ -89,9 +92,10 @@ describe('SQLite Adapter', () => {
       expect(fetched.maxDurationMs).toBe(30000);
       expect(fetched.compensationFailureConfig).toEqual({ maxRetries: 3, onExhausted: 'deadLetter' });
 
-      const updated = await adapter.updateWorkflow(wf.id, { name: 'wf-renamed', groupId: 'group-b' });
+      const updated = await adapter.updateWorkflow(wf.id, { name: 'wf-renamed', groupId: 'group-b', version: wf.version });
       expect(updated.name).toBe('wf-renamed');
       expect(updated.groupId).toBe('group-b');
+      expect(updated.version).toBe(2);
 
       const list = await adapter.listWorkflows();
       expect(list.length).toBeGreaterThanOrEqual(1);
@@ -101,7 +105,7 @@ describe('SQLite Adapter', () => {
     });
 
     it('leaves optional saga fields undefined when omitted', async () => {
-      const wf = await adapter.saveWorkflow({ id: generateId(), name: 'wf-minimal', createdAt: now(), updatedAt: now() });
+      const wf = await adapter.saveWorkflow({ id: generateId(), name: 'wf-minimal', version: 1, createdAt: now(), updatedAt: now() });
       const fetched = (await adapter.getWorkflow(wf.id))!;
       expect(fetched.groupId).toBeUndefined();
       expect(fetched.maxDurationMs).toBeUndefined();
@@ -111,8 +115,8 @@ describe('SQLite Adapter', () => {
 
   describe('workflow steps', () => {
     it('saves and retrieves steps', async () => {
-      const comp = await adapter.saveComponent({ id: generateId(), service: 'ws1', action: 'x', componentType: 'rest', config: {}, createdAt: now(), updatedAt: now() });
-      const wf = await adapter.saveWorkflow({ id: generateId(), name: 'wf-steps', createdAt: now(), updatedAt: now() });
+      const comp = await adapter.saveComponent({ id: generateId(), service: 'ws1', action: 'x', componentType: 'rest', config: {}, version: 1, createdAt: now(), updatedAt: now() });
+      const wf = await adapter.saveWorkflow({ id: generateId(), name: 'wf-steps', version: 1, createdAt: now(), updatedAt: now() });
       const step = await adapter.saveWorkflowStep({
         id: generateId(),
         workflowId: wf.id,
@@ -140,8 +144,8 @@ describe('SQLite Adapter', () => {
     });
 
     it('defaults onFailure to halt and leaves compensation fields unset', async () => {
-      const comp = await adapter.saveComponent({ id: generateId(), service: 'ws2', action: 'x', componentType: 'rest', config: {}, createdAt: now(), updatedAt: now() });
-      const wf = await adapter.saveWorkflow({ id: generateId(), name: 'wf-steps-minimal', createdAt: now(), updatedAt: now() });
+      const comp = await adapter.saveComponent({ id: generateId(), service: 'ws2', action: 'x', componentType: 'rest', config: {}, version: 1, createdAt: now(), updatedAt: now() });
+      const wf = await adapter.saveWorkflow({ id: generateId(), name: 'wf-steps-minimal', version: 1, createdAt: now(), updatedAt: now() });
       await adapter.saveWorkflowStep({ id: generateId(), workflowId: wf.id, stepOrder: 1, stepGroup: 0, componentId: comp.id, onFailure: 'halt' });
       const [step] = await adapter.getWorkflowSteps(wf.id);
       expect(step.onFailure).toBe('halt');
@@ -225,6 +229,7 @@ describe('SQLite Adapter', () => {
         const component = await upgraded.saveComponent({
           id: generateId(), service: 'existing', action: 'act', componentType: 'rest',
           config: { request: { uri: 'https://example.test', method: 'GET' }, auth: { basic: { username: 'u', password: '$env.PW' } } },
+          version: 1,
           createdAt: now(), updatedAt: now(),
         });
         sqlite.exec('DROP TABLE executions');

@@ -1,15 +1,16 @@
 import type { z } from 'zod';
-import type { ComponentRepository, RegisterOutcome } from '@/core/db/repositories/component.repository.js';
+import type { ComponentRepository } from '@/core/db/repositories/component.repository.js';
 import type { SchemaRegistry } from '@/core/schema/index.js';
-import { RegisterServiceRequestSchema } from '@/core/schema/index.js';
+import { CreateServiceRequestSchema, UpdateServiceRequestSchema } from '@/core/schema/index.js';
 import { collectEnvRefIssues } from '@/core/env-ref/index.js';
 import type {
-  ComponentView, ListFilters, PagedResult, RegisterServiceRequest,
+  ComponentView, ListFilters, PagedResult, RegisterServiceRequest, UpdateServiceRequest,
 } from '@/core/types.js';
 import { NotFoundError, UnknownComponentTypeError, ValidationError } from '@/lib/index.js';
 
 export interface ComponentRegistry {
-  register(body: unknown): Promise<RegisterOutcome>;
+  create(body: unknown): Promise<ComponentView>;
+  update(service: string, action: string, body: unknown): Promise<ComponentView>;
   list(filters: ListFilters, limit: number, offset: number): Promise<PagedResult<ComponentView>>;
   listByService(service: string): Promise<ComponentView[]>;
   get(service: string, action: string): Promise<ComponentView>;
@@ -26,13 +27,7 @@ export class ComponentRegistryService implements ComponentRegistry {
     private readonly schemas: SchemaRegistry
   ) {}
 
-  async register(body: unknown): Promise<RegisterOutcome> {
-    const envelope = RegisterServiceRequestSchema.safeParse(body);
-    if (!envelope.success) {
-      throw new ValidationError('Invalid request body', toIssues(envelope.error));
-    }
-    const request = envelope.data;
-
+  private validateConfig(request: { componentType: string; config: Record<string, unknown> }): Record<string, unknown> {
     const configSchema = this.schemas.get(request.componentType);
     if (!configSchema) {
       throw new UnknownComponentTypeError(
@@ -57,10 +52,35 @@ export class ComponentRegistryService implements ComponentRegistry {
       );
     }
 
-    return this.repository.register({
+    return config.data as Record<string, unknown>;
+  }
+
+  async create(body: unknown): Promise<ComponentView> {
+    const envelope = CreateServiceRequestSchema.safeParse(body);
+    if (!envelope.success) {
+      throw new ValidationError('Invalid request body', toIssues(envelope.error));
+    }
+    const request = envelope.data;
+    const validatedConfig = this.validateConfig(request);
+
+    return this.repository.create({
       ...request,
-      config: config.data as Record<string, unknown>,
+      config: validatedConfig,
     } satisfies RegisterServiceRequest);
+  }
+
+  async update(service: string, action: string, body: unknown): Promise<ComponentView> {
+    const envelope = UpdateServiceRequestSchema.safeParse(body);
+    if (!envelope.success) {
+      throw new ValidationError('Invalid request body', toIssues(envelope.error));
+    }
+    const request = envelope.data;
+    const validatedConfig = this.validateConfig(request);
+
+    return this.repository.update(service, action, {
+      ...request,
+      config: validatedConfig,
+    } satisfies UpdateServiceRequest);
   }
 
   list(filters: ListFilters, limit: number, offset: number): Promise<PagedResult<ComponentView>> {

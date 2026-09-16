@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS component_definitions (
   config TEXT NOT NULL DEFAULT '{}',
   condition TEXT,
   meta_data TEXT DEFAULT '{}',
+  version INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS workflow_definitions (
   response_mapping TEXT DEFAULT '{}',
   max_duration_ms INTEGER,
   compensation_failure_config TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -118,6 +120,7 @@ function toComponent(row: ComponentRow): ComponentRecord {
     config: row.config as Record<string, unknown>,
     condition: nullable(row.condition),
     metaData: nullable(row.metaData) as Record<string, unknown> | undefined,
+    version: row.version,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -132,6 +135,7 @@ function toWorkflow(row: WorkflowRow): WorkflowRecord {
     responseMapping: nullable(row.responseMapping) as Record<string, unknown> | undefined,
     maxDurationMs: nullable(row.maxDurationMs),
     compensationFailureConfig: nullable(row.compensationFailureConfig),
+    version: row.version,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -292,6 +296,9 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
       if ('config' in changes) set.config = changes.config;
       if ('condition' in changes) set.condition = changes.condition ?? null;
       if ('metaData' in changes) set.metaData = changes.metaData ?? null;
+      
+      // Always increment version on update
+      set.version = (changes.version ?? 0) + 1;
 
       const rows = db.update(t.componentDefinitions).set(set).where(eq(t.componentDefinitions.id, id)).returning().all();
       if (!rows.length) throw new Error(`Component ${id} not found`);
@@ -344,6 +351,9 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
       if (changes.responseMapping !== undefined) set.responseMapping = changes.responseMapping;
       if (changes.maxDurationMs !== undefined) set.maxDurationMs = changes.maxDurationMs;
       if (changes.compensationFailureConfig !== undefined) set.compensationFailureConfig = changes.compensationFailureConfig;
+      
+      // Always increment version on update
+      set.version = (changes.version ?? 0) + 1;
 
       const rows = db.update(t.workflowDefinitions).set(set).where(eq(t.workflowDefinitions.id, id)).returning().all();
       if (!rows.length) throw new Error(`Workflow ${id} not found`);

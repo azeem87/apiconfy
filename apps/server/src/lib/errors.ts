@@ -102,3 +102,9 @@ export class NotImplementedError extends AppError {
     super(message, 'NOT_IMPLEMENTED', 501, details);
   }
 }
+
+export class ConflictError extends AppError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'VERSION_CONFLICT', 409, details);
+  }
+}

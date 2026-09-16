@@ -60,9 +60,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/v1/services/user-service",
+              "raw": "{{base_url}}/api/v1/services/user-service/actions",
               "host": ["{{base_url}}"],
-              "path": ["api", "v1", "services", "user-service"]
+              "path": ["api", "v1", "services", "user-service", "actions"]
             },
             "description": "Returns all actions registered under a specific service."
           }
@@ -73,9 +73,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/v1/services/user-service/get_user",
+              "raw": "{{base_url}}/api/v1/services/user-service/actions/get_user",
               "host": ["{{base_url}}"],
-              "path": ["api", "v1", "services", "user-service", "get_user"]
+              "path": ["api", "v1", "services", "user-service", "actions", "get_user"]
             },
             "description": "Returns the component definition. `$env.` values are masked to `****`."
           }
@@ -86,9 +86,9 @@
             "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/v1/services/user-service/get_user",
+              "raw": "{{base_url}}/api/v1/services/user-service/actions/get_user",
               "host": ["{{base_url}}"],
-              "path": ["api", "v1", "services", "user-service", "get_user"]
+              "path": ["api", "v1", "services", "user-service", "actions", "get_user"]
             },
             "description": "Deletes the component. Idempotent — returns 200 whether or not it existed."
           }
@@ -256,7 +256,7 @@
               "item": [
                 {
                   "name": "404 — unknown service",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-never-registered/missing/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_FOUND with execution metadata; failed record attempts=0." }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-never-registered/missing/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_FOUND with execution metadata; failed record attempts=0.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_FOUND\",\n    \"message\": \"Service not found: phase2-never-registered/missing\"\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 5\n  }\n}\n```" }
                 },
                 {
                   "name": "400 — missing context",
@@ -272,7 +272,7 @@
                 },
                 {
                   "name": "422 — response validation still transforms",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/validation/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "VALIDATION_FAILED, wire data=null. Lookup must contain validationFailureResponse.upstream and injected validationFailureResponse.error." }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/validation/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "VALIDATION_FAILED, wire data=null. Lookup must contain validationFailureResponse.upstream and injected validationFailureResponse.error.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"VALIDATION_FAILED\",\n    \"message\": \"Intentional demo validation failure\",\n    \"details\": [\n      {\n        \"rule\": \"false\",\n        \"message\": \"Intentional demo validation failure\",\n        \"path\": \"false\"\n      }\n    ]\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 15\n  }\n}\n```" }
                 },
                 {
                   "name": "Look up failed transformed result",
@@ -288,7 +288,7 @@
                 },
                 {
                   "name": "429 — token exhausted",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/limited/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "RATE_LIMITED with Retry-After integer seconds. No upstream call; persisted attempts=0." }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/limited/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "RATE_LIMITED with Retry-After integer seconds. No upstream call; persisted attempts=0.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"RATE_LIMITED\",\n    \"message\": \"Rate limit exceeded for phase2-errors/limited\",\n    \"details\": {\n      \"limit\": 1,\n      \"remaining\": 0,\n      \"resetTimeMs\": 1695000000000,\n      \"retryAfterSeconds\": 45\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 2\n  }\n}\n```\nResponse header includes `Retry-After: 45`" }
                 },
                 {
                   "name": "Register unsupported auth",
@@ -296,7 +296,7 @@
                 },
                 {
                   "name": "501 — auth guard",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/auth/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_IMPLEMENTED, attempts=0, no env resolution or unauthenticated upstream dispatch." }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/auth/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_IMPLEMENTED, attempts=0, no env resolution or unauthenticated upstream dispatch.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 3\n  }\n}\n```" }
                 },
                 {
                   "name": "Register unsupported connect timeout",
@@ -312,11 +312,11 @@
                 },
                 {
                   "name": "502 — retryable upstream 503",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{ \"context\": { \"status\": 503 } }" }, "description": "EXTERNAL_ERROR after two actual attempts. One execution and one audit row; failed transformed result contains upstreamFailureResponse.error." }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{ \"context\": { \"status\": 503 } }" }, "description": "EXTERNAL_ERROR after two actual attempts. One execution and one audit row; failed transformed result contains upstreamFailureResponse.error.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"EXTERNAL_ERROR\",\n    \"message\": \"External API returned 503\",\n    \"details\": {\n      \"downstream\": {\n        \"status\": 503,\n        \"body\": {}\n      }\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 250\n  }\n}\n```" }
                 },
                 {
                   "name": "502 — nonretryable upstream 404",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{ \"context\": { \"status\": 404 } }" }, "description": "EXTERNAL_ERROR after one attempt. Upstream 404 is not the runtime's own NOT_FOUND." }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{ \"context\": { \"status\": 404 } }" }, "description": "EXTERNAL_ERROR after one attempt. Upstream 404 is not the runtime's own NOT_FOUND.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"EXTERNAL_ERROR\",\n    \"message\": \"External API returned 404\",\n    \"details\": {\n      \"downstream\": {\n        \"status\": 404,\n        \"body\": {}\n      }\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 120\n  }\n}\n```" }
                 },
                 {
                   "name": "Look up latest failure",

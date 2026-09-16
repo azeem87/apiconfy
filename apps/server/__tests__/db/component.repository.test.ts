@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { createSqliteAdapter } from '@/core/db/adapters/sqlite-adapter.js';
 import { DbComponentRepository } from '@/core/db/repositories/component.repository.js';
 import type { DBAdapter } from '@/core/db/adapter.js';
+import { ConflictError } from '@/lib/index.js';
 
-const request = (service: string, action: string, extra: Record<string, unknown> = {}) => ({
+const createRequest = (service: string, action: string, extra: Record<string, unknown> = {}) => ({
   service,
   action,
   componentType: 'rest',
@@ -25,22 +26,29 @@ describe('DbComponentRepository', () => {
     await db.disconnect();
   });
 
-  it('inserts on first upsert', async () => {
-    const { record, created } = await repo.register(request('customer-service', 'create_customer'));
-    expect(created).toBe(true);
+  it('inserts on create', async () => {
+    const record = await repo.create(createRequest('customer-service', 'create_customer'));
     expect(record.id).toBeTruthy();
     expect(record.service).toBe('customer-service');
+    expect(record.version).toBe(1);
     expect(record.createdAt).toBe(record.updatedAt);
   });
 
-  it('updates in place on second upsert — same id, no duplicate row', async () => {
-    const { record: first } = await repo.register(request('svc', 'act'));
-    const { record: second, created } = await repo.register(request('svc', 'act', {
+  it('throws ConflictError when creating a duplicate', async () => {
+    await repo.create(createRequest('svc', 'act'));
+    expect(repo.create(createRequest('svc', 'act'))).rejects.toThrow(ConflictError);
+  });
+
+  it('updates in place — same id, version increments', async () => {
+    const first = await repo.create(createRequest('svc', 'act'));
+    const second = await repo.update('svc', 'act', {
+      componentType: 'rest',
       config: { request: { uri: 'https://changed.test', method: 'GET' } },
-    }));
-    expect(created).toBe(false);
+      version: first.version,
+    });
 
     expect(second.id).toBe(first.id);
+    expect(second.version).toBe(2);
     expect(second.config.request).toEqual({ uri: 'https://changed.test', method: 'GET' });
     expect(second.createdAt).toBe(first.createdAt);
     expect(Date.parse(second.updatedAt)).toBeGreaterThanOrEqual(Date.parse(first.createdAt));
@@ -49,65 +57,64 @@ describe('DbComponentRepository', () => {
     expect(page.total).toBe(1);
   });
 
-  it('clears an omitted field, because POST is a full replace', async () => {
-    await repo.register(request('svc', 'act', { condition: '$.context.flag == true' }));
-    const { record: updated } = await repo.register(request('svc', 'act'));
+  it('clears an omitted field, because PUT is a full replace', async () => {
+    await repo.create(createRequest('svc', 'act', { condition: '$.context.flag == true' }));
+    const updated = await repo.update('svc', 'act', {
+      componentType: 'rest',
+      config: { request: { uri: 'https://x.test', method: 'POST' } },
+      version: 1,
+    });
     expect(updated.condition).toBeUndefined();
   });
 
-  it('recovers when it loses the insert race, updating instead of throwing', async () => {
-    let firstCall = true;
-    const racy = new DbComponentRepository({
-      ...db,
-      saveComponent: async (record) => {
-        if (!firstCall) return db.saveComponent(record);
-        firstCall = false;
-        await db.saveComponent({ ...record, id: 'winner' });
-        throw new Error('UNIQUE constraint failed: component_definitions.service, component_definitions.action');
-      },
-    });
-
-    const { record, created } = await racy.register(request('svc', 'act', {
-      config: { request: { uri: 'https://retried.test', method: 'GET' } },
-    }));
-
-    expect(created).toBe(false);
-    expect(record.id).toBe('winner');
-    expect(record.config.request).toEqual({ uri: 'https://retried.test', method: 'GET' });
-    expect((await racy.list({}, 50, 0)).total).toBe(1);
+  it('throws NotFoundError when updating a non-existent component', async () => {
+    expect(repo.update('ghost', 'act', {
+      componentType: 'rest',
+      config: {},
+      version: 1,
+    })).rejects.toThrow('Service not found: ghost/act');
   });
 
-  it('rethrows a non-unique-violation error rather than retrying', async () => {
+  it('throws ConflictError on version mismatch', async () => {
+    await repo.create(createRequest('svc', 'act'));
+    expect(repo.update('svc', 'act', {
+      componentType: 'rest',
+      config: { request: { uri: 'https://x.test', method: 'POST' } },
+      version: 999,
+    })).rejects.toThrow(ConflictError);
+  });
+
+  it('rethrows a non-unique-violation error on create', async () => {
     const broken = new DbComponentRepository({
       ...db,
       saveComponent: async () => { throw new Error('disk I/O error'); },
     });
 
-    await expect(broken.register(request('svc', 'act'))).rejects.toThrow('disk I/O error');
+    await expect(broken.create(createRequest('svc', 'act'))).rejects.toThrow('disk I/O error');
   });
 
   it('deleting an already-deleted id is a no-op, not an error', async () => {
-    const { record } = await repo.register(request('svc', 'act'));
+    const record = await repo.create(createRequest('svc', 'act'));
     await repo.delete(record.id);
     await expect(repo.delete(record.id)).resolves.toBeUndefined();
   });
 
   it('treats the same action under a different service as a distinct record', async () => {
-    await repo.register(request('svc-a', 'act'));
-    await repo.register(request('svc-b', 'act'));
+    await repo.create(createRequest('svc-a', 'act'));
+    await repo.create(createRequest('svc-b', 'act'));
     expect((await repo.list({}, 50, 0)).total).toBe(2);
   });
 
   it('finds by natural key and returns null for a miss', async () => {
-    await repo.register(request('svc', 'act'));
+    await repo.create(createRequest('svc', 'act'));
     expect(await repo.findByKey('svc', 'act')).not.toBeNull();
     expect(await repo.findByKey('svc', 'nope')).toBeNull();
   });
 
   it('lists all actions of one service', async () => {
-    await repo.register(request('svc', 'a'));
-    await repo.register(request('svc', 'b'));
-    await repo.register(request('other', 'c'));
+    await repo.create(createRequest('svc', 'a'));
+    await repo.create(createRequest('svc', 'b'));
+    await repo.create(createRequest('other', 'c'));
 
     const actions = await repo.listByService('svc');
     expect(actions.map((a) => a.action).sort()).toEqual(['a', 'b']);
@@ -118,7 +125,7 @@ describe('DbComponentRepository', () => {
   });
 
   it('reports the filtered total, not the page length', async () => {
-    for (let i = 0; i < 7; i++) await repo.register(request('svc', `act_${i}`));
+    for (let i = 0; i < 7; i++) await repo.create(createRequest('svc', `act_${i}`));
 
     const page = await repo.list({}, 2, 0);
     expect(page.items).toHaveLength(2);
@@ -128,16 +135,16 @@ describe('DbComponentRepository', () => {
   });
 
   it('applies offset', async () => {
-    for (let i = 0; i < 5; i++) await repo.register(request('svc', `act_${i}`));
+    for (let i = 0; i < 5; i++) await repo.create(createRequest('svc', `act_${i}`));
     const page = await repo.list({}, 2, 4);
     expect(page.items).toHaveLength(1);
     expect(page.total).toBe(5);
   });
 
   it('applies the same filters to items and total', async () => {
-    await repo.register(request('svc-a', 'a'));
-    await repo.register(request('svc-a', 'b'));
-    await repo.register(request('svc-b', 'c'));
+    await repo.create(createRequest('svc-a', 'a'));
+    await repo.create(createRequest('svc-a', 'b'));
+    await repo.create(createRequest('svc-b', 'c'));
 
     const page = await repo.list({ service: 'svc-a' }, 50, 0);
     expect(page.items).toHaveLength(2);
@@ -145,8 +152,8 @@ describe('DbComponentRepository', () => {
   });
 
   it('filters by componentType', async () => {
-    await repo.register(request('svc', 'a'));
-    await repo.register({ ...request('svc', 'b'), componentType: 'mapper' });
+    await repo.create(createRequest('svc', 'a'));
+    await repo.create({ ...createRequest('svc', 'b'), componentType: 'mapper' });
 
     const page = await repo.list({ componentType: 'mapper' }, 50, 0);
     expect(page.total).toBe(1);
@@ -154,7 +161,7 @@ describe('DbComponentRepository', () => {
   });
 
   it('deletes by id', async () => {
-    const { record } = await repo.register({
+    const record = await repo.create({
       service: 'svc',
       action: 'act',
       componentType: 'rest',
@@ -165,7 +172,7 @@ describe('DbComponentRepository', () => {
   });
 
   it('stores an $env. reference verbatim — masking is a display concern', async () => {
-    const { record } = await repo.register({
+    const record = await repo.create({
       service: 'svc',
       action: 'act',
       componentType: 'rest',
