@@ -11,6 +11,7 @@ export interface ComponentRecord {
   config: Record<string, unknown>;
   condition?: string;
   metaData?: Record<string, unknown>;
+  version: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -23,6 +24,7 @@ export interface WorkflowRecord {
   responseMapping?: Record<string, unknown>;
   maxDurationMs?: number;
   compensationFailureConfig?: CompensationFailureConfig;
+  version: number;
   createdAt: string;
   updatedAt: string;
 }

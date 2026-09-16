@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import {
-  RegisterServiceRequestSchema, RestConfigSchema, RateLimitConfigSchema,
+  CreateServiceRequestSchema, RestConfigSchema, RateLimitConfigSchema,
 } from '@/core/schema/index.js';
 
 const minimal = { request: { uri: 'https://api.example.com/customers', method: 'POST' as const } };
@@ -173,15 +173,15 @@ describe('RestConfigSchema', () => {
 
 describe('registration expression validation', () => {
   it('accepts absent conditions and valid conditions without evaluating them', () => {
-    expect(RegisterServiceRequestSchema.safeParse(registration).success).toBe(true);
-    expect(RegisterServiceRequestSchema.safeParse({
+    expect(CreateServiceRequestSchema.safeParse(registration).success).toBe(true);
+    expect(CreateServiceRequestSchema.safeParse({
       ...registration, condition: '{$context.missing} > 100 && {$context.email} exists',
     }).success).toBe(true);
   });
 
   it.each(['', ' ', '{$context.id} &&', '{$context.id} =~ "x"', '{$foo.id} != null', 'context.id'])(
     'rejects condition %s at the condition field', (condition) => {
-      const result = RegisterServiceRequestSchema.safeParse({ ...registration, condition });
+      const result = CreateServiceRequestSchema.safeParse({ ...registration, condition });
       expect(result.success).toBe(false);
       expect(result.error?.issues[0].path).toEqual(['condition']);
     }
@@ -193,7 +193,7 @@ describe('registration expression validation', () => {
       config: { custom: 'plugin-owned' },
       metaData: { expression: 'not a predicate', source: '$env.LEGACY_URL' },
     };
-    expect(RegisterServiceRequestSchema.parse(body)).toEqual(body);
+    expect(CreateServiceRequestSchema.parse(body)).toEqual(body);
   });
 
   it('accepts complete output config and optional rule fields', () => {

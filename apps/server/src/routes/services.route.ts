@@ -14,8 +14,16 @@ export function servicesRoute(registry: ComponentRegistry): Hono {
 
   router.post('/v1/services', async (c) => {
     const body = await c.req.json().catch(() => null);
-    const { record, created } = await registry.register(body);
-    return c.json(ok(toResponse(record)), created ? 201 : 200);
+    const record = await registry.create(body);
+    return c.json(ok(toResponse(record)), 201);
+  });
+
+  router.put('/v1/services/:service/actions/:action', async (c) => {
+    const service = c.req.param('service');
+    const action = c.req.param('action');
+    const body = await c.req.json().catch(() => null);
+    const record = await registry.update(service, action, body);
+    return c.json(ok(toResponse(record)), 200);
   });
 
   router.get('/v1/services', async (c) => {
@@ -32,17 +40,17 @@ export function servicesRoute(registry: ComponentRegistry): Hono {
     }));
   });
 
-  router.get('/v1/services/:service', async (c) => {
+  router.get('/v1/services/:service/actions', async (c) => {
     const records = await registry.listByService(c.req.param('service'));
     return c.json(ok(records.map(toResponse)));
   });
 
-  router.get('/v1/services/:service/:action', async (c) => {
+  router.get('/v1/services/:service/actions/:action', async (c) => {
     const record = await registry.get(c.req.param('service'), c.req.param('action'));
     return c.json(ok(toResponse(record)));
   });
 
-  router.delete('/v1/services/:service/:action', async (c) => {
+  router.delete('/v1/services/:service/actions/:action', async (c) => {
     const service = c.req.param('service');
     const action = c.req.param('action');
     await registry.remove(service, action);

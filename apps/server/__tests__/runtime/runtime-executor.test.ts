@@ -16,7 +16,7 @@ function harness(handler: ComponentHandler, config: Record<string, unknown> = {}
   logger.warn = ((...args: unknown[]) => { logs.push(args); }) as typeof logger.warn;
   const row: ComponentRecord = {
     id: 'component', service: 'svc', action: 'act', componentType: handler.componentType,
-    config, createdAt: '2026-01-01', updatedAt: '2026-01-01',
+    config, version: 1, createdAt: '2026-01-01', updatedAt: '2026-01-01',
   };
   const recorder = { async recordInvocation(entry: InvocationRecord) { entries.push(entry); } };
   const executor = new DefaultRuntimeExecutor({
@@ -34,7 +34,7 @@ function harness(handler: ComponentHandler, config: Record<string, unknown> = {}
 it('persistence failure cannot change the result or expose raw DB errors in logs', async () => {
   const state = harness({
     componentType: 'test', displayName: 'Test',
-    async execute() { return { statusCode: 200, data: { id: 1 } }; },
+    async execute() { return { data: { id: 1 } }; },
   });
   state.recorder.recordInvocation = async () => { throw new Error('SQL with password=private'); };
   expect((await state.invoke()).data).toEqual({ id: 1 });

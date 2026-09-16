@@ -29,12 +29,20 @@ describe('Phase 2 invocation API', () => {
     }).app;
   };
   const register = async (config: Record<string, unknown> = { request, output }, condition?: string) => {
-    const registered = await app.request('/api/v1/services', {
+    const createBody = { service: 'items', action: 'create', componentType: 'rest', config, condition };
+    const created = await app.request('/api/v1/services', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ service: 'items', action: 'create', componentType: 'rest', config, condition }),
+      body: JSON.stringify(createBody),
     });
-    expect([200, 201]).toContain(registered.status);
-    return registered.json();
+    if (created.status === 201) return created.json();
+    // Already exists — update via PUT
+    const existing = await (await app.request('/api/v1/services/items/actions/create')).json();
+    const updated = await app.request('/api/v1/services/items/actions/create', {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ componentType: 'rest', config, condition, version: existing.data.version }),
+    });
+    expect(updated.status).toBe(200);
+    return updated.json();
   };
   const invoke = (body: unknown = { context: { id: 7 } }, path = '/api/v1/services/items/create/invoke') =>
     app.request(path, {
@@ -317,7 +325,7 @@ describe('Phase 2 invocation API', () => {
         componentType: 'acme', displayName: 'Acme',
         async execute(params) {
           expect(params.context.context.output).toEqual({});
-          return { statusCode: 200, data: { id: params.context.context.id } };
+          return { data: { id: params.context.context.id } };
         },
       }),
     });

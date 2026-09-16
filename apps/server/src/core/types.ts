@@ -16,7 +16,7 @@ export type ComponentType =
  */
 export type KnownOrCustomComponentType = ComponentType | (string & {});
 
-/** Registration request body. `config` is validated separately, per componentType. */
+/** Create request body. `config` is validated separately, per componentType. */
 export interface RegisterServiceRequest<TConfig = Record<string, unknown>> {
   service: string;
   action: string;
@@ -26,6 +26,17 @@ export interface RegisterServiceRequest<TConfig = Record<string, unknown>> {
   /** Record-level, not config-level — sibling of `config`, matching ComponentRecord. */
   condition?: string;
   metaData?: Record<string, unknown>;
+}
+
+/** Update request body. service/action come from URL path. Version is required for optimistic concurrency. */
+export interface UpdateServiceRequest<TConfig = Record<string, unknown>> {
+  componentType: KnownOrCustomComponentType;
+  description?: string;
+  config: TConfig;
+  condition?: string;
+  metaData?: Record<string, unknown>;
+  /** Required version for optimistic concurrency control. Must match current version. */
+  version: number;
 }
 
 /** What the API returns. Identical to ComponentRecord — masking does not change shape. */
@@ -38,6 +49,7 @@ export interface ComponentView {
   config: Record<string, unknown>;
   condition?: string;
   metaData?: Record<string, unknown>;
+  version: number;
   createdAt: string;
   updatedAt: string;
 }

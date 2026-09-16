@@ -105,7 +105,7 @@ export class RestComponent implements ComponentHandler {
           downstream: { status: response.status, body: data },
         });
       }
-      return { statusCode: response.status, data, request: summary };
+      return { data, request: summary };
     } catch (error) {
       if (params.signal.aborted) throw new TimeoutError();
       if (error instanceof AppError) throw error;

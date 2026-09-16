@@ -11,6 +11,7 @@ export const componentDefinitions = sqliteTable('component_definitions', {
   config: text('config', { mode: 'json' }).notNull().$type<Record<string, unknown>>(),
   condition: text('condition'),
   metaData: text('meta_data', { mode: 'json' }).$type<Record<string, unknown>>(),
+  version: integer('version').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
@@ -25,6 +26,7 @@ export const workflowDefinitions = sqliteTable('workflow_definitions', {
   responseMapping: text('response_mapping', { mode: 'json' }).$type<Record<string, unknown>>(),
   maxDurationMs: integer('max_duration_ms'),
   compensationFailureConfig: text('compensation_failure_config', { mode: 'json' }).$type<CompensationFailureConfig>(),
+  version: integer('version').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

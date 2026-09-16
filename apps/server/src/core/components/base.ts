@@ -24,7 +24,7 @@ export interface ComponentRequestSummary {
 }
 
 export interface ComponentExecuteResult {
-  statusCode: number;
+  /** Raw result from the external operation. Only set on success — component errors throw. */
   data: unknown;
   request?: ComponentRequestSummary;
 }

@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { ComponentRegistryService } from '@/services/component-registry.service.js';
-import type { ComponentRepository, RegisterOutcome } from '@/core/db/repositories/component.repository.js';
+import type { ComponentRepository } from '@/core/db/repositories/component.repository.js';
 import { createCoreSchemaRegistry } from '@/core/schema/index.js';
 import type { ComponentRecord } from '@/core/db/adapter.js';
-import type { ListFilters, PagedResult, RegisterServiceRequest } from '@/core/types.js';
-import { AppError } from '@/lib/index.js';
+import type { ListFilters, PagedResult, RegisterServiceRequest, UpdateServiceRequest } from '@/core/types.js';
+import { AppError, ConflictError, NotFoundError } from '@/lib/index.js';
 
 class FakeComponentRepository implements ComponentRepository {
   readonly rows = new Map<string, ComponentRecord>();
@@ -12,12 +12,14 @@ class FakeComponentRepository implements ComponentRepository {
 
   private key(service: string, action: string) { return `${service}/${action}`; }
 
-  async register(request: RegisterServiceRequest): Promise<RegisterOutcome> {
+  async create(request: RegisterServiceRequest): Promise<ComponentRecord> {
     const k = this.key(request.service, request.action);
+    if (this.rows.has(k)) {
+      throw new ConflictError(`Service already exists: ${request.service}/${request.action}`);
+    }
     const now = new Date().toISOString();
-    const existing = this.rows.get(k);
     const record: ComponentRecord = {
-      id: existing?.id ?? `id-${++this.seq}`,
+      id: `id-${++this.seq}`,
       service: request.service,
       action: request.action,
       componentType: request.componentType,
@@ -25,11 +27,36 @@ class FakeComponentRepository implements ComponentRepository {
       config: request.config,
       condition: request.condition,
       metaData: request.metaData,
-      createdAt: existing?.createdAt ?? now,
+      version: 1,
+      createdAt: now,
       updatedAt: now,
     };
     this.rows.set(k, record);
-    return { record, created: !existing };
+    return record;
+  }
+
+  async update(service: string, action: string, request: UpdateServiceRequest): Promise<ComponentRecord> {
+    const k = this.key(service, action);
+    const existing = this.rows.get(k);
+    if (!existing) throw new NotFoundError(`Service not found: ${service}/${action}`);
+    if (request.version !== existing.version) {
+      throw new ConflictError(
+        `Version conflict: expected ${request.version}, but current version is ${existing.version}`,
+        { expected: request.version, current: existing.version }
+      );
+    }
+    const record: ComponentRecord = {
+      ...existing,
+      componentType: request.componentType,
+      description: request.description,
+      config: request.config,
+      condition: request.condition,
+      metaData: request.metaData,
+      version: existing.version + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    this.rows.set(k, record);
+    return record;
   }
 
   async findByKey(service: string, action: string) {
@@ -78,44 +105,44 @@ describe('ComponentRegistryService', () => {
     service = new ComponentRegistryService(repo, createCoreSchemaRegistry());
   });
 
-  describe('register — stage 1, envelope', () => {
+  describe('create — stage 1, envelope', () => {
     it('accepts a valid body', async () => {
-      const { record } = await service.register(validBody);
+      const record = await service.create(validBody);
       expect(record.service).toBe('customer-service');
       expect(record.componentType).toBe('rest');
     });
 
     it('rejects a null body rather than throwing a raw error', async () => {
-      const err = await expectAppError(() => service.register(null));
+      const err = await expectAppError(() => service.create(null));
       expect(err.statusCode).toBe(400);
       expect(err.code).toBe('VALIDATION_FAILED');
     });
 
     it('rejects a non-URL-safe service name', async () => {
-      const err = await expectAppError(() => service.register({ ...validBody, service: 'bad name/x' }));
+      const err = await expectAppError(() => service.create({ ...validBody, service: 'bad name/x' }));
       expect(err.code).toBe('VALIDATION_FAILED');
     });
 
     it('rejects an empty condition, which is a config error not "no condition"', async () => {
-      const err = await expectAppError(() => service.register({ ...validBody, condition: '' }));
+      const err = await expectAppError(() => service.create({ ...validBody, condition: '' }));
       expect(err.code).toBe('VALIDATION_FAILED');
     });
 
     it('accepts an omitted condition', async () => {
-      const { record } = await service.register(validBody);
+      const record = await service.create(validBody);
       expect(record.condition).toBeUndefined();
     });
 
     it('rejects unknown top-level keys', async () => {
-      const err = await expectAppError(() => service.register({ ...validBody, rogue: true }));
+      const err = await expectAppError(() => service.create({ ...validBody, rogue: true }));
       expect(err.code).toBe('VALIDATION_FAILED');
     });
   });
 
-  describe('register — stage 2, componentType dispatch', () => {
+  describe('create — stage 2, componentType dispatch', () => {
     it('rejects an unregistered componentType with a distinct code and the supported list', async () => {
       const err = await expectAppError(() =>
-        service.register({ ...validBody, componentType: 'carrier-pigeon' }));
+        service.create({ ...validBody, componentType: 'carrier-pigeon' }));
       expect(err.statusCode).toBe(400);
       expect(err.code).toBe('UNKNOWN_COMPONENT_TYPE');
       const details = err.details as Record<string, unknown>;
@@ -124,13 +151,13 @@ describe('ComponentRegistryService', () => {
 
     it('rejects a config that fails the type-specific schema', async () => {
       const err = await expectAppError(() =>
-        service.register({ ...validBody, config: { request: { method: 'POST' } } }));
+        service.create({ ...validBody, config: { request: { method: 'POST' } } }));
       expect(err.code).toBe('VALIDATION_FAILED');
     });
 
     it('prefixes config issue paths with "config"', async () => {
       const err = await expectAppError(() =>
-        service.register({ ...validBody, config: { request: { method: 'POST' } } }));
+        service.create({ ...validBody, config: { request: { method: 'POST' } } }));
       const issues = err.details as Array<{ path: string[] }>;
       expect(issues[0].path[0]).toBe('config');
       expect(issues[0].path).toContain('uri');
@@ -141,16 +168,16 @@ describe('ComponentRegistryService', () => {
       const registry = createCoreSchemaRegistry().register('acme', z.object({ tenant: z.string() }).strict());
       const pluginService = new ComponentRegistryService(repo, registry);
 
-      const { record } = await pluginService.register({
+      const record = await pluginService.create({
         service: 'acme-service', action: 'sync', componentType: 'acme', config: { tenant: 't1' },
       });
       expect(record.componentType).toBe('acme');
     });
   });
 
-  describe('register — stage 3, {$env.} references', () => {
+  describe('create — stage 3, {$env.} references', () => {
     it('accepts a well-formed reference and stores it verbatim', async () => {
-      const { record } = await service.register({
+      const record = await service.create({
         ...validBody,
         config: { request: { ...validBody.config.request, auth: { basic: { username: 'u', password: '{$env.CRM_PW}' } } } },
       });
@@ -158,7 +185,7 @@ describe('ComponentRegistryService', () => {
     });
 
     it('rejects a malformed reference instead of storing it as a literal', async () => {
-      const err = await expectAppError(() => service.register({
+      const err = await expectAppError(() => service.create({
         ...validBody,
         config: { request: { ...validBody.config.request, auth: { basic: { username: 'u', password: '{$env.}' } } } },
       }));
@@ -167,7 +194,7 @@ describe('ComponentRegistryService', () => {
     });
 
     it('accepts a literal secret without complaint — that is the policy', async () => {
-      const { record } = await service.register({
+      const record = await service.create({
         ...validBody,
         config: { request: { ...validBody.config.request, auth: { basic: { username: 'u', password: 'hunter2' } } } },
       });
@@ -175,20 +202,62 @@ describe('ComponentRegistryService', () => {
     });
   });
 
-  describe('register — upsert', () => {
-    it('is idempotent on the natural key', async () => {
-      const { record: first } = await service.register(validBody);
-      const { record: second, created } = await service.register({ ...validBody, description: 'updated' });
-      expect(created).toBe(false);
-      expect(second.id).toBe(first.id);
-      expect(second.description).toBe('updated');
-      expect(repo.rows.size).toBe(1);
+  describe('create — conflict', () => {
+    it('returns 409 when creating a duplicate', async () => {
+      await service.create(validBody);
+      const err = await expectAppError(() => service.create(validBody));
+      expect(err.statusCode).toBe(409);
+      expect(err.code).toBe('VERSION_CONFLICT');
+    });
+  });
+
+  describe('update', () => {
+    const updatePayload = (overrides: Record<string, unknown> = {}) => ({
+      componentType: 'rest',
+      config: { request: { uri: 'https://api.example.com/customers', method: 'POST' } },
+      ...overrides,
+    });
+
+    it('updates an existing component with matching version', async () => {
+      const created = await service.create(validBody);
+      const updated = await service.update('customer-service', 'create_customer', updatePayload({
+        description: 'updated',
+        version: created.version,
+      }));
+      expect(updated.description).toBe('updated');
+      expect(updated.version).toBe(2);
+    });
+
+    it('returns 404 when updating a non-existent component', async () => {
+      const err = await expectAppError(() => service.update('ghost', 'act', updatePayload({
+        version: 1,
+      })));
+      expect(err.statusCode).toBe(404);
+    });
+
+    it('returns 409 on version mismatch', async () => {
+      await service.create(validBody);
+      const err = await expectAppError(() => service.update('customer-service', 'create_customer', updatePayload({
+        version: 999,
+      })));
+      expect(err.statusCode).toBe(409);
+      expect(err.code).toBe('VERSION_CONFLICT');
+    });
+
+    it('rejects update without version', async () => {
+      await service.create(validBody);
+      const err = await expectAppError(() => service.update('customer-service', 'create_customer', {
+        componentType: 'rest',
+        config: validBody.config,
+      }));
+      expect(err.statusCode).toBe(400);
+      expect(err.code).toBe('VALIDATION_FAILED');
     });
   });
 
   describe('reads', () => {
     it('gets by natural key', async () => {
-      await service.register(validBody);
+      await service.create(validBody);
       const record = await service.get('customer-service', 'create_customer');
       expect(record.action).toBe('create_customer');
     });
@@ -205,7 +274,7 @@ describe('ComponentRegistryService', () => {
 
     it('passes paging through and reports the real total', async () => {
       for (let i = 0; i < 5; i++) {
-        await service.register({ ...validBody, action: `act_${i}` });
+        await service.create({ ...validBody, action: `act_${i}` });
       }
       const page = await service.list({}, 2, 0);
       expect(page.items).toHaveLength(2);
@@ -215,7 +284,7 @@ describe('ComponentRegistryService', () => {
 
   describe('remove', () => {
     it('deletes an existing component', async () => {
-      await service.register(validBody);
+      await service.create(validBody);
       await service.remove('customer-service', 'create_customer');
       expect(await repo.findByKey('customer-service', 'create_customer')).toBeNull();
     });
