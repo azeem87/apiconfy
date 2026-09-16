@@ -3,7 +3,7 @@ import { maskEnvRefs } from '@/core/env-ref/index.js';
 
 describe('maskEnvRefs', () => {
   it('masks a reference', () => {
-    expect(maskEnvRefs({ password: '$env.PW' })).toEqual({ password: '****' });
+    expect(maskEnvRefs({ password: '{$env.PW}' })).toEqual({ password: '****' });
   });
 
   it('leaves a literal secret untouched — that is the policy, not an oversight', () => {
@@ -12,7 +12,7 @@ describe('maskEnvRefs', () => {
 
   it('masks by value, not by field name', () => {
     const masked = maskEnvRefs({
-      harmlessField: '$env.SOME_VAR',
+      harmlessField: '{$env.SOME_VAR}',
       password: 'literal-value',
     });
     expect(masked).toEqual({ harmlessField: '****', password: 'literal-value' });
@@ -20,19 +20,19 @@ describe('maskEnvRefs', () => {
 
   it('masks at any depth', () => {
     const masked = maskEnvRefs({
-      auth: { oauth2: { clientId: 'public', clientSecret: '$env.SECRET' } },
+      auth: { oauth2: { clientId: 'public', clientSecret: '{$env.SECRET}' } },
     });
     expect(masked.auth.oauth2).toEqual({ clientId: 'public', clientSecret: '****' });
   });
 
   it('masks inside arrays', () => {
-    expect(maskEnvRefs({ items: ['plain', '$env.X'] })).toEqual({ items: ['plain', '****'] });
+    expect(maskEnvRefs({ items: ['plain', '{$env.X}'] })).toEqual({ items: ['plain', '****'] });
   });
 
   it('does not mutate the input', () => {
-    const original = { auth: { basic: { password: '$env.PW' } } };
+    const original = { auth: { basic: { password: '{$env.PW}' } } };
     maskEnvRefs(original);
-    expect(original.auth.basic.password).toBe('$env.PW');
+    expect(original.auth.basic.password).toBe('{$env.PW}');
   });
 
   it('preserves non-string values', () => {
@@ -41,11 +41,11 @@ describe('maskEnvRefs', () => {
   });
 
   it('leaves a malformed reference alone (registration rejects it instead)', () => {
-    expect(maskEnvRefs({ password: '$env.' })).toEqual({ password: '$env.' });
+    expect(maskEnvRefs({ password: '{$env.}' })).toEqual({ password: '{$env.}' });
   });
 
   it('does not touch user data in request.payloadTemplate that merely has a secret-ish key', () => {
-    const config = { request: { payloadTemplate: { apiKey: '$.context.apiKey', password: '$.context.pw' } } };
+    const config = { request: { payloadTemplate: { apiKey: '{$context.apiKey}', password: '{$context.pw}' } } };
     expect(maskEnvRefs(config)).toEqual(config);
   });
 });

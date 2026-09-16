@@ -13,7 +13,7 @@ export class EnvRefResolutionError extends AppError {
 }
 
 /**
- * Replaces every `$env.NAME` with process.env.NAME.
+ * Replaces every `{$env.NAME}` with process.env.NAME.
  * Written and tested in Phase 1 but not called by it — Phase 2 consumes it.
  */
 export function resolveEnvRefs<T>(

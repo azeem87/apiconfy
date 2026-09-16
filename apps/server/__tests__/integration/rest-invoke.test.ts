@@ -24,16 +24,16 @@ it('executes through two real HTTP servers and returns a queryable redacted exec
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         service: 'network', action: 'create', componentType: 'rest',
-        condition: '$.context.id != null',
+        condition: '{$context.id} != null',
         config: {
           request: {
-            uri: `${upstream.url}items/$.context.id`, method: 'POST',
-            headers: { Authorization: '$env.UPSTREAM_TOKEN' },
-            payloadTemplate: { number: '$.context.id' },
+            uri: `${upstream.url}items/{$context.id}`, method: 'POST',
+            headers: { Authorization: '{$env.UPSTREAM_TOKEN}' },
+            payloadTemplate: { number: '{$context.id}' },
           },
-          response: {
-            validation: { rules: [{ expression: '$.response.id exists' }] },
-            transformation: { networkResponse: { id: '$.response.id', echo: '$.response.echo' } },
+          output: {
+            validation: { rules: [{ expression: '{$output.id} exists' }] },
+            transformation: { networkResponse: { id: '{$output.id}', echo: '{$output.echo}' } },
           },
         },
       }),

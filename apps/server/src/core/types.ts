@@ -134,7 +134,8 @@ export interface ValidationRule {
   errorPath?: string;
 }
 
-export interface ResponseConfig {
+export interface OutputConfig {
+  key?: string;
   transformation?: Record<string, unknown>;
   validation?: { rules?: ValidationRule[] };
   default?: Record<string, unknown>;
@@ -163,5 +164,5 @@ export interface RestConfig {
   request: RequestConfig;
   timeout?: TimeoutConfig;
   resilience?: ResilienceConfig;
-  response?: ResponseConfig;
+  output?: OutputConfig;
 }

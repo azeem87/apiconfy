@@ -48,7 +48,7 @@ export class RestComponent implements ComponentHandler {
     const request = params.config.request as RequestConfig;
     const uri = resolveTemplate(request.uri, params.context);
     if (typeof uri !== 'string') throw new TransformationError('Resolved uri is not a string');
-    if (uri.includes('$.')) throw new TransformationError('Resolved uri contains an unresolved path expression');
+    if (uri.includes('{$')) throw new TransformationError('Resolved uri contains an unresolved expression');
 
     let payload: unknown;
     let body: string | undefined;
@@ -57,7 +57,7 @@ export class RestComponent implements ComponentHandler {
       for (const [key, value] of Object.entries(request.headers ?? {})) {
         const resolved = resolveTemplate(value, params.context);
         if (resolved === undefined || resolved === null) continue;
-        if (typeof resolved === 'string' && resolved.includes('$.')) continue;
+        if (typeof resolved === 'string' && resolved.includes('{$')) continue;
         headers.set(key, String(resolved));
       }
       if (request.method !== 'GET') {

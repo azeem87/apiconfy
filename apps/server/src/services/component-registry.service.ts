@@ -52,7 +52,7 @@ export class ComponentRegistryService implements ComponentRegistry {
     const issues = collectEnvRefIssues(config.data, ['config']);
     if (issues.length > 0) {
       throw new ValidationError(
-        'Invalid $env. reference',
+        'Invalid {$env.} reference',
         issues.map(({ path, message }) => ({ path, message }))
       );
     }

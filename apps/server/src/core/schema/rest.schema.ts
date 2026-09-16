@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import {
   AuthConfigSchema,
+  OutputConfigSchema,
   ResilienceConfigSchema,
-  ResponseConfigSchema,
   SSLConfigSchema,
   TimeoutConfigSchema,
 } from './common.schema.js';
@@ -25,7 +25,7 @@ export const RestConfigSchema = z.object({
   request: RequestConfigSchema,
   timeout: TimeoutConfigSchema.optional(),
   resilience: ResilienceConfigSchema.optional(),
-  response: ResponseConfigSchema.optional(),
+  output: OutputConfigSchema.optional(),
 }).strict();
 
 export type RestConfigInput = z.input<typeof RestConfigSchema>;

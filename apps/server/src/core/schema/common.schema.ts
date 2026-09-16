@@ -36,13 +36,29 @@ export const ValidationRuleSchema = z.object({
   errorPath: z.string().optional(),
 }).strict();
 
-export const ResponseConfigSchema = z.object({
+/** Standalone path expression validator for use in schemas (e.g. errorPath fields). */
+export function pathExpression() {
+  return z.string().min(1).refine((value) => {
+    try { assertValidPath(value); return true; } catch { return false; }
+  }, 'Invalid path expression');
+}
+
+const OUTPUT_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]*$/;
+
+export const OutputConfigSchema = z.object({
+  key: z.string().regex(OUTPUT_KEY_PATTERN, 'output.key must be alphanumeric (letters, digits, underscores) and start with a letter').optional(),
   transformation: z.record(z.unknown()).optional(),
   validation: z.object({
     rules: z.array(ValidationRuleSchema).optional(),
   }).strict().optional(),
   default: z.record(z.unknown()).optional(),
 }).strict().superRefine((config, ctx) => {
+  if (!config.key && !config.transformation && !config.validation) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'output must contain at least one of: key, validation, transformation',
+    });
+  }
   for (const [index, rule] of (config.validation?.rules ?? []).entries()) {
     for (const [field, validate] of [
       ['expression', assertValidExpression],

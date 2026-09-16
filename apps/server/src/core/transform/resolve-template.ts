@@ -1,8 +1,7 @@
 import { lookupPath, parsePath } from './path.js';
 import type { ExpressionScope } from './scope.js';
 
-// Capture unsupported path suffixes too, so a wildcard/slice/typo is never partly substituted.
-const EMBEDDED_PATH = /\$\.[A-Za-z0-9_.$*\]]*(?:\[[^\]]*(?:\]|$)[A-Za-z0-9_.$*\]]*)*/g;
+const EMBEDDED_PATH = /\{\$[A-Za-z_$][A-Za-z0-9_.$\[\]]*(?:\[[^\]]*(?:\]|$)[A-Za-z0-9_.$\]]*)*\}/g;
 
 function resolveString(source: string, scope: ExpressionScope): unknown {
   const segments = parsePath(source);
@@ -20,7 +19,7 @@ function resolveString(source: string, scope: ExpressionScope): unknown {
   });
 }
 
-/** Resolves JSON templates without mutating them; unresolved paths remain literal. */
+/** Resolves templates without mutating them; unresolved paths remain literal. */
 export function resolveTemplate(template: unknown, scope: ExpressionScope): unknown {
   if (typeof template === 'string') return resolveString(template, scope);
   if (Array.isArray(template)) return template.map((item) => resolveTemplate(item, scope));

@@ -62,7 +62,7 @@ it('failed transformations are observable but never replace the primary error', 
     componentType: 'test', displayName: 'Test',
     assertExecutable() { throw new AppError('primary', 'PRIMARY'); },
     async execute() { throw new Error('unreachable'); },
-  }, { response: { transformation } });
+  }, { output: { transformation } });
   await expect(state.invoke()).rejects.toMatchObject({ code: 'PRIMARY' });
   expect(state.entries).toHaveLength(1);
   expect(state.entries[0].result).toEqual({ error: { code: 'PRIMARY', message: 'primary' } });
@@ -74,7 +74,7 @@ it('single-character secrets do not corrupt standardized error keys', async () =
   const state = harness({
     componentType: 'test', displayName: 'Test',
     async execute() { throw new ConnectionError('e'); },
-  }, { credential: '$env.SHORT' });
+  }, { credential: '{$env.SHORT}' });
   await expect(state.invoke()).rejects.toMatchObject({ code: 'CONNECTION_ERROR', message: '***' });
   expect(state.entries[0].result).toEqual({ error: { code: 'CONNECTION_ERROR', message: '***' } });
 });

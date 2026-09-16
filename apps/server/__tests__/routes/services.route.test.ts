@@ -103,12 +103,12 @@ describe('services routes', () => {
         request: {
           uri: 'https://api.example.com/customers',
           method: 'POST',
-          auth: { basic: { username: 'svc-account', password: '$env.CRM_PASSWORD' } },
+          auth: { basic: { username: 'svc-account', password: '{$env.CRM_PASSWORD}' } },
         },
       },
     });
 
-    it('masks an $env. reference in the POST response', async () => {
+    it('masks a {$env.} reference in the POST response', async () => {
       const json = await (await post(app, withSecrets)).json();
       expect(json.data.config.request.auth.basic.password).toBe('****');
       expect(json.data.config.request.auth.basic.username).toBe('svc-account');
@@ -134,7 +134,7 @@ describe('services routes', () => {
 
     it('rejects a re-submitted masked value instead of destroying the reference', async () => {
       await post(app, body({
-        config: { request: { uri: 'https://x.test', method: 'POST', auth: { basic: { username: 'u', password: '$env.CRM_PASSWORD' } } } },
+        config: { request: { uri: 'https://x.test', method: 'POST', auth: { basic: { username: 'u', password: '{$env.CRM_PASSWORD}' } } } },
       }));
 
       const fetched = await (await app.request('/api/v1/services/customer-service/create_customer')).json();
@@ -146,7 +146,7 @@ describe('services routes', () => {
       expect(json.error.details[0].path).toEqual(['config', 'request', 'auth', 'basic', 'password']);
 
       const stored = await db.findComponent('customer-service', 'create_customer');
-      expect((stored!.config as any).request.auth.basic.password).toBe('$env.CRM_PASSWORD');
+      expect((stored!.config as any).request.auth.basic.password).toBe('{$env.CRM_PASSWORD}');
     });
 
     it('returns metaData verbatim, including an $env. string — it is not scanned', async () => {
@@ -173,7 +173,7 @@ describe('services routes', () => {
     it('keeps the real reference in the database — masking is display-only', async () => {
       await post(app, withSecrets);
       const stored = await db.findComponent('customer-service', 'create_customer');
-      expect((stored!.config as any).request.auth.basic.password).toBe('$env.CRM_PASSWORD');
+      expect((stored!.config as any).request.auth.basic.password).toBe('{$env.CRM_PASSWORD}');
     });
   });
 

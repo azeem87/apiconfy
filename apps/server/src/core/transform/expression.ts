@@ -38,9 +38,10 @@ const COMPARISONS: Partial<Record<TokenType, ComparisonOperator>> = {
   eq: '==', neq: '!=', gt: '>', gte: '>=', lt: '<', lte: '<=',
 };
 
+const VALID_ROOTS = new Set(['context', 'output', 'env']);
+
 function hasValidRoot(segments: PathSegment[]): boolean {
-  return segments[0]?.kind === 'key' &&
-    (segments[0].value === 'context' || segments[0].value === 'response');
+  return segments[0]?.kind === 'key' && VALID_ROOTS.has(segments[0].value);
 }
 
 function tokenize(source: string): Token[] {
@@ -74,14 +75,16 @@ function tokenize(source: string): Token[] {
       continue;
     }
 
-    if (source.startsWith('$.', cursor)) {
+    if (source.startsWith('{$', cursor)) {
       let end = cursor + 2;
-      while (end < source.length && /[A-Za-z0-9_$.[\]]/.test(source[end])) end += 1;
+      while (end < source.length && source[end] !== '}') end += 1;
+      if (end >= source.length) throw new ExpressionSyntaxError(source, 'unterminated path expression', cursor);
+      end += 1; // include closing }
       const expression = source.slice(cursor, end);
       const segments = parsePath(expression);
       if (!segments) throw new ExpressionSyntaxError(source, `"${expression}" is not a valid path`, cursor);
       if (!hasValidRoot(segments)) {
-        throw new ExpressionSyntaxError(source, 'path must start with $.context or $.response', cursor);
+        throw new ExpressionSyntaxError(source, 'path must start with {$context, {$output, or {$env', cursor);
       }
       tokens.push({ type: 'path', value: { expression, segments }, start: cursor });
       cursor = end;
@@ -216,7 +219,6 @@ function evaluate(node: ExpressionNode, scope: ExpressionScope): boolean {
     case 'exists': return readValue(node.operand, scope) != null;
     case 'value': {
       const value = readValue(node.value, scope);
-      // Unlike JavaScript, 0 and "" are truthy in this language.
       return value !== false && value != null;
     }
   }
@@ -253,6 +255,6 @@ export function assertValidPath(source: string): void {
   const segments = parsePath(source);
   if (!segments) throw new ExpressionSyntaxError(source, `"${source}" is not a valid path`);
   if (!hasValidRoot(segments)) {
-    throw new ExpressionSyntaxError(source, 'path must start with $.context or $.response');
+    throw new ExpressionSyntaxError(source, 'path must start with {$context, {$output, or {$env');
   }
 }

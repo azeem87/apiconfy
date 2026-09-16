@@ -1,7 +1,7 @@
 import { isEnvRef, MASK } from './parse.js';
 
 /**
- * Replaces every well-formed `$env.NAME` string with `****`, anywhere in the structure.
+ * Replaces every well-formed `{$env.NAME}` string with `****`, anywhere in the structure.
  *
  * Value-driven, not field-name-driven. Pure: returns a new structure, never mutates input.
  */

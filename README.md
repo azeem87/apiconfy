@@ -103,12 +103,12 @@ Content-Type: application/json
       "uri": "https://example.com/customer",
       "method": "POST",
       "payloadTemplate": {
-        "customerId": "$.context.id"
+        "customerId": "{$context.id}"
       }
     },
-    "response": {
+    "output": {
       "transformation": {
-        "createCustomerResponse": { "customerId": "$.response.id" }
+        "createCustomerResponse": { "customerId": "{$output.id}" }
       }
     }
   }
@@ -200,9 +200,9 @@ Content-Type: application/json
     }
   ],
   "responseTransformation": {
-    "customerId": "$.context.output.createCustomerResponse.customerId",
-    "messageId": "$.context.output.publishEventResponse.messageId",
-    "status": "$.context.output.sendEmailResponse.status"
+    "customerId": "{$context.output.createCustomerResponse.customerId}",
+    "messageId": "{$context.output.publishEventResponse.messageId}",
+    "status": "{$context.output.sendEmailResponse.status}"
   }
 }
 ```
@@ -408,9 +408,9 @@ and intentionally omit unsupported auth/TLS/circuit-breaker fields.
   `context.output` is reserved. False conditions return a successful skip without resolving
   environment references or calling upstream.
 - Request fields live under `config.request`. JSON and form-urlencoded bodies are supported.
-  Validation reads `$.response.*`; default applies only to an empty/null body after rules pass.
+  Validation reads `{$output.*}`; default applies only to an empty/null body after rules pass.
   Transformation still runs on failure. Single-service output is returned directly;
-  accumulation into `$.context.output.<uniqueKey>` is Phase 5.
+  accumulation into `{$context.output.<uniqueKey>}` is Phase 5.
 - `GET /api/v1/executions/:executionId` retrieves sanitized service execution state,
   including failed transformed output and actual dispatch attempts (zero before dispatch).
   Recording is awaited but best-effort, not durable workflow recovery.
@@ -422,7 +422,7 @@ and intentionally omit unsupported auth/TLS/circuit-breaker fields.
   budget. Phase 4's shared store uses the configured SQLite/PostgreSQL `DBAdapter`, not Redis/Couchbase.
 - Auth, custom SSL, `disableSSL: true`, circuit breakers, connect/socket/idle timeouts and
   unsupported request content types return `501 NOT_IMPLEMENTED` at invocation.
-- Resolved `$env.NAME` values are scrubbed from successful/error responses, details,
+- Resolved `{$env.NAME}` values are scrubbed from successful/error responses, details,
   audit rows and logs, including upstream echoes. Stored references and existing
   retrieval masking behavior are preserved.
 

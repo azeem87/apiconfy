@@ -7,21 +7,24 @@ export interface PathLookup {
   value: unknown;
 }
 
-const KEY_PATTERN = /[A-Za-z_][A-Za-z0-9_]*/y;
+const KEY_PATTERN = /[A-Za-z_$][A-Za-z0-9_]*/y;
 const INDEX_PATTERN = /\[([0-9]+)\]/y;
 
-/** Parses only whole-string paths; unsupported syntax remains a template literal. */
+/** Parses `{$context.id}`, `{$output.field}`, `{$env.NAME}` etc. Null for non-matching strings. */
 export function parsePath(source: string): PathSegment[] | null {
-  if (!source.startsWith('$.')) return null;
+  if (!source.startsWith('{$') || !source.endsWith('}')) return null;
+
+  const inner = source.slice(2, -1);
+  if (inner.length === 0) return null;
 
   const segments: PathSegment[] = [];
-  let cursor = 2;
+  let cursor = 0;
   let expectKey = true;
 
-  while (cursor < source.length) {
+  while (cursor < inner.length) {
     if (expectKey) {
       KEY_PATTERN.lastIndex = cursor;
-      const key = KEY_PATTERN.exec(source);
+      const key = KEY_PATTERN.exec(inner);
       if (!key) return null;
       segments.push({ kind: 'key', value: key[0] });
       cursor = KEY_PATTERN.lastIndex;
@@ -29,14 +32,14 @@ export function parsePath(source: string): PathSegment[] | null {
       continue;
     }
 
-    if (source[cursor] === '.') {
+    if (inner[cursor] === '.') {
       cursor += 1;
       expectKey = true;
       continue;
     }
 
     INDEX_PATTERN.lastIndex = cursor;
-    const index = INDEX_PATTERN.exec(source);
+    const index = INDEX_PATTERN.exec(inner);
     if (!index) return null;
     segments.push({ kind: 'index', value: Number(index[1]) });
     cursor = INDEX_PATTERN.lastIndex;

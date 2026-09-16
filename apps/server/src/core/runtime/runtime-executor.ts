@@ -35,7 +35,7 @@ export class DefaultRuntimeExecutor implements RuntimeExecutor {
     const { service, action, context, executionId, startedAtMs } = params;
     const record = await this.options.lookup.findByKey(service, action);
     if (!record) throw new NotFoundError(`Service not found: ${service}/${action}`);
-    const bag: ExecutionContext = { context: { ...context, output: {} }, response: null };
+    const bag: ExecutionContext = { context: { ...context, output: {} }, env: {}, output: null };
     let config = record.config;
     let attempts = 0;
     const secrets = collectSensitiveValues(context);
@@ -103,7 +103,7 @@ export class DefaultRuntimeExecutor implements RuntimeExecutor {
       request = outcome.value.request ?? request;
       rawResponse = outcome.value.data;
       secrets.push(...collectSensitiveValues(rawResponse));
-      bag.response = outcome.value.data;
+      bag.output = outcome.value.data;
       pipelineStarted = true;
       const output = scrub(redactSensitiveFields(runResponsePipeline(config, bag)));
       const durationMs = await finish('success', output);
@@ -112,7 +112,7 @@ export class DefaultRuntimeExecutor implements RuntimeExecutor {
       const error = caught instanceof AppError ? caught : new AppError('Internal server error', 'INTERNAL_ERROR');
       const downstream = (error.details as { downstream?: { body?: unknown } } | undefined)?.downstream;
       if (downstream && Object.hasOwn(downstream, 'body')) {
-        bag.response = downstream.body;
+        bag.output = downstream.body;
         rawResponse = downstream.body;
         secrets.push(...collectSensitiveValues(rawResponse));
       }
@@ -150,8 +150,6 @@ export class DefaultRuntimeExecutor implements RuntimeExecutor {
     function sanitizeErrorDetails(error: AppError, secrets: string[]): AppError['details'] {
       const details = error.details;
       if (details === undefined) return undefined;
-      // These are runtime-generated control metadata, not payloads. Their names and numbers
-      // must remain usable even when a short credential happens to match part of them.
       if (['RATE_LIMITED', 'NOT_IMPLEMENTED', 'UNKNOWN_COMPONENT_TYPE', 'ENV_REF_UNRESOLVED'].includes(error.code)) {
         return details;
       }

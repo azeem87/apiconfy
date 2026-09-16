@@ -1,17 +1,17 @@
 import {
   evaluatePredicate, firstPathOperand, resolveTemplate,
 } from '@/core/transform/index.js';
-import type { ResponseConfig, StandardError } from '@/core/types.js';
+import type { OutputConfig, StandardError } from '@/core/types.js';
 import type { ExecutionContext } from './types.js';
 import {
   type AppError, ExternalServiceError, ResponseValidationError, TransformationError,
 } from '@/lib/errors.js';
 
 export function transformResponse(config: Record<string, unknown>, bag: ExecutionContext): unknown {
-  const response = config.response as ResponseConfig | undefined;
-  if (response?.transformation === undefined) return bag.response;
+  const output = config.output as OutputConfig | undefined;
+  if (output?.transformation === undefined) return bag.output;
   try {
-    return resolveTemplate(response.transformation, bag);
+    return resolveTemplate(output.transformation, bag);
   } catch {
     throw new TransformationError('Response transformation failed');
   }
@@ -19,8 +19,8 @@ export function transformResponse(config: Record<string, unknown>, bag: Executio
 
 /** Validation controls default eligibility, never whether failure output can be mapped. */
 export function runResponsePipeline(config: Record<string, unknown>, bag: ExecutionContext): unknown {
-  const response = config.response as ResponseConfig | undefined;
-  for (const rule of response?.validation?.rules ?? []) {
+  const output = config.output as OutputConfig | undefined;
+  for (const rule of output?.validation?.rules ?? []) {
     let passed: boolean;
     try {
       passed = evaluatePredicate(rule.expression, bag);
@@ -40,8 +40,8 @@ export function runResponsePipeline(config: Record<string, unknown>, bag: Execut
       path: firstPathOperand(rule.expression) ?? rule.expression,
     });
   }
-  const empty = bag.response === null || bag.response === undefined || bag.response === '';
-  if (empty && response?.default !== undefined) bag.response = response.default;
+  const empty = bag.output === null || bag.output === undefined || bag.output === '';
+  if (empty && output?.default !== undefined) bag.output = output.default;
   return transformResponse(config, bag);
 }
 

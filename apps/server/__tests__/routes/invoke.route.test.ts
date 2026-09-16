@@ -10,8 +10,8 @@ import { createCoreHandlerRegistry } from '@/core/components/index.js';
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { 'content-type': 'application/json' },
 });
-const request = { uri: 'https://example.test/items/$.context.id', method: 'POST' };
-const response = { transformation: { itemResponse: { id: '$.response.id', caller: '$.context.id' } } };
+const request = { uri: 'https://example.test/items/{$context.id}', method: 'POST' };
+const output = { transformation: { itemResponse: { id: '{$output.id}', caller: '{$context.id}' } } };
 const appConfig = { port: 3000, logLevel: 'silent' };
 
 describe('Phase 2 invocation API', () => {
@@ -28,7 +28,7 @@ describe('Phase 2 invocation API', () => {
       ...deps,
     }).app;
   };
-  const register = async (config: Record<string, unknown> = { request, response }, condition?: string) => {
+  const register = async (config: Record<string, unknown> = { request, output }, condition?: string) => {
     const registered = await app.request('/api/v1/services', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ service: 'items', action: 'create', componentType: 'rest', config, condition }),
@@ -63,12 +63,12 @@ describe('Phase 2 invocation API', () => {
       request: {
         ...request,
         headers: {
-          'x-caller': '$.context.id', 'x-missing': '$.context.absent', 'x-null': '$.context.none',
-          'x-embedded-missing': 'Bearer $.context.absent', 'x-execution-id': 'spoof',
+          'x-caller': '{$context.id}', 'x-missing': '{$context.absent}', 'x-null': '{$context.none}',
+          'x-embedded-missing': 'Bearer {$context.absent}', 'x-execution-id': 'spoof',
           'content-type': 'multipart/form-data',
         },
-        payloadTemplate: { input: '$.context.id', nested: ['$.context.id'] },
-      }, response,
+        payloadTemplate: { input: '{$context.id}', nested: ['{$context.id}'] },
+      }, output,
     });
     const res = await invoke({ context: { id: 7, none: null } });
     expect(res.status).toBe(200);
@@ -112,9 +112,9 @@ describe('Phase 2 invocation API', () => {
 
   it('skips before env resolution, capability guards, or limiter', async () => {
     await register({
-      request: { ...request, auth: { basic: { username: 'user', password: '$env.MISSING' } } },
+      request: { ...request, auth: { basic: { username: 'user', password: '{$env.MISSING}' } } },
       resilience: { rateLimit: { requests: 1, windowMs: 60000 } },
-    }, '$.context.id == null');
+    }, '{$context.id} == null');
     for (let index = 0; index < 2; index += 1) {
       const result = await (await invoke()).json();
       expect(result).toMatchObject({ success: true, data: null, skippedExecution: true });
@@ -126,9 +126,9 @@ describe('Phase 2 invocation API', () => {
 
   it('maps failed validation, preserves raw null and records the injected wrapper error', async () => {
     upstream = async () => json({ id: null, message: false });
-    await register({ request, response: {
-      ...response, default: { id: 'must-not-apply' },
-      validation: { rules: [{ expression: '$.response.id != null', message: 'fallback', errorPath: '$.response.message' }] },
+    await register({ request, output: {
+      ...output, default: { id: 'must-not-apply' },
+      validation: { rules: [{ expression: '{$output.id} != null', message: 'fallback', errorPath: '{$output.message}' }] },
     } });
     const res = await invoke();
     const result = await res.json();
@@ -136,19 +136,19 @@ describe('Phase 2 invocation API', () => {
     expect(result.data).toBeNull();
     expect(result.error).toEqual({
       code: 'VALIDATION_FAILED', message: 'false',
-      details: { expression: '$.response.id != null', errorPath: '$.response.message' },
+      details: { expression: '{$output.id} != null', errorPath: '{$output.message}' },
     });
     const record = await recorded(result);
     expect(record.result.itemResponse).toMatchObject({
-      id: null, caller: 7, error: { code: 'VALIDATION_FAILED', details: [{ path: '$.response.id' }] },
+      id: null, caller: 7, error: { code: 'VALIDATION_FAILED', details: [{ path: '{$output.id}' }] },
     });
     expect(JSON.parse((await db.getExecutionLogs(result.meta.executionId))[0].responseData!)).toEqual(record.result);
   });
 
   it('preserves upstream failure as primary even when rules fail, and still transforms', async () => {
     upstream = async () => json({ id: null }, 400);
-    await register({ request, response: {
-      ...response, validation: { rules: [{ expression: '$.response.id != null' }] },
+    await register({ request, output: {
+      ...output, validation: { rules: [{ expression: '{$output.id} != null' }] },
     }, resilience: { retryCount: 2, retryDelay: 1, retryOn: [400] } });
     const res = await invoke();
     const result = await res.json();
@@ -182,8 +182,8 @@ describe('Phase 2 invocation API', () => {
   it('guards every unsupported capability before resolving credentials or dispatching', async () => {
     await register({
       request: {
-        ...request, auth: { basic: { username: 'user', password: '$env.MISSING' } },
-        ssl: { cert: '$env.CERT', key: '$env.KEY' }, contentType: 'multipart/form-data',
+        ...request, auth: { basic: { username: 'user', password: '{$env.MISSING}' } },
+        ssl: { cert: '{$env.CERT}', key: '{$env.KEY}' }, contentType: 'multipart/form-data',
       },
       timeout: { connect: 1, socket: 1, idle: 1 },
       resilience: {
@@ -203,7 +203,7 @@ describe('Phase 2 invocation API', () => {
 
   it('reports missing env before transport and records it', async () => {
     build({ env: {} });
-    await register({ request: { ...request, uri: '$env.MISSING' } });
+    await register({ request: { ...request, uri: '{$env.MISSING}' } });
     const res = await invoke();
     const result = await res.json();
     expect(res.status).toBe(500);
@@ -220,7 +220,7 @@ describe('Phase 2 invocation API', () => {
       return json({ id: 'xy', echo: secret, [secret]: encodeURIComponent(secret), password: secret }, status);
     };
     await register({
-      request: { ...request, headers: { Authorization: '$env.CREDENTIAL', 'X-Short': '$env.SHORT' } },
+      request: { ...request, headers: { Authorization: '{$env.CREDENTIAL}', 'X-Short': '{$env.SHORT}' } },
     });
     const res = await invoke({ context: { id: 7, innocuous: secret, password: 'literal-password' } });
     const text = await res.text();
@@ -233,7 +233,7 @@ describe('Phase 2 invocation API', () => {
     expect(audit).not.toContain('literal-password');
     expect(audit).not.toContain('xy');
     const definition = await db.findComponent('items', 'create');
-    expect(JSON.stringify(definition?.config)).toContain('$env.CREDENTIAL');
+    expect(JSON.stringify(definition?.config)).toContain('{$env.CREDENTIAL}');
   });
 
   it('enforces deadlines through body reads and classifies stream failures', async () => {
@@ -263,7 +263,7 @@ describe('Phase 2 invocation API', () => {
 
   it('malformed JSON can use defaults while success audit retains the raw null', async () => {
     upstream = async () => new Response('{broken', { headers: { 'content-type': 'application/json' } });
-    await register({ request, response: { default: { id: 'fallback' }, ...response } });
+    await register({ request, output: { default: { id: 'fallback' }, ...output } });
     const result = await (await invoke()).json();
     expect(result.data.itemResponse.id).toBe('fallback');
     expect(JSON.parse((await db.getExecutionLogs(result.meta.executionId))[0].responseData!)).toBeNull();
@@ -288,19 +288,19 @@ describe('Phase 2 invocation API', () => {
     const malformed = await (await invoke()).json();
     expect(malformed.error.code).toBe('TRANSFORMATION_ERROR');
     expect((await recorded(malformed)).attempts).toBe(0);
-    await db.updateComponent(row!.id, { condition: '$.context.id != null', componentType: 'missing' });
+    await db.updateComponent(row!.id, { condition: '{$context.id} != null', componentType: 'missing' });
     const unknown = await (await invoke()).json();
     expect(unknown.error.code).toBe('UNKNOWN_COMPONENT_TYPE');
     expect((await recorded(unknown)).attempts).toBe(0);
     await db.updateComponent(row!.id, { componentType: 'rest' });
     await db.updateComponent(row!.id, {
-      config: { request: { uri: 'https://example.test/$.context.missing', method: 'POST' } },
+      config: { request: { uri: 'https://example.test/{$context.missing}', method: 'POST' } },
     });
     const unresolved = await (await invoke({ context: { id: 7 } })).json();
     expect(unresolved.error.code).toBe('TRANSFORMATION_ERROR');
     expect((await recorded(unresolved)).attempts).toBe(1);
     expect(calls).toHaveLength(0);
-    await db.updateComponent(row!.id, { config: { request, response } });
+    await db.updateComponent(row!.id, { config: { request, output } });
     build({ handlers: createCoreHandlerRegistry().register({
       componentType: 'rest', displayName: 'Broken',
       async execute() { throw new Error('never leak this'); },
@@ -312,7 +312,7 @@ describe('Phase 2 invocation API', () => {
 
   it('adds a component solely through schemas and handlers, preserving the generic pipeline', async () => {
     build({
-      schemas: createCoreSchemaRegistry().register('acme', z.object({ response: z.unknown() })),
+      schemas: createCoreSchemaRegistry().register('acme', z.object({ output: z.unknown() })),
       handlers: createCoreHandlerRegistry().register({
         componentType: 'acme', displayName: 'Acme',
         async execute(params) {
@@ -323,7 +323,7 @@ describe('Phase 2 invocation API', () => {
     });
     const res = await app.request('/api/v1/services', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ service: 'items', action: 'create', componentType: 'acme', config: { response } }),
+      body: JSON.stringify({ service: 'items', action: 'create', componentType: 'acme', config: { output } }),
     });
     expect(res.status).toBe(201);
     const result = await (await invoke()).json();
@@ -345,7 +345,7 @@ describe('Phase 2 invocation API', () => {
   it('redacts sensitive fields before a short secret can rename their keys', async () => {
     build({ env: { TOKEN: 'a' } });
     upstream = async () => json({ password: 'hunter2' });
-    await register({ request: { ...request, headers: { Authorization: '$env.TOKEN' } } });
+    await register({ request: { ...request, headers: { Authorization: '{$env.TOKEN}' } } });
     const result = await (await invoke({ context: { id: 7, password: 'hunter2' } })).json();
     expect(JSON.stringify(result)).not.toContain('hunter2');
     const audit = JSON.stringify([await recorded(result), await db.getExecutionLogs(result.meta.executionId)]);
@@ -356,8 +356,8 @@ describe('Phase 2 invocation API', () => {
   it('retains secrets during partial resolution failure, including failed transformed output', async () => {
     build({ env: { TOKEN: 'private-credential' } });
     await register({
-      request: { ...request, headers: { A: '$env.TOKEN', B: '$env.MISSING' } },
-      response: { transformation: { out: { echo: '$.context.echo' } } },
+      request: { ...request, headers: { A: '{$env.TOKEN}', B: '{$env.MISSING}' } },
+      output: { transformation: { out: { echo: '{$context.echo}' } } },
     });
     const result = await (await invoke({ context: { echo: 'private-credential' } })).json();
     expect(result.error.code).toBe('ENV_REF_UNRESOLVED');
@@ -369,7 +369,7 @@ describe('Phase 2 invocation API', () => {
   it('preserves rate-limit control fields and Retry-After with a one-character secret', async () => {
     build({ env: { TOKEN: 'e' } });
     await register({
-      request: { ...request, headers: { Authorization: '$env.TOKEN' } },
+      request: { ...request, headers: { Authorization: '{$env.TOKEN}' } },
       resilience: { rateLimit: { requests: 1, windowMs: 60000 } },
     });
     await invoke();
@@ -383,9 +383,9 @@ describe('Phase 2 invocation API', () => {
 
   it('does not move a credential into an unredacted validation message or mapped field', async () => {
     upstream = async () => json({ id: null, password: 'hunter2' });
-    await register({ request, response: {
-      validation: { rules: [{ expression: '$.response.id != null', errorPath: '$.response.password' }] },
-      transformation: { out: { innocent: '$.response.password' } },
+    await register({ request, output: {
+      validation: { rules: [{ expression: '{$output.id} != null', errorPath: '{$output.password}' }] },
+      transformation: { out: { innocent: '{$output.password}' } },
     } });
     const result = await (await invoke()).json();
     expect(result.error.message).toBe('***');
