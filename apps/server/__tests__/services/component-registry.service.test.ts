@@ -148,22 +148,22 @@ describe('ComponentRegistryService', () => {
     });
   });
 
-  describe('register — stage 3, $env. references', () => {
+  describe('register — stage 3, {$env.} references', () => {
     it('accepts a well-formed reference and stores it verbatim', async () => {
       const { record } = await service.register({
         ...validBody,
-        config: { request: { ...validBody.config.request, auth: { basic: { username: 'u', password: '$env.CRM_PW' } } } },
+        config: { request: { ...validBody.config.request, auth: { basic: { username: 'u', password: '{$env.CRM_PW}' } } } },
       });
-      expect((record.config as any).request.auth.basic.password).toBe('$env.CRM_PW');
+      expect((record.config as any).request.auth.basic.password).toBe('{$env.CRM_PW}');
     });
 
     it('rejects a malformed reference instead of storing it as a literal', async () => {
       const err = await expectAppError(() => service.register({
         ...validBody,
-        config: { request: { ...validBody.config.request, auth: { basic: { username: 'u', password: '$env.' } } } },
+        config: { request: { ...validBody.config.request, auth: { basic: { username: 'u', password: '{$env.}' } } } },
       }));
       expect(err.code).toBe('VALIDATION_FAILED');
-      expect(err.message).toContain('$env.');
+      expect(err.message).toContain('{$env.}');
     });
 
     it('accepts a literal secret without complaint — that is the policy', async () => {

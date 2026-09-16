@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
+import { Database } from 'bun:sqlite';
 import { createSqliteAdapter } from '@/core/db/adapters/sqlite-adapter.js';
-import type { DBAdapter } from '@/core/db/adapter.js';
+import type { DBAdapter, ExecutionRecord } from '@/core/db/adapter.js';
 import { generateId } from '@/lib/index.js';
 
 describe('SQLite Adapter', () => {
@@ -22,7 +23,7 @@ describe('SQLite Adapter', () => {
         service: 'test-svc',
         action: 'get_user',
         componentType: 'rest',
-        config: { url: 'https://example.com', method: 'GET' },
+        config: { request: { uri: 'https://example.com', method: 'GET' } },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
@@ -146,6 +147,97 @@ describe('SQLite Adapter', () => {
       expect(step.onFailure).toBe('halt');
       expect(step.compensationAction).toBeUndefined();
       expect(step.condition).toBeUndefined();
+    });
+  });
+
+  describe('executions', () => {
+    const execution = (overrides: Partial<ExecutionRecord> = {}): ExecutionRecord => ({
+      executionId: generateId(),
+      type: 'service',
+      refName: 'svc:act',
+      service: 'svc',
+      action: 'act',
+      status: 'COMPLETED',
+      context: { customer: { id: 123 } },
+      startedAt: '2026-09-14T06:00:00.000Z',
+      completedAt: '2026-09-14T06:00:00.010Z',
+      createdAt: '2026-09-14T06:00:00.000Z',
+      updatedAt: '2026-09-14T06:00:00.010Z',
+      ...overrides,
+    });
+
+    it.each([null, false, 0, '', 'text', [1, null], { ok: true }].map(result => ({ result })))(
+      'round-trips JSON result %j',
+      async ({ result }) => {
+        const record = execution({ result, attempts: 2 });
+        const saved = await adapter.saveExecution(record);
+        expect(saved.result).toEqual(result);
+        expect(await adapter.getExecution(record.executionId)).toMatchObject(record);
+      },
+    );
+
+    it('round-trips structured errors and optional execution fields', async () => {
+      const record = execution({
+        type: 'saga',
+        service: undefined,
+        action: undefined,
+        groupId: 'group-1',
+        steps: [{ name: 'first', status: 'FAILED', attempts: 2 }],
+        status: 'FAILED',
+        result: { error: true },
+        error: { code: 'VALIDATION_FAILED', message: 'invalid result', details: { expression: '$.response.id', items: [null, false] } },
+        maxDurationMs: 1000,
+        attempts: 2,
+      });
+      await adapter.saveExecution(record);
+      expect(await adapter.getExecution(record.executionId)).toEqual(record);
+    });
+
+    it.each([null, false, 0, '', ['problem']].map(details => ({ details })))('round-trips error details %j', async ({ details }) => {
+      const record = execution({ error: { code: 'ERROR', message: '', details } });
+      await adapter.saveExecution(record);
+      expect((await adapter.getExecution(record.executionId))?.error).toEqual(record.error);
+    });
+
+    it('defaults attempts and absent results without fabricating errors', async () => {
+      const record = execution({ completedAt: undefined });
+      const saved = await adapter.saveExecution(record);
+      expect(saved.attempts).toBe(1);
+      expect(saved.result).toBeNull();
+      expect(saved.error).toBeUndefined();
+      expect(saved.steps).toBeUndefined();
+      expect(saved.groupId).toBeUndefined();
+      expect(saved.completedAt).toBeUndefined();
+    });
+
+    it('returns null for a missing execution and rejects duplicate ids', async () => {
+      expect(await adapter.getExecution('missing')).toBeNull();
+      const record = execution();
+      await adapter.saveExecution(record);
+      await expect(adapter.saveExecution(record)).rejects.toThrow();
+    });
+
+    it('adds the executions table to a Phase 1 database without changing stored definitions', async () => {
+      const sqlite = new Database(':memory:');
+      const upgraded = createSqliteAdapter(sqlite);
+      await upgraded.connect();
+      try {
+        const component = await upgraded.saveComponent({
+          id: generateId(), service: 'existing', action: 'act', componentType: 'rest',
+          config: { request: { uri: 'https://example.test', method: 'GET' }, auth: { basic: { username: 'u', password: '$env.PW' } } },
+          createdAt: now(), updatedAt: now(),
+        });
+        sqlite.exec('DROP TABLE executions');
+        await upgraded.connect();
+        expect(await upgraded.getComponent(component.id)).toEqual(component);
+        const record = execution({ result: null });
+        await upgraded.saveExecution(record);
+        expect(await upgraded.getExecution(record.executionId)).toMatchObject(record);
+        await upgraded.connect();
+        expect(await upgraded.getExecution(record.executionId)).toMatchObject(record);
+      } finally {
+        await upgraded.disconnect();
+      }
     });
   });
 

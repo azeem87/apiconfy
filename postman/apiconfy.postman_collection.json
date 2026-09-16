@@ -1,13 +1,15 @@
 {
   "info": {
     "name": "Apiconfy",
-    "description": "API collection for Apiconfy integration runtime.\n\n## Setup\n1. Start the server: `pnpm dev`\n2. Set `base_url` variable (default: http://localhost:3000)\n3. Set `api_key` variable if API_KEY env is configured\n\n## Structure\n- **Health** — server health check\n- **Service Management** — generic CRUD operations (list, get, delete) for all component types\n- **REST** — REST component registration examples\n- **Mapper** — Mapper component registration examples (Phase 2)\n- **Database** — Database component registration examples (Phase 2)\n- **Script** — Script component registration examples (Phase 2)\n- **SQS** — SQS component registration examples (Phase 10)\n\nEach component type folder contains:\n- **Simple Examples** — minimal working requests\n- **Complex Examples** — full-featured scenarios with auth, resilience, mapping\n- **Error Cases** — validation, auth, not-found scenarios\n\n## Data Bag Convention\nAll components follow the same input/output lifecycle:\n- Input: `$.context.*` (original invoke payload)\n- Raw external response: `$.response.*` (ephemeral, per-step)\n- Response transformation: reads `$.response.*`, wraps output under unique key\n- Output: merged into `$.context.output.<uniqueKey>` (always, success or failure)\n\nExample:\n```json\n{\n  \"response\": {\n    \"transformation\": {\n      \"createOrderResponse\": {\n        \"orderId\": \"$.response.id\",\n        \"status\": \"$.response.status\"\n      }\n    }\n  }\n}\n```\n\nThis prevents collisions when multiple components return similar fields.\n\nUpdated as each phase is completed.",
+    "description": "API collection for Apiconfy integration runtime.\n\n## Setup\n1. Start the server with `pnpm dev` (install dependencies with pnpm only).\n2. Set base_url (default http://localhost:3000) and api_key if API_KEY is configured.\n3. REST > Invoke folders run in order: registration, invocation, execution lookup. Invoke scripts save execution_id.\n4. Complex/error examples use upstream_url (default https://httpbin.org). Use dummy data only, or your own httpbin-compatible upstream.\n\n## Structure — by component type\nHealth and Service Management retain existing requests. REST includes registration plus Phase 2 Invoke > Simple Examples, Complex Examples, Error Cases. Existing full auth/TLS/circuitBreaker registrations are registration-only; invoking them returns 501. Runnable Phase 2 complex examples include every supported section and intentionally omit unsupported capabilities. Mapper, Database, Script and SQS are future Phase 11 designs, not registered handlers in Phase 2; Scheduler is Phase 10.\n\n## Data bag\nInput uses {$context.*}; ephemeral raw upstream response uses {$output.*}. Response transformations wrap output under unique keys. Phase 2 returns transformed output directly and leaves context.output empty; callers must not supply context.output. Transformation still runs on failure: wire data is null, while GET /api/v1/executions/{{execution_id}} exposes the sanitized transformed, error-injected result. Merging into {$context.output.<uniqueKey>} is Phase 5 workflow behavior.\n\n## Limits\nOnly timeout.response is enforced, per attempt through body consumption. Auth, custom TLS/disableSSL=true, connect/socket/idle, circuitBreaker and unsupported content types return 501. Rate limiting is an in-memory per-process token bucket (429 plus Retry-After); shared DB-backed limits are Phase 4 using the configured SQLite/PostgreSQL DBAdapter, never Redis/Couchbase. Phase 2 implementation verification is pending; this collection is not test-run evidence.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "version": "1.0.0"
   },
   "variable": [
     { "key": "base_url", "value": "http://localhost:3000", "type": "string" },
-    { "key": "api_key", "value": "", "type": "string" }
+    { "key": "api_key", "value": "", "type": "string" },
+    { "key": "upstream_url", "value": "https://httpbin.org", "type": "string" },
+    { "key": "execution_id", "value": "", "type": "string" }
   ],
   "auth": {
     "type": "bearer",
@@ -111,7 +113,223 @@
     },
     {
       "name": "REST",
+      "description": "REST is the only implemented component type. Existing Complex Examples with auth, TLS, circuitBreaker or connect/socket/idle timeouts are REGISTRATION-ONLY: invocation returns 501. Invoke contains runnable Phase 2 examples with every supported config section; unsupported sections are intentionally omitted. Phase 2 final verification is pending. Never send real secrets to the public example upstream.",
       "item": [
+        {
+          "name": "Invoke",
+          "description": "Run each folder in order: register before invoke. Simple Examples use local /health. Complex and selected error examples require an httpbin-compatible upstream_url; default is public httpbin.org, so use dummy data only. Each invoke saves execution_id. Failure data is null on the wire; execution lookup exposes the sanitized transformed error-injected result. No workflow context merge in Phase 2.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.request.url.toString().endsWith('/invoke')) {",
+                  "  const body = pm.response.json();",
+                  "  if (body.meta && body.meta.executionId) pm.collectionVariables.set('execution_id', body.meta.executionId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "item": [
+            {
+              "name": "Simple Examples",
+              "item": [
+                {
+                  "name": "1. Register local health",
+                  "request": {
+                    "method": "POST",
+                    "header": [{ "key": "Content-Type", "value": "application/json" }],
+                    "url": "{{base_url}}/api/v1/services",
+                    "body": { "mode": "raw", "raw": "{\n  \"service\": \"phase2-simple\",\n  \"action\": \"health\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": { \"uri\": \"{{base_url}}/health\", \"method\": \"GET\" }\n  }\n}" },
+                    "description": "Minimal required REST config: request.uri and request.method only. Returns 201 on create or 200 on upsert. base_url must also be reachable from the Apiconfy server."
+                  }
+                },
+                {
+                  "name": "2. Invoke local health",
+                  "request": {
+                    "method": "POST",
+                    "header": [{ "key": "Content-Type", "value": "application/json" }],
+                    "url": "{{base_url}}/api/v1/services/phase2-simple/health/invoke",
+                    "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                    "description": "Expected 200 success, raw health body under data, meta.executionId and durationMs. Saves execution_id; one dispatch attempt."
+                  }
+                },
+                {
+                  "name": "3. Look up execution",
+                  "request": {
+                    "method": "GET",
+                    "header": [],
+                    "url": "{{base_url}}/api/v1/executions/{{execution_id}}",
+                    "description": "Expected 200; data.type=service, status=COMPLETED, attempts=1. Recording is awaited best-effort; a failed DB write can leave a 404."
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Complex Examples",
+              "description": "Includes all executable Phase 2 sections. Auth, SSL, circuitBreaker and connect/socket/idle are deliberately absent because they would make these registrations non-executable. See REST > Complex Examples for registration-only full future configurations.",
+              "item": [
+                {
+                  "name": "1. Register mapped echo with retry and rate limit",
+                  "request": {
+                    "method": "POST",
+                    "header": [{ "key": "Content-Type", "value": "application/json" }],
+                    "url": "{{base_url}}/api/v1/services",
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"service\": \"phase2-complex\",\n  \"action\": \"echo\",\n  \"componentType\": \"rest\",\n  \"description\": \"Runnable Phase 2 JSON echo with all supported sections\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"{{upstream_url}}/anything\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Customer-Id\": \"{$context.id}\", \"X-Request-Label\": \"demo-{$context.label}\" },\n      \"payloadTemplate\": { \"customerId\": \"{$context.id}\", \"name\": \"{$context.name}\", \"items\": \"{$context.items}\" }\n    },\n    \"timeout\": { \"response\": 5000 },\n    \"resilience\": {\n      \"retryCount\": 2, \"retryDelay\": 100, \"backoff\": \"exponential\", \"maxDelay\": 1000,\n      \"retryOn\": [500, 502, 503], \"rateLimit\": { \"requests\": 20, \"windowMs\": 60000 }\n    },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.json.customerId} != null\", \"message\": \"Echo omitted customer ID\", \"errorPath\": \"{$output.message}\" }] },\n      \"default\": { \"json\": { \"customerId\": \"no-body\" } },\n      \"transformation\": { \"echoResponse\": { \"customerId\": \"{$output.json.customerId}\", \"name\": \"{$output.json.name}\", \"items\": \"{$output.json.items}\" } }\n    }\n  },\n  \"condition\": \"{$context.enabled} == true && {$context.id} != null\",\n  \"metaData\": { \"example\": \"phase2\", \"purpose\": \"dummy-data-only\" }\n}"
+                    },
+                    "description": "Expected 201/200. Validation precedes default, so default cannot rescue a failed rule. Unique echoResponse key prevents future workflow collisions. No real credentials are used."
+                  }
+                },
+                {
+                  "name": "2. Invoke mapped echo",
+                  "request": {
+                    "method": "POST",
+                    "header": [{ "key": "Content-Type", "value": "application/json" }],
+                    "url": "{{base_url}}/api/v1/services/phase2-complex/echo/invoke",
+                    "body": { "mode": "raw", "raw": "{ \"context\": { \"enabled\": true, \"id\": \"demo-123\", \"name\": \"Demo Customer\", \"label\": \"example\", \"items\": [{ \"sku\": \"demo\", \"quantity\": 2 }] } }" },
+                    "description": "Expected 200; data.echoResponse preserves mapped JSON values. Raw response is audited; transformed output is persisted as execution result. X-Execution-Id is propagated upstream."
+                  }
+                },
+                {
+                  "name": "3. Skip mapped echo",
+                  "request": {
+                    "method": "POST",
+                    "header": [{ "key": "Content-Type", "value": "application/json" }],
+                    "url": "{{base_url}}/api/v1/services/phase2-complex/echo/invoke",
+                    "body": { "mode": "raw", "raw": "{ \"context\": { \"enabled\": false } }" },
+                    "description": "Expected 200, skippedExecution=true, data=null. No upstream request, no env resolution, no limiter token; persisted attempts=0."
+                  }
+                },
+                {
+                  "name": "4. Register form-urlencoded echo",
+                  "request": {
+                    "method": "POST",
+                    "header": [{ "key": "Content-Type", "value": "application/json" }],
+                    "url": "{{base_url}}/api/v1/services",
+                    "body": { "mode": "raw", "raw": "{\n  \"service\": \"phase2-complex\", \"action\": \"form\", \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": { \"uri\": \"{{upstream_url}}/anything\", \"method\": \"POST\", \"contentType\": \"application/x-www-form-urlencoded\", \"headers\": { \"X-Demo\": \"{$context.id}\" }, \"payloadTemplate\": { \"customerId\": \"{$context.id}\", \"label\": \"{$context.label}\" } },\n    \"timeout\": { \"response\": 5000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 100, \"backoff\": \"fixed\", \"maxDelay\": 500, \"retryOn\": [502, 503], \"rateLimit\": { \"requests\": 20, \"windowMs\": 60000 } },\n    \"output\": { \"validation\": { \"rules\": [{ \"expression\": \"{$output.form.customerId} != null\", \"message\": \"Missing form ID\", \"errorPath\": \"{$output.message}\" }] }, \"default\": { \"form\": {} }, \"transformation\": { \"formEchoResponse\": { \"customerId\": \"{$output.form.customerId}\", \"label\": \"{$output.form.label}\" } } }\n  },\n  \"condition\": \"{$context.id} != null\", \"metaData\": { \"example\": \"phase2-form\" }\n}" },
+                    "description": "Expected 201/200. Every supported section is shown; unsupported auth/TLS/circuitBreaker blocks are omitted. Form bodies are serialized with URLSearchParams."
+                  }
+                },
+                {
+                  "name": "5. Invoke form echo",
+                  "request": {
+                    "method": "POST",
+                    "header": [{ "key": "Content-Type", "value": "application/json" }],
+                    "url": "{{base_url}}/api/v1/services/phase2-complex/form/invoke",
+                    "body": { "mode": "raw", "raw": "{ \"context\": { \"id\": \"demo-123\", \"label\": \"space & plus +\" } }" },
+                    "description": "Expected 200; data.formEchoResponse.label round-trips spaces, ampersand and plus."
+                  }
+                },
+                {
+                  "name": "6. Register empty-body default",
+                  "request": {
+                    "method": "POST",
+                    "header": [{ "key": "Content-Type", "value": "application/json" }],
+                    "url": "{{base_url}}/api/v1/services",
+                    "body": { "mode": "raw", "raw": "{\n  \"service\": \"phase2-complex\", \"action\": \"default\", \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": { \"uri\": \"{{upstream_url}}/status/204\", \"method\": \"GET\", \"contentType\": \"application/json\", \"headers\": { \"X-Demo\": \"{$context.id}\" }, \"payloadTemplate\": { \"unusedForGet\": \"{$context.id}\" } },\n    \"timeout\": { \"response\": 5000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 100, \"backoff\": \"fixed\", \"maxDelay\": 500, \"retryOn\": [503], \"rateLimit\": { \"requests\": 20, \"windowMs\": 60000 } },\n    \"output\": { \"validation\": { \"rules\": [{ \"expression\": \"true\", \"message\": \"Default scenario permits an empty response\" }] }, \"default\": { \"status\": \"empty\" }, \"transformation\": { \"defaultResponse\": { \"status\": \"{$output.status}\", \"customerId\": \"{$context.id}\" } } }\n  },\n  \"condition\": \"{$context.id} != null\", \"metaData\": { \"example\": \"phase2-default\" }\n}" },
+                    "description": "Expected 201/200. GET ignores payloadTemplate; all supported sections are shown. The true validation rule permits a 204 body, then default resolves context before transformation reads response."
+                  }
+                },
+                {
+                  "name": "7. Invoke empty-body default",
+                  "request": {
+                    "method": "POST",
+                    "header": [{ "key": "Content-Type", "value": "application/json" }],
+                    "url": "{{base_url}}/api/v1/services/phase2-complex/default/invoke",
+                    "body": { "mode": "raw", "raw": "{ \"context\": { \"id\": \"demo-123\" } }" },
+                    "description": "Expected 200, data.defaultResponse={status:empty,customerId:demo-123}. Upstream status 204 still becomes a normal invocation envelope."
+                  }
+                },
+                {
+                  "name": "8. Look up latest execution",
+                  "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/executions/{{execution_id}}", "description": "Inspect sanitized result/context and real dispatch attempts." }
+                }
+              ]
+            },
+            {
+              "name": "Error Cases",
+              "description": "Run in order. Expected statuses are in request names. Upstream-dependent examples need httpbin-compatible upstream_url. The 429 pair must run within 60 seconds; reruns may already be limited until refill or server restart. Schema-valid unsupported configurations are intentionally registration-only until invoked here to demonstrate 501.",
+              "item": [
+                {
+                  "name": "404 — unknown service",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-never-registered/missing/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_FOUND with execution metadata; failed record attempts=0." }
+                },
+                {
+                  "name": "400 — missing context",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-simple/health/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "VALIDATION_FAILED before execution. Do not expect a persisted invocation for an invalid request body." }
+                },
+                {
+                  "name": "400 — reserved context.output",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-simple/health/invoke", "body": { "mode": "raw", "raw": "{ \"context\": { \"output\": {} } }" }, "description": "VALIDATION_FAILED: output is reserved even when empty." }
+                },
+                {
+                  "name": "Register validation failure",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services", "body": { "mode": "raw", "raw": "{ \"service\": \"phase2-errors\", \"action\": \"validation\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{base_url}}/health\", \"method\": \"GET\" }, \"output\": { \"validation\": { \"rules\": [{ \"expression\": \"false\", \"message\": \"Intentional demo validation failure\" }] }, \"transformation\": { \"validationFailureResponse\": { \"upstream\": \"{$output}\" } } } } }" }, "description": "Expected 201/200. Valid predicate intentionally fails after local health response." }
+                },
+                {
+                  "name": "422 — response validation still transforms",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/validation/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "VALIDATION_FAILED, wire data=null. Lookup must contain validationFailureResponse.upstream and injected validationFailureResponse.error." }
+                },
+                {
+                  "name": "Look up failed transformed result",
+                  "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/executions/{{execution_id}}", "description": "Expected 200, FAILED, attempts=1; transformed result includes raw health under wrapper.upstream plus standardized error." }
+                },
+                {
+                  "name": "Register one-token rate limit",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services", "body": { "mode": "raw", "raw": "{ \"service\": \"phase2-errors\", \"action\": \"limited\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{base_url}}/health\", \"method\": \"GET\" }, \"resilience\": { \"rateLimit\": { \"requests\": 1, \"windowMs\": 60000 } } } }" }, "description": "Expected 201/200. One process-local token. Re-registration is not a promise to reset the bucket." }
+                },
+                {
+                  "name": "200 — consume available token",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/limited/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "200 on a fresh/refilled bucket. Immediately run the next request." }
+                },
+                {
+                  "name": "429 — token exhausted",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/limited/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "RATE_LIMITED with Retry-After integer seconds. No upstream call; persisted attempts=0." }
+                },
+                {
+                  "name": "Register unsupported auth",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services", "body": { "mode": "raw", "raw": "{ \"service\": \"phase2-errors\", \"action\": \"auth\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{base_url}}/health\", \"method\": \"GET\", \"auth\": { \"basic\": { \"username\": \"{$env.DEMO_USERNAME}\", \"password\": \"{$env.DEMO_PASSWORD}\" } } } } }" }, "description": "Expected 201/200. Registration-only capability; env references are masked. No environment variables need setting: the invocation guard runs before env resolution." }
+                },
+                {
+                  "name": "501 — auth guard",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/auth/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_IMPLEMENTED, attempts=0, no env resolution or unauthenticated upstream dispatch." }
+                },
+                {
+                  "name": "Register unsupported connect timeout",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services", "body": { "mode": "raw", "raw": "{ \"service\": \"phase2-errors\", \"action\": \"connect\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{base_url}}/health\", \"method\": \"GET\" }, \"timeout\": { \"connect\": 1000 } } }" }, "description": "Expected 201/200. Schema-valid but not executable in Phase 2." }
+                },
+                {
+                  "name": "501 — connect timeout guard",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/connect/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_IMPLEMENTED, attempts=0. socket/idle and circuitBreaker/custom SSL are guarded similarly." }
+                },
+                {
+                  "name": "Register upstream status error with retry",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services", "body": { "mode": "raw", "raw": "{ \"service\": \"phase2-errors\", \"action\": \"upstream\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{upstream_url}}/status/{$context.status}\", \"method\": \"GET\" }, \"timeout\": { \"response\": 5000 }, \"resilience\": { \"retryCount\": 1, \"retryDelay\": 100, \"backoff\": \"fixed\", \"retryOn\": [503] }, \"output\": { \"transformation\": { \"upstreamFailureResponse\": { \"body\": \"{$output}\" } } } } }" }, "description": "Expected 201/200. Uses a dummy public status endpoint or your configured compatible upstream." }
+                },
+                {
+                  "name": "502 — retryable upstream 503",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{ \"context\": { \"status\": 503 } }" }, "description": "EXTERNAL_ERROR after two actual attempts. One execution and one audit row; failed transformed result contains upstreamFailureResponse.error." }
+                },
+                {
+                  "name": "502 — nonretryable upstream 404",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{ \"context\": { \"status\": 404 } }" }, "description": "EXTERNAL_ERROR after one attempt. Upstream 404 is not the runtime's own NOT_FOUND." }
+                },
+                {
+                  "name": "Look up latest failure",
+                  "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/executions/{{execution_id}}", "description": "Expected FAILED execution with actual attempts and sanitized transformed error-injected result." }
+                },
+                {
+                  "name": "404 — unknown execution",
+                  "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/executions/00000000-0000-0000-0000-000000000000", "description": "NOT_FOUND for a nonexistent execution ID." }
+                }
+              ]
+            }
+          ]
+        },
         {
           "name": "Simple Examples",
           "item": [
@@ -122,7 +340,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"user-service\",\n  \"action\": \"get_user\",\n  \"componentType\": \"rest\",\n  \"description\": \"Fetch user by ID from upstream API\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://jsonplaceholder.typicode.com/users/$.context.id\",\n      \"method\": \"GET\"\n    },\n    \"response\": {\n      \"transformation\": {\n        \"getUserResponse\": {\n          \"userId\": \"$.response.id\",\n          \"userName\": \"$.response.name\",\n          \"userEmail\": \"$.response.email\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"user-service\",\n  \"action\": \"get_user\",\n  \"componentType\": \"rest\",\n  \"description\": \"Fetch user by ID from upstream API\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://jsonplaceholder.typicode.com/users/{$context.id}\",\n      \"method\": \"GET\"\n    },\n    \"output\": {\n      \"transformation\": {\n        \"getUserResponse\": {\n          \"userId\": \"{$output.id}\",\n          \"userName\": \"{$output.name}\",\n          \"userEmail\": \"{$output.email}\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
@@ -139,7 +357,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"post-service\",\n  \"action\": \"create_post\",\n  \"componentType\": \"rest\",\n  \"description\": \"Create a post in upstream API\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://jsonplaceholder.typicode.com/posts\",\n      \"method\": \"POST\",\n      \"payloadTemplate\": {\n        \"title\": \"$.context.title\",\n        \"body\": \"$.context.body\",\n        \"userId\": \"$.context.userId\"\n      }\n    },\n    \"response\": {\n      \"transformation\": {\n        \"createPostResponse\": {\n          \"postId\": \"$.response.id\",\n          \"status\": \"created\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"post-service\",\n  \"action\": \"create_post\",\n  \"componentType\": \"rest\",\n  \"description\": \"Create a post in upstream API\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://jsonplaceholder.typicode.com/posts\",\n      \"method\": \"POST\",\n      \"payloadTemplate\": {\n        \"title\": \"{$context.title}\",\n        \"body\": \"{$context.body}\",\n        \"userId\": \"{$context.userId}\"\n      }\n    },\n    \"output\": {\n      \"transformation\": {\n        \"createPostResponse\": {\n          \"postId\": \"{$output.id}\",\n          \"status\": \"created\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
@@ -153,6 +371,7 @@
         },
         {
           "name": "Complex Examples",
+          "description": "Registration-only full REST configurations. Auth/TLS/connect/socket/idle and circuitBreaker remain unsupported at invocation (501). Use REST > Invoke > Complex Examples for runnable Phase 2 scenarios; these existing registrations are preserved as future-capability references.",
           "item": [
             {
               "name": "Register — full-featured REST with auth, retry, transformation",
@@ -161,14 +380,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Create order in upstream system with auth, retry, and response mapping\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": {\n        \"X-Tenant-Id\": \"$.context.tenantId\",\n        \"X-Request-Id\": \"$.context.requestId\"\n      },\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"$env.ORDER_API_CLIENT_ID\",\n          \"clientSecret\": \"$env.ORDER_API_CLIENT_SECRET\",\n          \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n          \"scope\": \"orders:write\"\n        }\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"$.context.customerId\",\n        \"items\": \"$.context.items\",\n        \"totalAmount\": \"$.context.totalAmount\"\n      }\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 30000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504]\n    },\n    \"response\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"$.response.id != null\", \"message\": \"Order ID is missing\" },\n          { \"expression\": \"$.response.status == 'created'\", \"message\": \"Order not created\" }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"$.response.id\",\n          \"status\": \"$.response.status\",\n          \"createdAt\": \"$.response.created_at\"\n        }\n      }\n    }\n  },\n  \"condition\": \"$.context.customerId != null\",\n  \"metaData\": {\n    \"owner\": \"platform-team\",\n    \"slack\": \"#orders-alerts\"\n  }\n}"
+                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Create order in upstream system with auth, retry, and response mapping\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": {\n        \"X-Tenant-Id\": \"{$context.tenantId}\",\n        \"X-Request-Id\": \"{$context.requestId}\"\n      },\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"{$env.ORDER_API_CLIENT_ID}\",\n          \"clientSecret\": \"{$env.ORDER_API_CLIENT_SECRET}\",\n          \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n          \"scope\": \"orders:write\"\n        }\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"{$context.customerId}\",\n        \"items\": \"{$context.items}\",\n        \"totalAmount\": \"{$context.totalAmount}\"\n      }\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 30000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504]\n    },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"{$output.id} != null\", \"message\": \"Order ID is missing\" },\n          { \"expression\": \"{$output.status} == 'created'\", \"message\": \"Order not created\" }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"{$output.id}\",\n          \"status\": \"{$output.status}\",\n          \"createdAt\": \"{$output.created_at}\"\n        }\n      }\n    }\n  },\n  \"condition\": \"{$context.customerId} != null\",\n  \"metaData\": {\n    \"owner\": \"platform-team\",\n    \"slack\": \"#orders-alerts\"\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Full-featured REST component showing:\n- OAuth2 auth with `$env.` references (masked in response)\n- Retry with exponential backoff\n- Timeout config\n- Dynamic headers from `$.context.*`\n- Payload template with context mapping\n- Response validation rules\n- Response transformation wraps output under unique key `createOrderResponse`\n- Condition for conditional execution\n- Metadata"
+                "description": "Full-featured REST component showing:\n- OAuth2 auth with `$env.` references (masked in response)\n- Retry with exponential backoff\n- Timeout config\n- Dynamic headers from `{$context.*}`\n- Payload template with context mapping\n- Response validation rules\n- Response transformation wraps output under unique key `createOrderResponse`\n- Condition for conditional execution\n- Metadata"
               }
             },
             {
@@ -178,7 +397,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Updated: increased timeout and added circuit breaker\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"$env.ORDER_API_CLIENT_ID\",\n          \"clientSecret\": \"$env.ORDER_API_CLIENT_SECRET\",\n          \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n          \"scope\": \"orders:write\"\n        }\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"$.context.customerId\",\n        \"items\": \"$.context.items\",\n        \"totalAmount\": \"$.context.totalAmount\"\n      }\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 60000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504],\n      \"circuitBreaker\": {\n        \"failureThreshold\": 5,\n        \"windowSize\": 60000,\n        \"openDuration\": 30000,\n        \"halfOpenMaxAttempts\": 3\n      }\n    },\n    \"response\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"$.response.id != null\", \"message\": \"Order ID is missing\" },\n          { \"expression\": \"$.response.status == 'created'\", \"message\": \"Order not created\" }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"$.response.id\",\n          \"status\": \"$.response.status\",\n          \"createdAt\": \"$.response.created_at\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Updated: increased timeout and added circuit breaker\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"{$env.ORDER_API_CLIENT_ID}\",\n          \"clientSecret\": \"{$env.ORDER_API_CLIENT_SECRET}\",\n          \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n          \"scope\": \"orders:write\"\n        }\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"{$context.customerId}\",\n        \"items\": \"{$context.items}\",\n        \"totalAmount\": \"{$context.totalAmount}\"\n      }\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 60000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504],\n      \"circuitBreaker\": {\n        \"failureThreshold\": 5,\n        \"windowSize\": 60000,\n        \"openDuration\": 30000,\n        \"halfOpenMaxAttempts\": 3\n      }\n    },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"{$output.id} != null\", \"message\": \"Order ID is missing\" },\n          { \"expression\": \"{$output.status} == 'created'\", \"message\": \"Order not created\" }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"{$output.id}\",\n          \"status\": \"{$output.status}\",\n          \"createdAt\": \"{$output.created_at}\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
@@ -267,6 +486,7 @@
     },
     {
       "name": "Mapper",
+      "description": "Future Phase 11 design examples, preserved for reference. Mapper is not a registered handler in Phase 2: current registration returns 400 UNKNOWN_COMPONENT_TYPE, not mapper field-validation errors.",
       "item": [
         {
           "name": "Simple Examples",
@@ -278,14 +498,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"data-mapper\",\n  \"action\": \"transform_user\",\n  \"componentType\": \"mapper\",\n  \"description\": \"Transform user data format\",\n  \"config\": {\n    \"template\": {\n      \"fullName\": \"$.context.firstName $.context.lastName\",\n      \"contact\": {\n        \"email\": \"$.context.email\",\n        \"phone\": \"$.context.phone\"\n      }\n    },\n    \"response\": {\n      \"transformation\": {\n        \"transformUserResponse\": {\n          \"fullName\": \"$.context.output.transformUserResponse.fullName\",\n          \"email\": \"$.context.output.transformUserResponse.contact.email\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"data-mapper\",\n  \"action\": \"transform_user\",\n  \"componentType\": \"mapper\",\n  \"description\": \"Transform user data format\",\n  \"config\": {\n    \"template\": {\n      \"fullName\": \"{$context.firstName} {$context.lastName}\",\n      \"contact\": {\n        \"email\": \"{$context.email}\",\n        \"phone\": \"{$context.phone}\"\n      }\n    },\n    \"output\": {\n      \"transformation\": {\n        \"transformUserResponse\": {\n          \"fullName\": \"{$context.output.transformUserResponse.fullName}\",\n          \"email\": \"{$context.output.transformUserResponse.contact.email}\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Register a mapper component that reshapes context data. Mapper reads from $.context, transforms, and writes to $.context.output. Response transformation wraps output under unique key `transformUserResponse`. (Phase 2)"
+                "description": "Future Phase 11 mapper design: wraps output under transformUserResponse. Not runnable in Phase 2; current registration returns UNKNOWN_COMPONENT_TYPE."
               }
             }
           ]
@@ -300,14 +520,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"data-mapper\",\n  \"action\": \"enrich_order\",\n  \"componentType\": \"mapper\",\n  \"description\": \"Enrich order data with computed fields\",\n  \"config\": {\n    \"template\": {\n      \"orderId\": \"$.context.orderId\",\n      \"totalWithTax\": \"$.context.subtotal * 1.1\",\n      \"itemCount\": \"$.context.items.length\"\n    },\n    \"condition\": \"$.context.orderId != null\",\n    \"response\": {\n      \"transformation\": {\n        \"enrichOrderResponse\": {\n          \"orderId\": \"$.context.output.enrichOrderResponse.orderId\",\n          \"totalWithTax\": \"$.context.output.enrichOrderResponse.totalWithTax\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"data-mapper\",\n  \"action\": \"enrich_order\",\n  \"componentType\": \"mapper\",\n  \"description\": \"Enrich order data with computed fields\",\n  \"config\": {\n    \"template\": {\n      \"orderId\": \"{$context.orderId}\",\n      \"totalWithTax\": \"{$context.subtotal} * 1.1\",\n      \"itemCount\": \"{$context.items.length}\"\n    },\n    \"condition\": \"{$context.orderId} != null\",\n    \"output\": {\n      \"transformation\": {\n        \"enrichOrderResponse\": {\n          \"orderId\": \"{$context.output.enrichOrderResponse.orderId}\",\n          \"totalWithTax\": \"{$context.output.enrichOrderResponse.totalWithTax}\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Mapper with condition — only executes if orderId is present. Response transformation wraps output under unique key `enrichOrderResponse`. (Phase 2)"
+                "description": "Future Phase 11 mapper condition/transformation design using enrichOrderResponse. Current registration returns UNKNOWN_COMPONENT_TYPE."
               }
             }
           ]
@@ -322,14 +542,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"data-mapper\",\n  \"action\": \"bad_mapper\",\n  \"componentType\": \"mapper\",\n  \"config\": {\n    \"condition\": \"$.context.id != null\"\n  }\n}"
+                  "raw": "{\n  \"service\": \"data-mapper\",\n  \"action\": \"bad_mapper\",\n  \"componentType\": \"mapper\",\n  \"config\": {\n    \"condition\": \"{$context.id} != null\"\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Returns 400 — `template` is required for mapper components. (Phase 2)"
+                "description": "Future Phase 11 missing-template case. Phase 2 returns 400 UNKNOWN_COMPONENT_TYPE before mapper field validation."
               }
             }
           ]
@@ -338,6 +558,7 @@
     },
     {
       "name": "Database",
+      "description": "Future Phase 11 design examples, preserved for reference; connection and operation schemas still need design review. Database is not a registered handler in Phase 2: current registration returns 400 UNKNOWN_COMPONENT_TYPE.",
       "item": [
         {
           "name": "Simple Examples",
@@ -349,14 +570,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"customer-db\",\n  \"action\": \"get_customer\",\n  \"componentType\": \"database\",\n  \"description\": \"Fetch customer by ID\",\n  \"config\": {\n    \"operation\": \"SELECT\",\n    \"query\": \"SELECT * FROM customers WHERE id = $id\",\n    \"parameters\": {\n      \"id\": \"$.context.customerId\"\n    },\n    \"response\": {\n      \"transformation\": {\n        \"getCustomerResponse\": {\n          \"customer\": \"$.response.rows[0]\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"customer-db\",\n  \"action\": \"get_customer\",\n  \"componentType\": \"database\",\n  \"description\": \"Fetch customer by ID\",\n  \"config\": {\n    \"operation\": \"SELECT\",\n    \"query\": \"SELECT * FROM customers WHERE id = $id\",\n    \"parameters\": {\n      \"id\": \"{$context.customerId}\"\n    },\n    \"output\": {\n      \"transformation\": {\n        \"getCustomerResponse\": {\n          \"customer\": \"{$output.rows}[0]\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Register a database SELECT component. Response transformation wraps output under unique key `getCustomerResponse`. (Phase 2)"
+                "description": "Future Phase 11 database SELECT design with getCustomerResponse. Target connection/schema remains subject to design review; current registration returns UNKNOWN_COMPONENT_TYPE."
               }
             }
           ]
@@ -371,14 +592,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"order-db\",\n  \"action\": \"save_order\",\n  \"componentType\": \"database\",\n  \"description\": \"Save order to database\",\n  \"config\": {\n    \"operation\": \"INSERT\",\n    \"query\": \"INSERT INTO orders (customer_id, total, status) VALUES ($customerId, $total, $status) RETURNING *\",\n    \"parameters\": {\n      \"customerId\": \"$.context.customerId\",\n      \"total\": \"$.context.total\",\n      \"status\": \"$.context.status\"\n    },\n    \"response\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"$.response.rows != null\", \"message\": \"Order not saved\" }\n        ]\n      },\n      \"transformation\": {\n        \"saveOrderResponse\": {\n          \"orderId\": \"$.response.rows[0].id\",\n          \"createdAt\": \"$.response.rows[0].created_at\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"order-db\",\n  \"action\": \"save_order\",\n  \"componentType\": \"database\",\n  \"description\": \"Save order to database\",\n  \"config\": {\n    \"operation\": \"INSERT\",\n    \"query\": \"INSERT INTO orders (customer_id, total, status) VALUES ($customerId, $total, $status) RETURNING *\",\n    \"parameters\": {\n      \"customerId\": \"{$context.customerId}\",\n      \"total\": \"{$context.total}\",\n      \"status\": \"{$context.status}\"\n    },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"{$output.rows} != null\", \"message\": \"Order not saved\" }\n        ]\n      },\n      \"transformation\": {\n        \"saveOrderResponse\": {\n          \"orderId\": \"{$output.rows}[0].id\",\n          \"createdAt\": \"{$output.rows}[0].created_at\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Database INSERT with response validation and transformation. Output wrapped under unique key `saveOrderResponse`. (Phase 2)"
+                "description": "Future database design illustration with saveOrderResponse. INSERT is beyond the current Phase 11 SELECT/UPDATE proposal; not runnable. Phase 2 returns UNKNOWN_COMPONENT_TYPE."
               }
             }
           ]
@@ -400,7 +621,7 @@
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Returns 400 — `query` is required for database components. (Phase 2)"
+                "description": "Future Phase 11 missing-query case. Phase 2 returns 400 UNKNOWN_COMPONENT_TYPE before database field validation."
               }
             }
           ]
@@ -409,6 +630,7 @@
     },
     {
       "name": "Script",
+      "description": "Future Phase 11 design examples, preserved for reference. Script is not a registered handler in Phase 2: current registration returns 400 UNKNOWN_COMPONENT_TYPE, not script field-validation errors.",
       "item": [
         {
           "name": "Simple Examples",
@@ -420,14 +642,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"calculate_total\",\n  \"componentType\": \"script\",\n  \"description\": \"Calculate order total with tax\",\n  \"config\": {\n    \"expression\": \"(function($context){ return { total: $context.subtotal * 1.1 }; })()\",\n    \"response\": {\n      \"transformation\": {\n        \"calculateTotalResponse\": {\n          \"total\": \"$.response.total\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"calculate_total\",\n  \"componentType\": \"script\",\n  \"description\": \"Calculate order total with tax\",\n  \"config\": {\n    \"expression\": \"(function($context){ return { total: $context.subtotal * 1.1 }; })()\",\n    \"output\": {\n      \"transformation\": {\n        \"calculateTotalResponse\": {\n          \"total\": \"{$output.total}\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Register a script component that executes JavaScript. Response transformation wraps output under unique key `calculateTotalResponse`. (Phase 2)"
+                "description": "Future Phase 11 script design with calculateTotalResponse. Not runnable in Phase 2; current registration returns UNKNOWN_COMPONENT_TYPE."
               }
             }
           ]
@@ -442,14 +664,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"calculate_discount\",\n  \"componentType\": \"script\",\n  \"description\": \"Calculate discount based on customer tier\",\n  \"config\": {\n    \"expression\": \"(function($context){ const discount = $context.tier === 'gold' ? 0.2 : 0.1; return { discount: $context.subtotal * discount, tier: $context.tier }; })()\",\n    \"condition\": \"$.context.subtotal != null && $.context.tier != null\",\n    \"response\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"$.response.discount >= 0\", \"message\": \"Invalid discount calculated\" }\n        ]\n      },\n      \"transformation\": {\n        \"calculateDiscountResponse\": {\n          \"discount\": \"$.response.discount\",\n          \"tier\": \"$.response.tier\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"calculate_discount\",\n  \"componentType\": \"script\",\n  \"description\": \"Calculate discount based on customer tier\",\n  \"config\": {\n    \"expression\": \"(function($context){ const discount = $context.tier === 'gold' ? 0.2 : 0.1; return { discount: $context.subtotal * discount, tier: $context.tier }; })()\",\n    \"condition\": \"{$context.subtotal} != null && {$context.tier} != null\",\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"{$output.discount} >= 0\", \"message\": \"Invalid discount calculated\" }\n        ]\n      },\n      \"transformation\": {\n        \"calculateDiscountResponse\": {\n          \"discount\": \"{$output.discount}\",\n          \"tier\": \"{$output.tier}\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Script with condition and response validation. Output wrapped under unique key `calculateDiscountResponse`. (Phase 2)"
+                "description": "Future Phase 11 script condition/validation design with calculateDiscountResponse. Current registration returns UNKNOWN_COMPONENT_TYPE."
               }
             }
           ]
@@ -464,14 +686,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"bad_script\",\n  \"componentType\": \"script\",\n  \"config\": {\n    \"condition\": \"$.context.id != null\"\n  }\n}"
+                  "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"bad_script\",\n  \"componentType\": \"script\",\n  \"config\": {\n    \"condition\": \"{$context.id} != null\"\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Returns 400 — `expression` is required for script components. (Phase 2)"
+                "description": "Future Phase 11 missing-expression case. Phase 2 returns 400 UNKNOWN_COMPONENT_TYPE before script field validation."
               }
             }
           ]
@@ -480,6 +702,7 @@
     },
     {
       "name": "SQS",
+      "description": "Future Phase 11 design examples, preserved for reference (not Phase 10). SQS is not a registered handler in Phase 2: current registration returns 400 UNKNOWN_COMPONENT_TYPE.",
       "item": [
         {
           "name": "Simple Examples",
@@ -491,14 +714,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"notification-queue\",\n  \"action\": \"send_notification\",\n  \"componentType\": \"sqs\",\n  \"description\": \"Push notification message to SQS queue\",\n  \"config\": {\n    \"queueName\": \"notification-queue\",\n    \"messageBody\": {\n      \"userId\": \"$.context.userId\",\n      \"message\": \"$.context.message\"\n    },\n    \"response\": {\n      \"transformation\": {\n        \"sendNotificationResponse\": {\n          \"messageId\": \"$.response.messageId\",\n          \"status\": \"sent\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"notification-queue\",\n  \"action\": \"send_notification\",\n  \"componentType\": \"sqs\",\n  \"description\": \"Push notification message to SQS queue\",\n  \"config\": {\n    \"queueName\": \"notification-queue\",\n    \"messageBody\": {\n      \"userId\": \"{$context.userId}\",\n      \"message\": \"{$context.message}\"\n    },\n    \"output\": {\n      \"transformation\": {\n        \"sendNotificationResponse\": {\n          \"messageId\": \"{$output.messageId}\",\n          \"status\": \"sent\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Register an SQS push component. Response transformation wraps output under unique key `sendNotificationResponse`. (Phase 10)"
+                "description": "Future Phase 11 SQS design with sendNotificationResponse. Not runnable in Phase 2; current registration returns UNKNOWN_COMPONENT_TYPE."
               }
             }
           ]
@@ -513,14 +736,14 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"order-queue\",\n  \"action\": \"enqueue_order\",\n  \"componentType\": \"sqs\",\n  \"description\": \"Push order to FIFO queue\",\n  \"config\": {\n    \"queueName\": \"order-queue.fifo\",\n    \"isFifo\": true,\n    \"groupId\": \"$.context.orderGroupId\",\n    \"messageBody\": {\n      \"orderId\": \"$.context.orderId\",\n      \"customerId\": \"$.context.customerId\",\n      \"total\": \"$.context.total\"\n    },\n    \"condition\": \"$.context.orderId != null\",\n    \"response\": {\n      \"transformation\": {\n        \"enqueueOrderResponse\": {\n          \"messageId\": \"$.response.messageId\",\n          \"sequenceNumber\": \"$.response.sequenceNumber\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"order-queue\",\n  \"action\": \"enqueue_order\",\n  \"componentType\": \"sqs\",\n  \"description\": \"Push order to FIFO queue\",\n  \"config\": {\n    \"queueName\": \"order-queue.fifo\",\n    \"isFifo\": true,\n    \"groupId\": \"{$context.orderGroupId}\",\n    \"messageBody\": {\n      \"orderId\": \"{$context.orderId}\",\n      \"customerId\": \"{$context.customerId}\",\n      \"total\": \"{$context.total}\"\n    },\n    \"condition\": \"{$context.orderId} != null\",\n    \"output\": {\n      \"transformation\": {\n        \"enqueueOrderResponse\": {\n          \"messageId\": \"{$output.messageId}\",\n          \"sequenceNumber\": \"{$output.sequenceNumber}\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "SQS FIFO queue with message group ID and condition. Output wrapped under unique key `enqueueOrderResponse`. (Phase 10)"
+                "description": "Future Phase 11 SQS FIFO design with enqueueOrderResponse. Current registration returns UNKNOWN_COMPONENT_TYPE."
               }
             }
           ]
@@ -542,7 +765,7 @@
                   "host": ["{{base_url}}"],
                   "path": ["api", "v1", "services"]
                 },
-                "description": "Returns 400 — `queueName` is required for SQS components. (Phase 10)"
+                "description": "Future Phase 11 missing-queueName case. Phase 2 returns 400 UNKNOWN_COMPONENT_TYPE before SQS field validation."
               }
             }
           ]

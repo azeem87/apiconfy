@@ -1,9 +1,10 @@
 import { z } from 'zod';
+import { assertValidExpression, assertValidPath } from '@/core/transform/index.js';
 
 export const TimeoutConfigSchema = z.object({
   connect: z.number().int().positive().optional(),
   socket: z.number().int().positive().optional(),
-  response: z.number().int().positive().optional(),
+  response: z.number().int().positive().max(120_000).optional(),
   idle: z.number().int().positive().optional(),
 }).strict();
 
@@ -14,12 +15,18 @@ export const CircuitBreakerConfigSchema = z.object({
   halfOpenMaxAttempts: z.number().int().positive(),
 }).strict();
 
+export const RateLimitConfigSchema = z.object({
+  requests: z.number().int().positive(),
+  windowMs: z.number().int().positive(),
+}).strict();
+
 export const ResilienceConfigSchema = z.object({
-  retryCount: z.number().int().min(0).optional(),
+  retryCount: z.number().int().min(0).max(10).optional(),
   retryDelay: z.number().int().positive().optional(),
   backoff: z.enum(['fixed', 'exponential']).optional(),
-  maxDelay: z.number().int().positive().optional(),
+  maxDelay: z.number().int().positive().max(60_000).optional(),
   retryOn: z.array(z.number().int()).optional(),
+  rateLimit: RateLimitConfigSchema.optional(),
   circuitBreaker: CircuitBreakerConfigSchema.optional(),
 }).strict();
 
@@ -29,13 +36,48 @@ export const ValidationRuleSchema = z.object({
   errorPath: z.string().optional(),
 }).strict();
 
-export const ResponseConfigSchema = z.object({
+/** Standalone path expression validator for use in schemas (e.g. errorPath fields). */
+export function pathExpression() {
+  return z.string().min(1).refine((value) => {
+    try { assertValidPath(value); return true; } catch { return false; }
+  }, 'Invalid path expression');
+}
+
+const OUTPUT_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]*$/;
+
+export const OutputConfigSchema = z.object({
+  key: z.string().regex(OUTPUT_KEY_PATTERN, 'output.key must be alphanumeric (letters, digits, underscores) and start with a letter').optional(),
   transformation: z.record(z.unknown()).optional(),
   validation: z.object({
     rules: z.array(ValidationRuleSchema).optional(),
   }).strict().optional(),
   default: z.record(z.unknown()).optional(),
-}).strict();
+}).strict().superRefine((config, ctx) => {
+  if (!config.key && !config.transformation && !config.validation) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'output must contain at least one of: key, validation, transformation',
+    });
+  }
+  for (const [index, rule] of (config.validation?.rules ?? []).entries()) {
+    for (const [field, validate] of [
+      ['expression', assertValidExpression],
+      ['errorPath', assertValidPath],
+    ] as const) {
+      const source = rule[field];
+      if (source === undefined) continue;
+      try {
+        validate(source);
+      } catch (error) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['validation', 'rules', index, field],
+          message: error instanceof Error ? error.message : 'Invalid expression',
+        });
+      }
+    }
+  }
+});
 
 export const SSLConfigSchema = z.object({
   cert: z.string().min(1),

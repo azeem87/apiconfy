@@ -83,7 +83,8 @@ Components are designed to be extensible, allowing new integrations to be added 
 
 Instead of writing integration-specific code, developers **register** a component by sending its definition to the runtime — component type, connection details, authentication, request/response mapping, execution rules, and metadata.
 
-> 🚧 **Planned / target design — not yet implemented.** Shown here to illustrate the intended registration model; the actual request/response shape is still being finalized.
+> **Phase 2 service contract** — implemented and verified. Workflow
+> examples later in this README remain planned (Phase 5).
 
 > **Note on `context`:** `context` is an arbitrary JSON payload — its shape is entirely up to the caller and the component definition's mapping rules. It is not a fixed schema. The `customer`/`id` fields used throughout these examples are illustrative only, to keep the examples concrete and easy to follow.
 
@@ -98,14 +99,16 @@ Content-Type: application/json
   "action": "create_customer",
   "componentType": "rest",
   "config": {
-    "url": "https://example.com/customer",
-    "method": "POST",
-    "payloadTemplate": {
-      "customerId": "$.context.id"
+    "request": {
+      "uri": "https://example.com/customer",
+      "method": "POST",
+      "payloadTemplate": {
+        "customerId": "{$context.id}"
+      }
     },
-    "response": {
+    "output": {
       "transformation": {
-        "customerId": "$.response.id"
+        "createCustomerResponse": { "customerId": "{$output.id}" }
       }
     }
   }
@@ -129,7 +132,9 @@ Content-Type: application/json
 
 ```json
 {
-  "customerId": "12345"
+  "success": true,
+  "data": { "createCustomerResponse": { "customerId": "12345" } },
+  "meta": { "executionId": "uuid", "durationMs": 25 }
 }
 ```
 
@@ -195,9 +200,9 @@ Content-Type: application/json
     }
   ],
   "responseTransformation": {
-    "customerId": "$.context.output.createCustomerResponse.customerId",
-    "messageId": "$.context.output.publishEventResponse.messageId",
-    "status": "$.context.output.sendEmailResponse.status"
+    "customerId": "{$context.output.createCustomerResponse.customerId}",
+    "messageId": "{$context.output.publishEventResponse.messageId}",
+    "status": "{$context.output.sendEmailResponse.status}"
   }
 }
 ```
@@ -368,6 +373,10 @@ The server starts on `http://localhost:3000` with a health check at `GET /health
 
 **Database:** SQLite is the default for local development — no configuration needed. The database file is created automatically at `data/apiconfy.db` on first run. The `data/` directory is gitignored and only used locally.
 
+**Current adapter limitation:** SQLite is the implemented backend. PostgreSQL selection
+is a target deployment contract; its adapter is still a throwing stub until the separately
+gated database phase is implemented. Do not use the PostgreSQL setting below yet.
+
 **Production / Cloud:** Use PostgreSQL by setting `DATABASE_URL=postgres://user:pass@host:5432/db` before starting. The SQLite adapter is bypassed entirely when `DATABASE_URL` is configured.
 
 ---
@@ -382,20 +391,60 @@ A [Postman collection](postman/apiconfy.postman_collection.json) is included for
 3. If `API_KEY` is configured, set the `api_key` collection variable for Bearer auth
 4. Start the server (`pnpm dev`) and run the requests
 
-The collection is organized by phase — each phase adds new folders as features are implemented. Error cases (validation, auth, not-found) are included to verify error handling.
+The collection is organized **by component type**. REST → Invoke contains ordered
+Simple Examples, Complex Examples and Error Cases: register each example before invoking
+it. Invoke scripts save `meta.executionId` as `execution_id` for execution lookup.
+The simple scenario calls the local health endpoint. Complex scenarios use `upstream_url`
+(default `https://httpbin.org`); send only dummy data or point it at your own compatible server.
+
+Existing auth/TLS/circuit-breaker complex examples are **registration-only** until their
+execution capabilities arrive. Runnable Phase 2 complex examples include every supported
+section (request, timeout, retry/rateLimit, condition, validation, transformation and metadata)
+and intentionally omit unsupported auth/TLS/circuit-breaker fields.
+
+### Phase 2 invocation behavior
+
+- `POST /api/v1/services/:service/:action/invoke` requires `{ "context": { ... } }`.
+  `context.output` is reserved. False conditions return a successful skip without resolving
+  environment references or calling upstream.
+- Request fields live under `config.request`. JSON and form-urlencoded bodies are supported.
+  Validation reads `{$output.*}`; default applies only to an empty/null body after rules pass.
+  Transformation still runs on failure. Single-service output is returned directly;
+  accumulation into `{$context.output.<uniqueKey>}` is Phase 5.
+- `GET /api/v1/executions/:executionId` retrieves sanitized service execution state,
+  including failed transformed output and actual dispatch attempts (zero before dispatch).
+  Recording is awaited but best-effort, not durable workflow recovery.
+- `timeout.response` defaults to 30 seconds **per attempt**, including response-body reads.
+  Retries use fixed/exponential backoff; never retry 4xx. Retrying writes may duplicate
+  upstream side effects unless that upstream provides idempotency.
+- `config.resilience.rateLimit: { requests, windowMs }` enables a per-process token bucket.
+  Excess calls return `429 RATE_LIMITED` plus `Retry-After`; N instances have N times the
+  budget. Phase 4's shared store uses the configured SQLite/PostgreSQL `DBAdapter`, not Redis/Couchbase.
+- Auth, custom SSL, `disableSSL: true`, circuit breakers, connect/socket/idle timeouts and
+  unsupported request content types return `501 NOT_IMPLEMENTED` at invocation.
+- Resolved `{$env.NAME}` values are scrubbed from successful/error responses, details,
+  audit rows and logs, including upstream echoes. Stored references and existing
+  retrieval masking behavior are preserved.
+
+**Deployment caution:** outbound SSRF protection, body-size limits and audit retention
+are not part of Phase 2. Restrict registration access and outbound network connectivity.
 
 ---
 
 ## Project Status
 
-🚧 **Early Development — Phase 1 Complete**
+🚧 **Early Development — Phase 2 Complete**
 
-- ✅ Phase 0 (Foundation): monorepo scaffolded, Hono API server running, SQLite/Postgres DB layer operational, CI pipeline active.
+- ✅ Phase 0 (Foundation): monorepo scaffolded, Hono API server running, SQLite DB adapter operational, PostgreSQL adapter seam, CI pipeline active.
 - ✅ Phase 1 (Component Registry): register, list, get, and delete component definitions via REST API.
+- ✅ Phase 2: REST invocation, shared expressions/response pipeline, retry/timeout,
+  in-memory rate limiting and execution lookup. Verified with real HTTP integration and
+  executable Postman scenarios, alongside the Phase 1 regression suite.
 
 See the [Implementation Roadmap](plans/roadmap.md) for phase-by-phase details.
 
-**Next milestone:** Phase 2 — Service Invocation (execute registered components against external systems).
+**Next milestone:** Phase 3 — outbound request safety and
+the separately gated database-adapter work.
 
 ---
 
@@ -417,23 +466,21 @@ apiconfy/
 ├── apps/
 │   └── server/           # Hono API server — component runtime
 │       ├── src/
-│       │   ├── core/     # DB adapters, repositories, schemas
+│       │   ├── core/     # DB/repositories, schemas, transform, runtime, REST components
 │       │   ├── lib/      # Logger, shared utilities
 │       │   ├── middleware/
-│       │   ├── routes/
+│       │   ├── routes/   # health, service CRUD/invoke, execution lookup
 │       │   ├── app.ts
 │       │   ├── config.ts
 │       │   └── index.ts
 │       └── __tests__/
 │
 │                          # (no packages/ dir — all code lives in apps/server/src until a
-│                          #  second consumer needs it. See folder-structure.md in .commandcode/plans/)
+│                          #  second consumer needs it. See plans/folder-structure.md)
 │
 ├── postman/               # Postman collection for API testing
 │
 ├── plans/                 # PRD and phased implementation roadmap
-│
-├── .commandcode/plans/    # Technical design plans per phase
 │
 ├── .github/workflows/     # CI pipeline (GitHub Actions)
 │

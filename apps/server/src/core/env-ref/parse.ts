@@ -1,18 +1,18 @@
 /**
- * `$env.<NAME>` reference support.
+ * `{$env.<NAME>}` reference support.
  *
- * Dot form, deliberately distinct from the expression engine's `$.` path prefix
- * (transformation-engine.md) so the two grammars cannot collide.
+ * Uses the same `{$...}` expression syntax as the template engine, with the `$env`
+ * namespace distinguishing environment references from context/output paths.
  */
 
-/** Anchored: the whole string must be the reference. "prefix-$env.X" is a literal. */
-const ENV_REF_PATTERN = /^\$env\.([A-Za-z_][A-Za-z0-9_]*)$/;
+/** Anchored: the whole string must be the reference. "prefix-{$env.X}" is a literal. */
+const ENV_REF_PATTERN = /^\{\$env\.([A-Za-z_][A-Za-z0-9_]*)\}$/;
 
 /**
- * Detects a string that *starts* with `$env.` even when the name is invalid, so we can
- * report it rather than store it.
+ * Detects a string that *starts with* `{$env.` even when the name is invalid, so we can
+ * report it rather than store it. Embedded `{$env.` (e.g. `prefix-{$env.NAME}`) is a literal.
  */
-const ENV_REF_PREFIX = /^\$env\./;
+const ENV_REF_PREFIX = /^\{\$env\./;
 
 export const MASK = '****';
 
@@ -34,8 +34,8 @@ export interface EnvRefIssue {
 }
 
 /**
- * Walks any value and reports strings that *look* like `$env.` references but are
- * malformed. Rejecting these at registration is the point: storing "$env." as a literal
+ * Walks any value and reports strings that *look* like `{$env.` references but are
+ * malformed. Rejecting these at registration is the point: storing "{$env." as a literal
  * would later ship that exact string upstream as a password.
  */
 export function collectEnvRefIssues(value: unknown, path: string[] = []): EnvRefIssue[] {
@@ -45,7 +45,7 @@ export function collectEnvRefIssues(value: unknown, path: string[] = []): EnvRef
         path,
         value,
         message: 'The value "****" is the masking placeholder returned by read APIs and cannot be stored. '
-          + 'You are probably re-submitting a response body: restore the original $env. reference '
+          + 'You are probably re-submitting a response body: restore the original {$env.} reference '
           + 'or supply the real value.',
       }];
     }
@@ -55,7 +55,7 @@ export function collectEnvRefIssues(value: unknown, path: string[] = []): EnvRef
     return [{
       path,
       value,
-      message: 'Malformed $env. reference — expected $env.NAME where NAME matches [A-Za-z_][A-Za-z0-9_]*',
+      message: 'Malformed {$env.} reference — expected {$env.NAME} where NAME matches [A-Za-z_][A-Za-z0-9_]*',
     }];
   }
 

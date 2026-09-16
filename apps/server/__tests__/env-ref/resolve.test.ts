@@ -5,7 +5,7 @@ const env = { CRM_PASSWORD: 'hunter2', EMPTY: '' };
 
 describe('resolveEnvRefs', () => {
   it('resolves a reference from the injected env', () => {
-    expect(resolveEnvRefs({ password: '$env.CRM_PASSWORD' }, env))
+    expect(resolveEnvRefs({ password: '{$env.CRM_PASSWORD}' }, env))
       .toEqual({ password: 'hunter2' });
   });
 
@@ -15,21 +15,21 @@ describe('resolveEnvRefs', () => {
 
   it('resolves at any depth and inside arrays', () => {
     const resolved = resolveEnvRefs({
-      auth: { basic: { password: '$env.CRM_PASSWORD' } },
-      list: ['$env.CRM_PASSWORD'],
+      auth: { basic: { password: '{$env.CRM_PASSWORD}' } },
+      list: ['{$env.CRM_PASSWORD}'],
     }, env);
     expect(resolved.auth.basic.password).toBe('hunter2');
     expect(resolved.list[0]).toBe('hunter2');
   });
 
   it('throws when the variable is unset', () => {
-    expect(() => resolveEnvRefs({ password: '$env.MISSING' }, env))
+    expect(() => resolveEnvRefs({ password: '{$env.MISSING}' }, env))
       .toThrow(EnvRefResolutionError);
   });
 
   it('names the variable and its path in the error, but never a value', () => {
     try {
-      resolveEnvRefs({ auth: { basic: { password: '$env.MISSING' } } }, env);
+      resolveEnvRefs({ auth: { basic: { password: '{$env.MISSING}' } } }, env);
       throw new Error('should have thrown');
     } catch (err) {
       const e = err as EnvRefResolutionError;
@@ -41,13 +41,13 @@ describe('resolveEnvRefs', () => {
   });
 
   it('resolves an explicitly empty variable to an empty string, not an error', () => {
-    expect(resolveEnvRefs({ v: '$env.EMPTY' }, env)).toEqual({ v: '' });
+    expect(resolveEnvRefs({ v: '{$env.EMPTY}' }, env)).toEqual({ v: '' });
   });
 
   it('does not mutate the input', () => {
-    const original = { password: '$env.CRM_PASSWORD' };
+    const original = { password: '{$env.CRM_PASSWORD}' };
     resolveEnvRefs(original, env);
-    expect(original.password).toBe('$env.CRM_PASSWORD');
+    expect(original.password).toBe('{$env.CRM_PASSWORD}');
   });
 
   it('preserves non-string values', () => {

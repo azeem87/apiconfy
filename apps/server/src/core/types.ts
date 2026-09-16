@@ -54,3 +54,115 @@ export interface ListFilters {
   service?: string;
   componentType?: string;
 }
+
+export interface InvocationRequest {
+  context: Record<string, unknown>;
+}
+
+export interface StandardError {
+  error: {
+    code: string;
+    message: string;
+    details?: Array<{ rule: string; message: string; path: string }>;
+    downstream?: { status?: number; body?: unknown };
+  };
+}
+
+export interface InvocationResult {
+  success: boolean;
+  data: unknown;
+  skippedExecution?: boolean;
+  meta: { executionId: string; durationMs: number };
+}
+
+/** Wire contract for the invoke route's catch-all failure envelope (HTTP-level, not the
+ * in-band `StandardError` injected into `data` by the response pipeline). */
+export interface InvocationFailure {
+  success: false;
+  data: null;
+  error: { code: string; message: string; details?: unknown };
+  meta: { executionId: string; durationMs: number };
+}
+
+export type ExecutionType = 'saga' | 'service';
+export type ExecutionStatus =
+  | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'COMPENSATING' | 'COMPENSATED' | 'STUCK';
+
+export interface ExecutionStep {
+  name: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'SKIPPED'
+    | 'COMPENSATING' | 'COMPENSATED' | 'COMPENSATION_FAILED' | 'VERIFYING';
+  startedAt?: string;
+  completedAt?: string;
+  result?: Record<string, unknown>;
+  error?: { code: string; message: string; details?: unknown };
+  attempts?: number;
+}
+
+export interface TimeoutConfig {
+  connect?: number;
+  socket?: number;
+  response?: number;
+  idle?: number;
+}
+
+export interface RateLimitConfig {
+  requests: number;
+  windowMs: number;
+}
+
+export interface CircuitBreakerConfig {
+  failureThreshold: number;
+  windowSize: number;
+  openDuration: number;
+  halfOpenMaxAttempts: number;
+}
+
+export interface ResilienceConfig {
+  retryCount?: number;
+  retryDelay?: number;
+  backoff?: 'fixed' | 'exponential';
+  maxDelay?: number;
+  retryOn?: number[];
+  rateLimit?: RateLimitConfig;
+  circuitBreaker?: CircuitBreakerConfig;
+}
+
+export interface ValidationRule {
+  expression: string;
+  message?: string;
+  errorPath?: string;
+}
+
+export interface OutputConfig {
+  key?: string;
+  transformation?: Record<string, unknown>;
+  validation?: { rules?: ValidationRule[] };
+  default?: Record<string, unknown>;
+}
+
+export interface SSLConfig {
+  cert: string;
+  key: string;
+  ca?: string;
+  passphrase?: string;
+}
+
+export interface RequestConfig {
+  uri: string;
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  contentType?: string;
+  disableSSL?: boolean;
+  ssl?: SSLConfig;
+  headers?: Record<string, string>;
+  payloadTemplate?: Record<string, unknown>;
+  /** Phase 2 refuses auth; Phase 4 owns its executable contract. */
+  auth?: Record<string, unknown>;
+}
+
+export interface RestConfig {
+  request: RequestConfig;
+  timeout?: TimeoutConfig;
+  resilience?: ResilienceConfig;
+  output?: OutputConfig;
+}

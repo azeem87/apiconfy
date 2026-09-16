@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { eq, and, count } from 'drizzle-orm';
 import { generateId } from '@/lib/id.js';
-import type { DBAdapter, ComponentRecord, ComponentFilters, WorkflowRecord, WorkflowStepRecord, ExecutionLogRecord } from '../adapter.js';
+import type { DBAdapter, ComponentRecord, ComponentFilters, WorkflowRecord, WorkflowStepRecord, ExecutionRecord, ExecutionLogRecord } from '../adapter.js';
 import * as schema from '../schema/index.js';
 
 // TODO: replace with drizzle-kit migrations when ready to productionize.
@@ -50,6 +50,28 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
   verify_action TEXT
 );
 
+CREATE TABLE IF NOT EXISTS executions (
+  execution_id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  ref_name TEXT NOT NULL,
+  service TEXT,
+  action TEXT,
+  group_id TEXT,
+  status TEXT NOT NULL,
+  context TEXT NOT NULL,
+  steps TEXT,
+  result TEXT,
+  max_duration_ms INTEGER,
+  error_code TEXT,
+  error_message TEXT,
+  error_details TEXT,
+  attempts INTEGER DEFAULT 1,
+  started_at TEXT NOT NULL,
+  completed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS execution_logs (
   id TEXT PRIMARY KEY,
   execution_id TEXT NOT NULL,
@@ -80,6 +102,7 @@ type ComponentRow = typeof schema.componentDefinitions.$inferSelect;
 type WorkflowRow = typeof schema.workflowDefinitions.$inferSelect;
 type StepRow = typeof schema.workflowSteps.$inferSelect;
 type LogRow = typeof schema.executionLogs.$inferSelect;
+type ExecutionRow = typeof schema.executions.$inferSelect;
 
 function nullable<T>(v: T | null): T | undefined {
   return v === null ? undefined : v;
@@ -129,6 +152,32 @@ function toStep(row: StepRow): WorkflowStepRecord {
     onFailure: row.onFailure,
     idempotencyKeyHeader: nullable(row.idempotencyKeyHeader),
     verifyAction: nullable(row.verifyAction),
+  };
+}
+
+function toExecution(row: ExecutionRow): ExecutionRecord {
+  return {
+    executionId: row.executionId,
+    type: row.type,
+    refName: row.refName,
+    service: nullable(row.service),
+    action: nullable(row.action),
+    groupId: nullable(row.groupId),
+    status: row.status,
+    context: row.context,
+    steps: nullable(row.steps),
+    result: row.result,
+    maxDurationMs: nullable(row.maxDurationMs),
+    error: row.errorCode === null ? undefined : {
+      code: row.errorCode,
+      message: row.errorMessage ?? '',
+      details: row.errorDetails,
+    },
+    attempts: nullable(row.attempts),
+    startedAt: row.startedAt,
+    completedAt: nullable(row.completedAt),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -334,6 +383,37 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
 
     async deleteWorkflowSteps(workflowId) {
       db.delete(t.workflowSteps).where(eq(t.workflowSteps.workflowId, workflowId)).run();
+    },
+
+    async saveExecution(record) {
+      const row = db.insert(t.executions).values({
+        executionId: record.executionId,
+        type: record.type,
+        refName: record.refName,
+        service: record.service ?? null,
+        action: record.action ?? null,
+        groupId: record.groupId ?? null,
+        status: record.status,
+        context: record.context,
+        steps: record.steps ?? null,
+        result: record.result ?? null,
+        maxDurationMs: record.maxDurationMs ?? null,
+        errorCode: record.error?.code ?? null,
+        errorMessage: record.error?.message ?? null,
+        errorDetails: record.error?.details ?? null,
+        attempts: record.attempts ?? 1,
+        startedAt: record.startedAt,
+        completedAt: record.completedAt ?? null,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+      }).returning().get();
+      return toExecution(row);
+    },
+
+    async getExecution(executionId) {
+      const row = db.select().from(t.executions)
+        .where(eq(t.executions.executionId, executionId)).get();
+      return row ? toExecution(row) : null;
     },
 
     async saveExecutionLog(log) {

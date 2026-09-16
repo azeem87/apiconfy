@@ -7,7 +7,7 @@ const request = (service: string, action: string, extra: Record<string, unknown>
   service,
   action,
   componentType: 'rest',
-  config: { uri: 'https://x.test', method: 'POST' },
+  config: { request: { uri: 'https://x.test', method: 'POST' } },
   ...extra,
 });
 
@@ -36,12 +36,12 @@ describe('DbComponentRepository', () => {
   it('updates in place on second upsert — same id, no duplicate row', async () => {
     const { record: first } = await repo.register(request('svc', 'act'));
     const { record: second, created } = await repo.register(request('svc', 'act', {
-      config: { uri: 'https://changed.test', method: 'GET' },
+      config: { request: { uri: 'https://changed.test', method: 'GET' } },
     }));
     expect(created).toBe(false);
 
     expect(second.id).toBe(first.id);
-    expect(second.config.uri).toBe('https://changed.test');
+    expect(second.config.request).toEqual({ uri: 'https://changed.test', method: 'GET' });
     expect(second.createdAt).toBe(first.createdAt);
     expect(Date.parse(second.updatedAt)).toBeGreaterThanOrEqual(Date.parse(first.createdAt));
 
@@ -68,12 +68,12 @@ describe('DbComponentRepository', () => {
     });
 
     const { record, created } = await racy.register(request('svc', 'act', {
-      config: { uri: 'https://retried.test', method: 'GET' },
+      config: { request: { uri: 'https://retried.test', method: 'GET' } },
     }));
 
     expect(created).toBe(false);
     expect(record.id).toBe('winner');
-    expect(record.config.uri).toBe('https://retried.test');
+    expect(record.config.request).toEqual({ uri: 'https://retried.test', method: 'GET' });
     expect((await racy.list({}, 50, 0)).total).toBe(1);
   });
 
@@ -158,7 +158,7 @@ describe('DbComponentRepository', () => {
       service: 'svc',
       action: 'act',
       componentType: 'rest',
-      config: { uri: 'https://x.test', method: 'POST' },
+      config: { request: { uri: 'https://x.test', method: 'POST' } },
     });
     await repo.delete(record.id);
     expect(await repo.findByKey('svc', 'act')).toBeNull();
@@ -169,10 +169,10 @@ describe('DbComponentRepository', () => {
       service: 'svc',
       action: 'act',
       componentType: 'rest',
-      config: { uri: 'https://x.test', method: 'POST', auth: { basic: { username: 'u', password: '$env.PW' } } },
+      config: { request: { uri: 'https://x.test', method: 'POST', auth: { basic: { username: 'u', password: '$env.PW' } } } },
     });
     const reread = await repo.findByKey('svc', 'act');
-    expect((reread!.config as any).auth.basic.password).toBe('$env.PW');
-    expect((record.config as any).auth.basic.password).toBe('$env.PW');
+    expect((reread!.config as any).request.auth.basic.password).toBe('$env.PW');
+    expect((record.config as any).request.auth.basic.password).toBe('$env.PW');
   });
 });

@@ -51,7 +51,7 @@ export class ExternalServiceError extends AppError {
     public upstreamStatusCode?: number,
     details?: Record<string, unknown> | unknown[]
   ) {
-    super(message, 'EXTERNAL_SERVICE_ERROR', 502, details);
+    super(message, 'EXTERNAL_ERROR', 502, details);
   }
 }
 
@@ -64,5 +64,41 @@ export class TransformationError extends AppError {
 export class WorkflowError extends AppError {
   constructor(message: string, details?: Record<string, unknown> | unknown[]) {
     super(message, 'WORKFLOW_ERROR', 500, details);
+  }
+}
+
+export class ResponseValidationError extends AppError {
+  constructor(
+    message: string,
+    public readonly failure: { expression: string; errorPath?: string; path: string }
+  ) {
+    super(message, 'VALIDATION_FAILED', 422, {
+      expression: failure.expression,
+      errorPath: failure.errorPath,
+    });
+  }
+}
+
+export class TimeoutError extends AppError {
+  constructor(message = 'Component response deadline exceeded') {
+    super(message, 'TIMEOUT', 504);
+  }
+}
+
+export class ConnectionError extends AppError {
+  constructor(message: string) {
+    super(message, 'CONNECTION_ERROR', 502);
+  }
+}
+
+export class RateLimitError extends AppError {
+  constructor(message: string, details: Record<string, unknown>) {
+    super(message, 'RATE_LIMITED', 429, details);
+  }
+}
+
+export class NotImplementedError extends AppError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'NOT_IMPLEMENTED', 501, details);
   }
 }
