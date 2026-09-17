@@ -312,3 +312,49 @@ describe('RateLimitConfigSchema', () => {
     expect(RestConfigSchema.safeParse({ request, resilience: { rateLimit } }).success).toBe(false);
   });
 });
+
+describe('template validation', () => {
+  it.each([
+    ['a malformed uri', { request: { ...request, uri: 'https://api.test/{$ context.id}' } }],
+    ['a malformed header value', { request: { ...request, headers: { 'X-Tenant': '{$context.id }' } } }],
+    ['a payloadTemplate swallowed by a malformed span', {
+      request: { ...request, payloadTemplate: { id: '{$a.b {$context.id}' } },
+    }],
+    ['an unknown root in transformation', {
+      request, output: { transformation: { id: '{$contex.id}' } },
+    }],
+    ['an unterminated template', { request: { ...request, uri: 'https://api.test/{$context.id' } }],
+  ])('rejects %s at registration', (_label, config) => {
+    const result = RestConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0].message).toContain('{$');
+  });
+
+  it('points the issue at the offending field', () => {
+    const result = RestConfigSchema.safeParse({
+      request: { ...request, headers: { 'X-Tenant': '{$context.id }' } },
+    });
+    expect(result.error?.issues[0].path).toEqual(['request', 'headers', 'X-Tenant']);
+  });
+
+  it('accepts resolvable templates throughout, including nested arrays', () => {
+    expect(RestConfigSchema.safeParse({
+      request: {
+        ...request,
+        uri: 'https://api.test/{$context.id}/{$output.status}?k={$env.API_KEY}',
+        headers: { 'X-Tenant': '{$context.tenant}' },
+        payloadTemplate: { id: '{$context.id}', deep: { list: ['{$output.id}'] } },
+      },
+      output: { transformation: { id: '{$output.id}', nested: { at: '{$context.createdAt}' } } },
+    }).success).toBe(true);
+  });
+
+  it('leaves credential fields alone — a literal {$ in a password is data, not a template', () => {
+    expect(RestConfigSchema.safeParse({
+      request: {
+        ...request,
+        auth: { basic: { username: 'svc', password: 'p{$ssword-with-a-brace}' } },
+      },
+    }).success).toBe(true);
+  });
+});

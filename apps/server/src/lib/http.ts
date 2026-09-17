@@ -1,11 +1,6 @@
-export function isJsonContentType(headers: Headers): boolean {
-  const ct = headers.get('content-type') ?? '';
-  return ct.includes('application/json');
-}
-
-export function isFormUrlEncoded(headers: Headers): boolean {
-  const ct = headers.get('content-type') ?? '';
-  return ct.includes('application/x-www-form-urlencoded');
+/** The media type of a Content-Type header value — parameters and case removed. */
+export function mediaType(contentType: string): string {
+  return contentType.split(';')[0].trim().toLowerCase();
 }
 
 export async function parseResponseBody(response: Response): Promise<unknown> {

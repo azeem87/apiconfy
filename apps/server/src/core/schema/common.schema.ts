@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { assertValidExpression, assertValidPath } from '@/core/transform/index.js';
+import { collectTemplateIssues } from '@/core/transform/template-validation.js';
 
 export const TimeoutConfigSchema = z.object({
   connect: z.number().int().positive().optional(),
@@ -57,6 +58,13 @@ export const OutputConfigSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'output must contain at least one of: key, validation, transformation',
+    });
+  }
+  for (const issue of collectTemplateIssues(config.transformation ?? {}, ['transformation'])) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: issue.path,
+      message: `${issue.message} (at "${issue.value}")`,
     });
   }
   for (const [index, rule] of (config.validation?.rules ?? []).entries()) {

@@ -1,16 +1,22 @@
 import { describe, it, expect } from 'bun:test';
-import { isJsonContentType, isFormUrlEncoded, parseResponseBody } from '@/lib/http.js';
+import { mediaType, parseResponseBody } from '@/lib/http.js';
 
 describe('HTTP utilities', () => {
-  it('isJsonContentType detects JSON', () => {
-    const headers = new Headers({ 'content-type': 'application/json' });
-    expect(isJsonContentType(headers)).toBe(true);
-    expect(isJsonContentType(new Headers())).toBe(false);
+  it.each([
+    ['application/json', 'application/json'],
+    ['application/json; charset=utf-8', 'application/json'],
+    ['  APPLICATION/JSON  ', 'application/json'],
+    ['application/x-www-form-urlencoded;charset=utf8', 'application/x-www-form-urlencoded'],
+    ['', ''],
+  ])('mediaType normalizes %s to %s', (header, expected) => {
+    expect(mediaType(header)).toBe(expected);
   });
 
-  it('isFormUrlEncoded detects form data', () => {
-    const headers = new Headers({ 'content-type': 'application/x-www-form-urlencoded' });
-    expect(isFormUrlEncoded(headers)).toBe(true);
+  it('mediaType does not match a longer media type that merely contains a prefix', () => {
+    // The reason this helper replaced a substring check: `includes('application/json')`
+    // accepted `application/jsonp` as JSON.
+    expect(mediaType('application/jsonp')).not.toBe('application/json');
+    expect(mediaType('text/application/json')).not.toBe('application/json');
   });
 
   it('parseResponseBody parses JSON', async () => {

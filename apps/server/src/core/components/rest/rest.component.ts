@@ -3,18 +3,16 @@ import type {
 } from '@/core/components/base.js';
 import type { RequestConfig } from '@/core/types.js';
 import { resolveTemplate } from '@/core/transform/index.js';
-import { parseResponseBody } from '@/lib/http.js';
+import { mediaType, parseResponseBody } from '@/lib/http.js';
 import {
   AppError, ConnectionError, ExternalServiceError, NotImplementedError, TimeoutError, TransformationError,
 } from '@/lib/errors.js';
 
 const JSON_TYPE = 'application/json';
 const FORM_TYPE = 'application/x-www-form-urlencoded';
-const mediaType = (value: string) => value.split(';')[0].trim().toLowerCase();
 
 export class RestComponent implements ComponentHandler {
   readonly componentType = 'rest';
-  readonly displayName = 'REST API';
 
   constructor(private readonly httpRequest: typeof fetch = globalThis.fetch) {}
 
@@ -54,6 +52,10 @@ export class RestComponent implements ComponentHandler {
     let body: string | undefined;
     const headers = new Headers();
     try {
+      // A9 (security review): No outbound header denylist. Operators control component
+      // config; if they set Host/X-Forwarded-For/etc., it's intentional. Most upstream
+      // APIs ignore these headers anyway. Add a denylist only if support tickets reveal
+      // real-world misconfigurations.
       for (const [key, value] of Object.entries(request.headers ?? {})) {
         const resolved = resolveTemplate(value, params.context);
         if (resolved === undefined || resolved === null) continue;
