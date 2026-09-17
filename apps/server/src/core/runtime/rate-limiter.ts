@@ -18,10 +18,7 @@ interface Bucket {
   lastRefillMs: number;
   capacity: number;
   windowMs: number;
-  lastAccessMs: number;
 }
-
-const MAX_BUCKET_AGE_MS = 60 * 60 * 1000; // 1 hour
 
 export class InMemoryTokenBucketRateLimiter implements RateLimiter {
   private readonly buckets = new Map<string, Bucket>();
@@ -31,21 +28,15 @@ export class InMemoryTokenBucketRateLimiter implements RateLimiter {
   async consume(key: string, config: RateLimitConfig): Promise<RateLimitResult> {
     const now = this.now();
     const previous = this.buckets.get(key);
-    
-    // Evict stale buckets
-    if (previous && (now - previous.lastAccessMs) > MAX_BUCKET_AGE_MS) {
-      this.buckets.delete(key);
-    }
-    
     const bucket = previous?.capacity === config.requests && previous.windowMs === config.windowMs
       ? previous
-      : { tokens: config.requests, lastRefillMs: now, capacity: config.requests, windowMs: config.windowMs, lastAccessMs: now };
+      : { tokens: config.requests, lastRefillMs: now, capacity: config.requests, windowMs: config.windowMs };
     const refillPerMs = config.requests / config.windowMs;
     const clock = Math.max(now, bucket.lastRefillMs);
     const tokens = Math.min(config.requests, bucket.tokens + (clock - bucket.lastRefillMs) * refillPerMs);
     const allowed = tokens >= 1;
     const remaining = allowed ? tokens - 1 : tokens;
-    this.buckets.set(key, { ...bucket, tokens: remaining, lastRefillMs: clock, lastAccessMs: now });
+    this.buckets.set(key, { ...bucket, tokens: remaining, lastRefillMs: clock });
     return {
       allowed,
       limit: config.requests,
