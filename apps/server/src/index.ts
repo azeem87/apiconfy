@@ -8,6 +8,10 @@ async function main() {
   const config = loadConfig();
   const logger = createLogger('server', config.logLevel);
 
+  if (!config.apiKey) {
+    logger.warn('API_KEY is not set — all /api/* routes are open. Set API_KEY for production use.');
+  }
+
   logger.info({ port: config.port }, 'Starting server');
 
   const dbStartTime = performance.now();

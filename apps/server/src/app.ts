@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
+import type { Context, Next } from 'hono';
 import { createLogger, type Logger } from '@/lib/index.js';
 import { healthRoute } from '@/routes/health.js';
 import { servicesRoute } from '@/routes/services.route.js';
@@ -30,6 +31,20 @@ export interface AppDependencies {
 /** Registration/invocation bodies have no legitimate reason to exceed this. */
 const MAX_REQUEST_BODY_BYTES = 1_000_000;
 
+/** Reject non-JSON bodies on methods that carry a payload. */
+async function requireJsonContentType(c: Context, next: Next) {
+  if (c.req.method === 'POST' || c.req.method === 'PUT' || c.req.method === 'PATCH') {
+    const contentType = c.req.header('Content-Type') ?? '';
+    if (!contentType.includes('application/json')) {
+      return c.json({
+        success: false,
+        error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Content-Type must be application/json' },
+      }, 415);
+    }
+  }
+  return next();
+}
+
 export function createApp(config: AppConfig, db: DBAdapter, deps: AppDependencies = {}): { app: Hono; logger: Logger } {
   const logger = createLogger('server', config.logLevel);
   const app = new Hono();
@@ -42,6 +57,7 @@ export function createApp(config: AppConfig, db: DBAdapter, deps: AppDependencie
       error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body exceeds the maximum allowed size' },
     }, 413),
   }));
+  app.use('/api/*', requireJsonContentType);
   app.use('/api/*', authMiddleware(config.apiKey));
   app.onError(errorHandler(logger));
 

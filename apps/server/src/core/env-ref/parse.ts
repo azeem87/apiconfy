@@ -40,11 +40,11 @@ export interface EnvRefIssue {
  */
 export function collectEnvRefIssues(value: unknown, path: string[] = []): EnvRefIssue[] {
   if (typeof value === 'string') {
-    if (value === MASK) {
+    if (value === MASK || value === '***') {
       return [{
         path,
         value,
-        message: 'The value "****" is the masking placeholder returned by read APIs and cannot be stored. '
+        message: 'Masked values ("****" or "***") are placeholders returned by read APIs and cannot be stored. '
           + 'You are probably re-submitting a response body: restore the original {$env.} reference '
           + 'or supply the real value.',
       }];

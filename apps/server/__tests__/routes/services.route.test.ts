@@ -164,7 +164,7 @@ describe('services routes', () => {
 
     it('masks a {$env.} reference in the POST response', async () => {
       const json = await (await post(app, withSecrets)).json();
-      expect(json.data.config.request.auth.basic.password).toBe('****');
+      expect(json.data.config.request.auth.basic.password).toBe('***');
       expect(json.data.config.request.auth.basic.username).toBe('svc-account');
     });
 
@@ -180,26 +180,26 @@ describe('services routes', () => {
           },
         },
       }))).json();
-      expect(json.data.config.request.auth.basic.password).toBe('****');
+      expect(json.data.config.request.auth.basic.password).toBe('***');
       expect(json.data.config.request.auth.basic.username).toBe('svc-account');
     });
 
     it('masks it on GET one action', async () => {
       await post(app, withSecrets);
       const one = await (await app.request('/api/v1/services/customer-service/actions/create_customer')).json();
-      expect(one.data.config.request.auth.basic.password).toBe('****');
+      expect(one.data.config.request.auth.basic.password).toBe('***');
     });
 
     it('masks it on GET by service', async () => {
       await post(app, withSecrets);
       const byService = await (await app.request('/api/v1/services/customer-service/actions')).json();
-      expect(byService.data[0].config.request.auth.basic.password).toBe('****');
+      expect(byService.data[0].config.request.auth.basic.password).toBe('***');
     });
 
     it('masks it on GET list', async () => {
       await post(app, withSecrets);
       const list = await (await app.request('/api/v1/services')).json();
-      expect(list.data[0].config.request.auth.basic.password).toBe('****');
+      expect(list.data[0].config.request.auth.basic.password).toBe('***');
     });
 
     it('rejects a re-submitted masked value instead of destroying the reference', async () => {
@@ -208,7 +208,7 @@ describe('services routes', () => {
       }));
 
       const fetched = await (await app.request('/api/v1/services/customer-service/actions/create_customer')).json();
-      expect(fetched.data.config.request.auth.basic.password).toBe('****');
+      expect(fetched.data.config.request.auth.basic.password).toBe('***');
 
       const res = await put(app, 'customer-service', 'create_customer', updateBody({
         description: 'edited',
@@ -229,7 +229,7 @@ describe('services routes', () => {
       expect((await res.json()).data.metaData.migratedFrom).toBe('$env.LEGACY_URL');
     });
 
-    it('returns a literal secret verbatim — masking is reference-only', async () => {
+    it('masks a literal secret under a sensitive key — not just {$env.} references', async () => {
       await post(app, body({
         action: 'literal_secret',
         config: {
@@ -241,7 +241,7 @@ describe('services routes', () => {
       }));
 
       const json = await (await app.request('/api/v1/services/customer-service/actions/literal_secret')).json();
-      expect(json.data.config.request.auth.basic.password).toBe('hunter2');
+      expect(json.data.config.request.auth.basic.password).toBe('***');
     });
 
     it('keeps the real reference in the database — masking is display-only', async () => {
@@ -361,6 +361,42 @@ describe('services routes', () => {
     });
   });
 
+  describe('Content-Type enforcement', () => {
+    it('rejects POST with non-JSON Content-Type as 415', async () => {
+      const res = await app.request('/api/v1/services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(body()),
+      });
+      expect(res.status).toBe(415);
+      const json = await res.json();
+      expect(json.error.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+    });
+
+    it('rejects PUT with missing Content-Type as 415', async () => {
+      await post(app, body());
+      const res = await app.request('/api/v1/services/customer-service/actions/create_customer', {
+        method: 'PUT',
+        body: JSON.stringify(updateBody({ version: 1 })),
+      });
+      expect(res.status).toBe(415);
+    });
+
+    it('allows GET without Content-Type', async () => {
+      await post(app, body());
+      const res = await app.request('/api/v1/services');
+      expect(res.status).toBe(200);
+    });
+
+    it('allows DELETE without Content-Type', async () => {
+      await post(app, body());
+      const res = await app.request('/api/v1/services/customer-service/actions/create_customer', {
+        method: 'DELETE',
+      });
+      expect(res.status).toBe(200);
+    });
+  });
+
   describe('auth scoping', () => {
     it('protects /api but leaves /health open when API_KEY is set', async () => {
       const secured = createApp({ ...config, apiKey: 'secret-key' }, db).app;
@@ -376,7 +412,10 @@ describe('services routes', () => {
 
     it('protects PUT with API_KEY', async () => {
       const secured = createApp({ ...config, apiKey: 'secret-key' }, db).app;
-      const res = await secured.request('/api/v1/services/svc/act', { method: 'PUT' });
+      const res = await secured.request('/api/v1/services/svc/actions/act', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+      });
       expect(res.status).toBe(401);
     });
   });
