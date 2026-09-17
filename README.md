@@ -415,7 +415,8 @@ and intentionally omit unsupported auth/TLS/circuit-breaker fields.
   including failed transformed output and actual dispatch attempts (zero before dispatch).
   Recording is awaited but best-effort, not durable workflow recovery.
 - `timeout.response` defaults to 30 seconds **per attempt**, including response-body reads.
-  Retries use fixed/exponential backoff; never retry 4xx. **Retrying mutating methods (POST, PUT, PATCH, DELETE) may duplicate upstream side effects** (e.g., double charges, duplicate records) if the upstream succeeded but the response was lost. Set `retryCount: 0` for non-idempotent operations unless the upstream explicitly supports safe repetition (e.g., idempotency keys).
+  Retries use fixed/exponential backoff; never retry 4xx. Retrying writes may duplicate
+  upstream side effects unless that upstream provides idempotency.
 - `config.resilience.rateLimit: { requests, windowMs }` enables a per-process token bucket.
   Excess calls return `429 RATE_LIMITED` plus `Retry-After`; N instances have N times the
   budget. Phase 4's shared store uses the configured SQLite/PostgreSQL `DBAdapter`, not Redis/Couchbase.
