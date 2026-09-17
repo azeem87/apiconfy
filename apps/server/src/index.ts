@@ -1,5 +1,5 @@
 import { createApp } from '@/app.js';
-import { loadConfig } from '@/config.js';
+import { authPostureProblem, loadConfig } from '@/config.js';
 import { createDBAdapter } from '@/core/db/connection.js';
 import { createLogger } from '@/lib/index.js';
 
@@ -7,6 +7,16 @@ async function main() {
   const startTime = performance.now();
   const config = loadConfig();
   const logger = createLogger('server', config.logLevel);
+
+  const postureProblem = authPostureProblem(config);
+  if (postureProblem) {
+    logger.error(postureProblem);
+    process.exit(1);
+  }
+
+  if (!config.apiKey) {
+    logger.warn('API_KEY is not set — all /api/* routes are open. Set API_KEY for production use.');
+  }
 
   logger.info({ port: config.port }, 'Starting server');
 

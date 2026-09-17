@@ -2,11 +2,15 @@ import { Hono } from 'hono';
 import type { ComponentRegistry } from '@/services/component-registry.service.js';
 import type { ComponentView } from '@/core/types.js';
 import { maskEnvRefs } from '@/core/env-ref/index.js';
+import { redactSensitiveFields } from '@/lib/redact.js';
 import { ok, okPaged } from '@/lib/envelope.js';
 import { parsePagination } from '@/lib/pagination.js';
 
 function toResponse(record: ComponentView): ComponentView {
-  return { ...record, config: maskEnvRefs(record.config) };
+  return {
+    ...record,
+    config: redactSensitiveFields(maskEnvRefs(record.config)),
+  };
 }
 
 export function servicesRoute(registry: ComponentRegistry): Hono {

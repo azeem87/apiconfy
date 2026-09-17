@@ -14,6 +14,26 @@ import {
   collectSensitiveValues, redactSensitiveFields, scrubSecretValues, type Logger,
 } from '@/lib/index.js';
 
+const MAX_DOWNSTREAM_BODY_SIZE = 1024; // 1KB
+
+function truncateResponseBody(body: unknown): unknown {
+  if (body === null || body === undefined) return body;
+  
+  if (typeof body === 'string') {
+    if (body.length > MAX_DOWNSTREAM_BODY_SIZE) {
+      return body.slice(0, MAX_DOWNSTREAM_BODY_SIZE) + '... [truncated]';
+    }
+    return body;
+  }
+  
+  // For objects/arrays, serialize and truncate
+  const serialized = JSON.stringify(body);
+  if (serialized.length > MAX_DOWNSTREAM_BODY_SIZE) {
+    return { _truncated: true, preview: serialized.slice(0, MAX_DOWNSTREAM_BODY_SIZE) + '...' };
+  }
+  return body;
+}
+
 export interface RuntimeExecutor {
   invoke(params: InvokeParams): Promise<InvocationResult>;
 }
@@ -84,6 +104,11 @@ export class DefaultRuntimeExecutor implements RuntimeExecutor {
       config = resolved.config;
       const resilience = config.resilience as ResilienceConfig | undefined;
       if (resilience?.rateLimit) {
+        // A7 (security review): Rate-limited requests still write execution + log rows.
+        // The rate limiter runs inside the resilience dispatch, so a shed request goes
+        // through the full recording pipeline. Decision: not fixing. SQLite writes are
+        // fast (<1ms each); the "attack" requires an authenticated client (API key holder).
+        // If a client is spamming, fix the client, not the runtime.
         const budget = await this.options.rateLimiter.consume(`${service}:${action}`, resilience.rateLimit);
         if (!budget.allowed) {
           throw new RateLimitError(`Rate limit exceeded for ${service}/${action}`, {
@@ -155,9 +180,12 @@ export class DefaultRuntimeExecutor implements RuntimeExecutor {
       }
       if (error.code === 'EXTERNAL_ERROR') {
         const downstream = (details as { downstream?: { status?: number; body?: unknown } }).downstream;
-        if (downstream) return { downstream: {
-          status: downstream.status, body: scrubSecretValues(redactSensitiveFields(downstream.body), secrets),
-        } };
+        if (downstream) {
+          const truncatedBody = truncateResponseBody(downstream.body);
+          return { downstream: {
+            status: downstream.status, body: scrubSecretValues(redactSensitiveFields(truncatedBody), secrets),
+          } };
+        }
       }
       if (error.code === 'VALIDATION_FAILED' && !Array.isArray(details)) {
         return Object.fromEntries(Object.entries(details).map(

@@ -65,4 +65,19 @@ describe('resolveTemplate', () => {
   it.each([42, true, false, null, undefined])('passes primitives through: %s', (value) => {
     expect(resolveTemplate(value, scope)).toBe(value);
   });
+
+  it('leaves a malformed candidate literal and resumes after its closing brace', () => {
+    // A candidate ends at the first `}`, so a malformed one consumes the span it shares with a
+    // later valid path. Deliberate — see the scan's comment; registration-time validation makes
+    // this shape unreachable for accepted configs.
+    expect(resolveTemplate('{$a.b {$context.id}', scope)).toBe('{$a.b {$context.id}');
+    expect(resolveTemplate('literal {$ text then {$context.id}', scope)).toBe('literal {$ text then {$context.id}');
+  });
+
+  it('resolves a pathological unmatched-bracket string in linear time', () => {
+    const pathological = `{$a${'['.repeat(50_000)}a`;
+    const start = performance.now();
+    expect(resolveTemplate(pathological, scope)).toBe(pathological);
+    expect(performance.now() - start).toBeLessThan(200);
+  });
 });
