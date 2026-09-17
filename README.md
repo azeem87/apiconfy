@@ -381,6 +381,21 @@ gated database phase is implemented. Do not use the PostgreSQL setting below yet
 
 ---
 
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3000` | HTTP server port |
+| `LOG_LEVEL` | `info` | Log level for pino (`trace`, `debug`, `info`, `warn`, `error`, `fatal`) |
+| `API_KEY` | *(unset)* | Bearer token for `/api/*` routes. If unset, all routes are open (warning logged at startup) |
+| `REQUIRE_API_KEY` | `false` | When `true`, server refuses to start if `API_KEY` is missing. Set this in production |
+| `DATABASE_URL` | *(unset)* | PostgreSQL connection string (e.g., `postgres://user:pass@host:5432/db`). If set, uses Postgres adapter instead of SQLite |
+| `SQLITE_PATH` | `../../data/apiconfy.db` | SQLite database file path when `DATABASE_URL` is not set |
+
+**Security note:** If `API_KEY` is not set, a warning is logged at startup and all `/api/*` routes are accessible without authentication. For production deployments, always set `API_KEY` and `REQUIRE_API_KEY=true`.
+
+---
+
 ## Testing the API
 
 A [Postman collection](postman/apiconfy.postman_collection.json) is included for manual and exploratory testing. It covers every implemented endpoint with simple and complex examples.

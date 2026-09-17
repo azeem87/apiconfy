@@ -41,6 +41,9 @@ Follow existing patterns in the codebase
 Extract complex conditions into meaningful boolean variables
 Use optional chaining (`?.`) as much as possible and wherever applicable to avoid if/else and else-if logic. Use the guard pattern (early return) to handle null/undefined cases cleanly.
 
+Environment Variables — Always Document
+When adding a new environment variable (anything read from `process.env`), you MUST update the "Environment Variables" table in `README.md`. Include the variable name, default value, and a description of its purpose and security implications (if any). This is non-negotiable — undocumented env vars cause confusion and deployment failures.
+
 Git & Commits
 - **NEVER commit directly to the `main` branch.** This is a hard rule.
 - **Always create a feature branch** before starting work on a task. Use a descriptive name based on the feature or fix (e.g., `feature/add-oauth-login`, `fix/db-connection-timeout`, `refactor/auth-middleware`).
