@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { createLogger, type Logger } from '@/lib/index.js';
 import { healthRoute } from '@/routes/health.js';
 import { servicesRoute } from '@/routes/services.route.js';
@@ -26,11 +27,21 @@ export interface AppDependencies {
   env?: Record<string, string | undefined>;
 }
 
+/** Registration/invocation bodies have no legitimate reason to exceed this. */
+const MAX_REQUEST_BODY_BYTES = 1_000_000;
+
 export function createApp(config: AppConfig, db: DBAdapter, deps: AppDependencies = {}): { app: Hono; logger: Logger } {
   const logger = createLogger('server', config.logLevel);
   const app = new Hono();
 
   app.use('*', requestLogger(logger));
+  app.use('/api/*', bodyLimit({
+    maxSize: MAX_REQUEST_BODY_BYTES,
+    onError: (c) => c.json({
+      success: false,
+      error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body exceeds the maximum allowed size' },
+    }, 413),
+  }));
   app.use('/api/*', authMiddleware(config.apiKey));
   app.onError(errorHandler(logger));
 

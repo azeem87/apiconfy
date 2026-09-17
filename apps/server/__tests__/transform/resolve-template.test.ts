@@ -65,4 +65,11 @@ describe('resolveTemplate', () => {
   it.each([42, true, false, null, undefined])('passes primitives through: %s', (value) => {
     expect(resolveTemplate(value, scope)).toBe(value);
   });
+
+  it('resolves a pathological unmatched-bracket string in linear time', () => {
+    const pathological = `{$a${'['.repeat(50_000)}a`;
+    const start = performance.now();
+    expect(resolveTemplate(pathological, scope)).toBe(pathological);
+    expect(performance.now() - start).toBeLessThan(200);
+  });
 });

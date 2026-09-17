@@ -14,31 +14,14 @@ export class EnvRefResolutionError extends AppError {
 
 /**
  * Replaces every `{$env.NAME}` with process.env.NAME.
- * Written and tested in Phase 1 but not called by it — Phase 2 consumes it.
+ * A thin wrapper over `resolveEnvRefsDetailed` for callers that don't need the
+ * resolved secret values back (e.g. registration-time dry-run validation).
  */
 export function resolveEnvRefs<T>(
   value: T,
-  env: Record<string, string | undefined> = process.env,
-  path: string[] = []
+  env: Record<string, string | undefined> = process.env
 ): T {
-  const variableName = parseEnvRef(value);
-  if (variableName !== null) {
-    const resolved = env[variableName];
-    if (resolved === undefined) throw new EnvRefResolutionError(variableName, path);
-    return resolved as unknown as T;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item, i) => resolveEnvRefs(item, env, [...path, String(i)])) as unknown as T;
-  }
-
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(
-      ([key, child]) => [key, resolveEnvRefs(child, env, [...path, key])]
-    )) as T;
-  }
-
-  return value;
+  return resolveEnvRefsDetailed(value, env).config;
 }
 
 /** Resolve and capture in one walk; values are private to the invocation's sanitizer. */
