@@ -252,7 +252,7 @@
             },
             {
               "name": "Error Cases",
-              "description": "Run in order. Expected statuses are in request names. Upstream-dependent examples need httpbin-compatible upstream_url. The 429 pair must run within 60 seconds; reruns may already be limited until refill or server restart. Schema-valid unsupported configurations are intentionally registration-only until invoked here to demonstrate 501.",
+              "description": "Run in order. Expected statuses are in request names. Upstream-dependent examples need httpbin-compatible upstream_url. Schema-valid unsupported configurations are intentionally registration-only until invoked here to demonstrate 501.",
               "item": [
                 {
                   "name": "404 — unknown service",

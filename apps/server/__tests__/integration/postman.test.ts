@@ -52,7 +52,6 @@ it('runs every ordered Phase 2 Postman example against deterministic local upstr
         if (item.name === '7. Invoke empty-body default') {
           expect(body.data.defaultResponse).toEqual({ status: 'empty', customerId: 'demo-123' });
         }
-        if (item.name.startsWith('429')) expect(result.headers.get('Retry-After')).toBeString();
         count += 1;
       }
     }
