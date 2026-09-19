@@ -118,10 +118,9 @@ describe('Phase 2 invocation API', () => {
     expect((await app.request('/api/v1/executions/missing')).status).toBe(404);
   });
 
-  it('skips before env resolution, capability guards, or limiter', async () => {
+  it('skips before env resolution or capability guards', async () => {
     await register({
       request: { ...request, auth: { basic: { username: 'user', password: '{$env.MISSING}' } } },
-      resilience: { rateLimit: { requests: 1, windowMs: 60000 } },
     }, '{$context.id} == null');
     for (let index = 0; index < 2; index += 1) {
       const result = await (await invoke()).json();
@@ -170,17 +169,12 @@ describe('Phase 2 invocation API', () => {
 
   it('records actual attempts on retry success and exhaustion; budget is per invocation', async () => {
     await register({ request, resilience: {
-      retryCount: 2, retryDelay: 1, rateLimit: { requests: 1, windowMs: 60000 },
+      retryCount: 2, retryDelay: 1,
     } });
     upstream = async () => calls.length < 3 ? json({}, 503) : json({ ok: true });
     const result = await (await invoke()).json();
     expect(result.success).toBe(true);
     expect((await recorded(result)).attempts).toBe(3);
-    const limited = await invoke();
-    expect(limited.status).toBe(429);
-    expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(0);
-    expect((await recorded(await limited.json())).attempts).toBe(0);
-    expect(calls).toHaveLength(3);
     await register({ request, resilience: { retryCount: 2, retryDelay: 1 } });
     upstream = async () => json({}, 500);
     const failed = await (await invoke()).json();
@@ -196,7 +190,6 @@ describe('Phase 2 invocation API', () => {
       timeout: { connect: 1, socket: 1, idle: 1 },
       resilience: {
         circuitBreaker: { failureThreshold: 1, windowSize: 1, openDuration: 1, halfOpenMaxAttempts: 1 },
-        rateLimit: { requests: 1, windowMs: 60000 },
       },
     });
     for (let index = 0; index < 2; index += 1) {
@@ -372,21 +365,6 @@ describe('Phase 2 invocation API', () => {
     const audit = JSON.stringify([await recorded(result), await db.getExecutionLogs(result.meta.executionId)]);
     expect(audit).not.toContain('private-credential');
     expect(calls).toHaveLength(0);
-  });
-
-  it('preserves rate-limit control fields and Retry-After with a one-character secret', async () => {
-    build({ env: { TOKEN: 'e' } });
-    await register({
-      request: { ...request, headers: { Authorization: '{$env.TOKEN}' } },
-      resilience: { rateLimit: { requests: 1, windowMs: 60000 } },
-    });
-    await invoke();
-    const res = await invoke();
-    expect(res.status).toBe(429);
-    expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
-    const result = await res.json();
-    expect(result.error.details.retryAfterSeconds).toBeNumber();
-    expect((await recorded(result)).result.error.code).toBe('RATE_LIMITED');
   });
 
   it('does not move a credential into an unredacted validation message or mapped field', async () => {

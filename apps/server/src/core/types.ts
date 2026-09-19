@@ -118,11 +118,6 @@ export interface TimeoutConfig {
   idle?: number;
 }
 
-export interface RateLimitConfig {
-  requests: number;
-  windowMs: number;
-}
-
 export interface CircuitBreakerConfig {
   failureThreshold: number;
   windowSize: number;
@@ -136,7 +131,6 @@ export interface ResilienceConfig {
   backoff?: 'fixed' | 'exponential';
   maxDelay?: number;
   retryOn?: number[];
-  rateLimit?: RateLimitConfig;
   circuitBreaker?: CircuitBreakerConfig;
 }
 

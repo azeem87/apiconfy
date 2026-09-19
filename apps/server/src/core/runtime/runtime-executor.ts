@@ -3,14 +3,13 @@ import type {
 } from './types.js';
 import type { ComponentHandlerRegistry } from './component-handler-registry.js';
 import type { ResilienceExecutor } from './resilience-executor.js';
-import type { RateLimiter } from './rate-limiter.js';
 import type { ComponentRequestSummary } from '@/core/components/base.js';
 import { buildStandardError, injectStandardError, runResponsePipeline, transformResponse } from './response-pipeline.js';
 import { evaluatePredicate } from '@/core/transform/index.js';
 import { resolveEnvRefsDetailed } from '@/core/env-ref/index.js';
 import type { InvocationResult, ResilienceConfig, TimeoutConfig } from '@/core/types.js';
 import {
-  AppError, NotFoundError, RateLimitError, TransformationError, UnknownComponentTypeError,
+  AppError, NotFoundError, TransformationError, UnknownComponentTypeError,
   collectSensitiveValues, redactSensitiveFields, scrubSecretValues, type Logger,
 } from '@/lib/index.js';
 
@@ -42,7 +41,6 @@ export interface DefaultRuntimeExecutorOptions {
   lookup: ComponentLookup;
   handlers: ComponentHandlerRegistry;
   resilience: ResilienceExecutor;
-  rateLimiter: RateLimiter;
   recorder: ExecutionRecorder;
   logger: Logger;
   env?: Record<string, string | undefined>;
@@ -103,20 +101,6 @@ export class DefaultRuntimeExecutor implements RuntimeExecutor {
       const resolved = resolveEnvRefsDetailed(record.config, this.options.env, secret => { secrets.push(secret); });
       config = resolved.config;
       const resilience = config.resilience as ResilienceConfig | undefined;
-      if (resilience?.rateLimit) {
-        // A7 (security review): Rate-limited requests still write execution + log rows.
-        // The rate limiter runs inside the resilience dispatch, so a shed request goes
-        // through the full recording pipeline. Decision: not fixing. SQLite writes are
-        // fast (<1ms each); the "attack" requires an authenticated client (API key holder).
-        // If a client is spamming, fix the client, not the runtime.
-        const budget = await this.options.rateLimiter.consume(`${service}:${action}`, resilience.rateLimit);
-        if (!budget.allowed) {
-          throw new RateLimitError(`Rate limit exceeded for ${service}/${action}`, {
-            limit: budget.limit, remaining: budget.remaining, resetTimeMs: budget.resetTimeMs,
-            retryAfterSeconds: Math.max(1, Math.ceil((budget.resetTimeMs - Date.now()) / 1000)),
-          });
-        }
-      }
       const outcome = await this.options.resilience.execute(signal => {
         attempts += 1;
         this.options.logger.debug({ executionId, attempt: attempts }, 'Component attempt');
@@ -175,7 +159,7 @@ export class DefaultRuntimeExecutor implements RuntimeExecutor {
     function sanitizeErrorDetails(error: AppError, secrets: string[]): AppError['details'] {
       const details = error.details;
       if (details === undefined) return undefined;
-      if (['RATE_LIMITED', 'NOT_IMPLEMENTED', 'UNKNOWN_COMPONENT_TYPE', 'ENV_REF_UNRESOLVED'].includes(error.code)) {
+      if (['NOT_IMPLEMENTED', 'UNKNOWN_COMPONENT_TYPE', 'ENV_REF_UNRESOLVED'].includes(error.code)) {
         return details;
       }
       if (error.code === 'EXTERNAL_ERROR') {

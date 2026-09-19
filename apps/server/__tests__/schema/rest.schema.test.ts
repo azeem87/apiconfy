@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import {
-  CreateServiceRequestSchema, RestConfigSchema, RateLimitConfigSchema,
+  CreateServiceRequestSchema, RestConfigSchema,
 } from '@/core/schema/index.js';
 
 const minimal = { request: { uri: 'https://api.example.com/customers', method: 'POST' as const } };
@@ -287,29 +287,6 @@ describe('registration expression validation', () => {
       });
       expect(result.success).toBe(false);
     });
-  });
-});
-
-describe('RateLimitConfigSchema', () => {
-  it('accepts positive integer requests/windowMs within existing resilience configuration', () => {
-    const rateLimit = { requests: 10, windowMs: 1000 };
-    expect(RateLimitConfigSchema.parse(rateLimit)).toEqual(rateLimit);
-    expect(RestConfigSchema.safeParse({
-      request, resilience: { retryCount: 0, retryDelay: 100, backoff: 'fixed', rateLimit },
-    }).success).toBe(true);
-  });
-
-  it.each([
-    {}, { requests: 10 }, { windowMs: 1000 },
-    { requests: 0, windowMs: 1 }, { requests: 1, windowMs: 0 },
-    { requests: -1, windowMs: 1 }, { requests: 1, windowMs: -1 },
-    { requests: 1.5, windowMs: 1 }, { requests: 1, windowMs: 1.5 },
-    { requests: '1', windowMs: 1000 }, { requests: 1, windowMs: '1000' },
-    { requests: Infinity, windowMs: 1000 }, { requests: 1, windowMs: NaN },
-    { requests: 1, windowMs: 1000, burst: 2 }, null,
-  ])('rejects invalid or non-strict rate-limit configuration %#', (rateLimit) => {
-    expect(RateLimitConfigSchema.safeParse(rateLimit).success).toBe(false);
-    expect(RestConfigSchema.safeParse({ request, resilience: { rateLimit } }).success).toBe(false);
   });
 });
 

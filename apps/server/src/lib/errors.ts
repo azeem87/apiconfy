@@ -91,12 +91,6 @@ export class ConnectionError extends AppError {
   }
 }
 
-export class RateLimitError extends AppError {
-  constructor(message: string, details: Record<string, unknown>) {
-    super(message, 'RATE_LIMITED', 429, details);
-  }
-}
-
 export class NotImplementedError extends AppError {
   constructor(message: string, details?: Record<string, unknown>) {
     super(message, 'NOT_IMPLEMENTED', 501, details);

@@ -414,7 +414,7 @@ The simple scenario calls the local health endpoint. Complex scenarios use `upst
 
 Existing auth/TLS/circuit-breaker complex examples are **registration-only** until their
 execution capabilities arrive. Runnable Phase 2 complex examples include every supported
-section (request, timeout, retry/rateLimit, condition, validation, transformation and metadata)
+section (request, timeout, retry, condition, validation, transformation and metadata)
 and intentionally omit unsupported auth/TLS/circuit-breaker fields.
 
 ### Phase 2 invocation behavior
@@ -432,9 +432,6 @@ and intentionally omit unsupported auth/TLS/circuit-breaker fields.
 - `timeout.response` defaults to 30 seconds **per attempt**, including response-body reads.
   Retries use fixed/exponential backoff; never retry 4xx. Retrying writes may duplicate
   upstream side effects unless that upstream provides idempotency.
-- `config.resilience.rateLimit: { requests, windowMs }` enables a per-process token bucket.
-  Excess calls return `429 RATE_LIMITED` plus `Retry-After`; N instances have N times the
-  budget. Phase 4's shared store uses the configured SQLite/PostgreSQL `DBAdapter`, not Redis/Couchbase.
 - Auth, custom SSL, `disableSSL: true`, circuit breakers, connect/socket/idle timeouts and
   unsupported request content types return `501 NOT_IMPLEMENTED` at invocation.
 - Resolved `{$env.NAME}` values are scrubbed from successful/error responses, details,
@@ -453,7 +450,7 @@ are not part of Phase 2. Restrict registration access and outbound network conne
 - ✅ Phase 0 (Foundation): monorepo scaffolded, Hono API server running, SQLite DB adapter operational, PostgreSQL adapter seam, CI pipeline active.
 - ✅ Phase 1 (Component Registry): register, list, get, and delete component definitions via REST API.
 - ✅ Phase 2: REST invocation, shared expressions/response pipeline, retry/timeout,
-  in-memory rate limiting and execution lookup. Verified with real HTTP integration and
+  and execution lookup. Verified with real HTTP integration and
   executable Postman scenarios, alongside the Phase 1 regression suite.
 
 See the [Implementation Roadmap](plans/roadmap.md) for phase-by-phase details.

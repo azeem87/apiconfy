@@ -15,7 +15,7 @@ import { createCoreSchemaRegistry, type SchemaRegistry } from '@/core/schema/ind
 import { createCoreHandlerRegistry } from '@/core/components/index.js';
 import {
   type ComponentHandlerRegistry, DefaultResilienceExecutor,
-  DefaultRuntimeExecutor, InMemoryTokenBucketRateLimiter,
+  DefaultRuntimeExecutor,
 } from '@/core/runtime/index.js';
 import { DbComponentRepository } from '@/core/db/repositories/component.repository.js';
 import { DbExecutionRepository } from '@/core/db/repositories/execution.repository.js';
@@ -73,7 +73,6 @@ export function createApp(config: AppConfig, db: DBAdapter, deps: AppDependencie
     lookup: components,
     handlers: deps.handlers ?? createCoreHandlerRegistry(deps.fetch),
     resilience: new DefaultResilienceExecutor(),
-    rateLimiter: new InMemoryTokenBucketRateLimiter(),
     recorder: executions,
     logger,
     env: deps.env,

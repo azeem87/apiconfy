@@ -16,18 +16,12 @@ export const CircuitBreakerConfigSchema = z.object({
   halfOpenMaxAttempts: z.number().int().positive(),
 }).strict();
 
-export const RateLimitConfigSchema = z.object({
-  requests: z.number().int().positive(),
-  windowMs: z.number().int().positive(),
-}).strict();
-
 export const ResilienceConfigSchema = z.object({
   retryCount: z.number().int().min(0).max(10).optional(),
   retryDelay: z.number().int().positive().optional(),
   backoff: z.enum(['fixed', 'exponential']).optional(),
   maxDelay: z.number().int().positive().max(60_000).optional(),
   retryOn: z.array(z.number().int()).optional(),
-  rateLimit: RateLimitConfigSchema.optional(),
   circuitBreaker: CircuitBreakerConfigSchema.optional(),
 }).strict();
 
