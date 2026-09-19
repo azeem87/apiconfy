@@ -2,7 +2,6 @@ import { expect, it } from 'bun:test';
 import { createLogger } from '@/lib/logger.js';
 import { DefaultRuntimeExecutor } from '@/core/runtime/runtime-executor.js';
 import { DefaultResilienceExecutor } from '@/core/runtime/resilience-executor.js';
-import { InMemoryTokenBucketRateLimiter } from '@/core/runtime/rate-limiter.js';
 import { ComponentHandlerRegistry } from '@/core/runtime/component-handler-registry.js';
 import type { ComponentHandler } from '@/core/components/base.js';
 import type { ComponentRecord } from '@/core/db/adapter.js';
@@ -23,7 +22,7 @@ function harness(handler: ComponentHandler, config: Record<string, unknown> = {}
     lookup: { async findByKey() { return row; } },
     handlers: new ComponentHandlerRegistry().register(handler),
     resilience: new DefaultResilienceExecutor(async () => {}),
-    rateLimiter: new InMemoryTokenBucketRateLimiter(), recorder, logger, env: { SHORT: 'e' },
+    recorder, logger, env: { SHORT: 'e' },
   });
   const invoke = () => executor.invoke({
     service: 'svc', action: 'act', context: { id: 1 }, executionId: 'x', startedAtMs: Date.now(),

@@ -56,7 +56,7 @@ it('runs every ordered Phase 2 Postman example against deterministic local upstr
         count += 1;
       }
     }
-    expect(count).toBe(29);
+    expect(count).toBe(26);
   } finally {
     await db.disconnect();
   }

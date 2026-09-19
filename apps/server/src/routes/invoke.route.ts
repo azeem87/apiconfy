@@ -30,8 +30,6 @@ export function invokeRoute(executor: RuntimeExecutor): Hono {
       }));
     } catch (caught) {
       const error = caught instanceof AppError ? caught : new AppError('Internal server error', 'INTERNAL_ERROR');
-      const retryAfter = (error.details as { retryAfterSeconds?: number } | undefined)?.retryAfterSeconds;
-      if (error.code === 'RATE_LIMITED' && retryAfter) c.header('Retry-After', String(retryAfter));
       const failure: InvocationFailure = {
         success: false, data: null,
         error: { code: error.code, message: error.message, details: error.details },
