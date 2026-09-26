@@ -328,6 +328,13 @@ function buildMethods(getDb: () => Db, getSession: () => ClientSession | undefin
 
     async saveWorkflowStep(step) {
       return guard(async () => {
+        // No foreign keys here: a step referencing a missing component must fail the way the
+        // SQL engines fail (FK violation → ConflictError), or a transaction would commit a
+        // workflow whose steps point at nothing.
+        const existing = await componentDefinitions().countDocuments({ id: step.componentId }, opts());
+        if (existing === 0) {
+          throw new ConflictError(`Component ${step.componentId} does not exist`);
+        }
         await workflowSteps().insertOne({ ...step }, opts());
         const doc = await workflowSteps().findOne({ id: step.id }, { ...PROJECTION, ...opts() });
         return toStep(doc as Document);

@@ -57,16 +57,30 @@ try {
       await bucket.collections().createCollection({ name, scopeName });
       console.log(`created collection ${scopeName}.${name}`);
     } catch (err) {
+      // 601 = collection_exists; the SDK message is "collection exists".
       const message = String(err?.message ?? err);
-      if (!/already exists/i.test(message)) throw err;
+      if (err?.code === 601 || /exists/i.test(message)) continue;
+      throw err;
     }
   }
 
   const ks = (collection) => `\`${bucketName}\`.\`${scopeName}\`.\`${collection}\``;
 
+  // Couchbase has no `CREATE INDEX IF NOT EXISTS <name>` — that clause is only valid for
+  // primary indexes — so a re-run is made idempotent by treating "already exists" as success.
+  const ensureIndex = async (collection, name, keys) => {
+    try {
+      await cluster.query(`CREATE INDEX ${name} ON ${ks(collection)} (${keys})`);
+      console.log(`ensured index ${name} on ${collection} (${keys})`);
+    } catch (err) {
+      const message = String(err?.message ?? err);
+      if (err?.code === 4300 || /already exists/i.test(message)) return;
+      throw err;
+    }
+  };
+
   for (const { collection, name, keys } of indexes) {
-    await cluster.query(`CREATE INDEX IF NOT EXISTS ${name} ON ${ks(collection)} (${keys})`);
-    console.log(`ensured index ${name} on ${collection}(${keys})`);
+    await ensureIndex(collection, name, keys);
   }
 
   for (const collection of collections) {
