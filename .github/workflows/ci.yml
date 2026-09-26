@@ -70,16 +70,21 @@ jobs:
                 await client.db("admin").command({
                   replSetInitiate: { _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] },
                 });
-              } catch {}
+                console.log("replSetInitiate sent");
+              } catch (err) {
+                console.log("replSetInitiate said:", err.message);
+              }
+              // A standalone mongod also reports isWritablePrimary: true, so require setName —
+              // the adapter keys transaction support off exactly that field.
               for (let attempt = 0; attempt < 30; attempt += 1) {
                 const hello = await client.db("admin").command({ hello: 1 });
-                if (hello.isWritablePrimary) {
-                  console.log("replica set primary is ready");
+                if (hello.setName) {
+                  console.log(`replica set ${hello.setName}, primary=${hello.isWritablePrimary}`);
                   process.exit(0);
                 }
                 await new Promise((resolve) => setTimeout(resolve, 2000));
               }
-              console.error("replica set primary never appeared");
+              console.error("no replica set after 60s — a standalone mongod cannot serve transactions");
               process.exit(1);
               '
             ddl: docker run --rm --network host -v "$PWD/apps/server/src/core/db/schema/mongodb:/schema" mongo:7 mongosh "mongodb://localhost:27017/apiconfy_test?directConnection=true" /schema/mongodb.js
@@ -132,9 +137,15 @@ jobs:
             healthOptions: --health-cmd "echo 'select 1 from dual;' | sqlplus -s system/oracle@//localhost:1521/FREEPDB1" --health-interval 10s --health-timeout 10s --health-retries 30 --health-start-period 120s
             env:
               DATABASE_URL: oracle://system:oracle@localhost:1521/FREEPDB1
-            ddl: docker run --rm --network host -v "$PWD/apps/server/src/core/db/schema/oracle:/schema" gvenzl/oracle-free:23-slim sqlplus -s system/oracle@//localhost:1521/FREEPDB1 @/schema/oracle.sql
+            # gvenzl's entrypoint starts a database, not a client, so copy the schema into
+            # the running service container and run sqlplus there (no job context needed).
+            ddl: |
+              CID=$(docker ps -qf "ancestor=gvenzl/oracle-free:23-slim" | head -1)
+              echo "oracle container: $CID"
+              docker cp apps/server/src/core/db/schema/oracle/oracle.sql "$CID":/tmp/oracle.sql
+              docker exec "$CID" sqlplus -s system/oracle@//localhost:1521/FREEPDB1 @/tmp/oracle.sql
           - db: couchbase
-            image: couchbase:7.2
+            image: couchbase/server:7.2.9
             env:
               DATABASE_URL: couchbase://localhost
               CB_BUCKET: apiconfy
