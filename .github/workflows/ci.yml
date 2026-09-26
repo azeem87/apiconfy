@@ -53,28 +53,6 @@ jobs:
             env:
               DATABASE_URL: mysql://root:root@127.0.0.1:3306/apiconfy_test
             ddl: mysql --host=127.0.0.1 --port=3306 --user=root --password=root apiconfy_test < apps/server/src/core/db/schema/sql/mariadb.sql
-          - db: mongodb
-            image: mongo:7
-            healthOptions: --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'" --health-interval 5s --health-timeout 5s --health-retries 15
-            env:
-              DATABASE_URL: mongodb://localhost:27017/apiconfy_test?replicaSet=rs0&directConnection=true
-            # Transactions need a replica set (decision #7). Initiate it through mongosh inside
-            # the running container — the driver path left the node standalone, and a standalone
-            # also reports isWritablePrimary, so require setName explicitly.
-            setup: |
-              CID=$(docker ps -qf "ancestor=mongo:7" | head -1)
-              echo "mongo container: $CID"
-              docker exec "$CID" mongosh --quiet --eval "try { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}) } catch (e) { print('initiate said: ' + e.message) }"
-              for i in $(seq 1 30); do
-                if docker exec "$CID" mongosh --quiet --eval "db.hello().setName" | grep -q rs0; then
-                  echo "replica set rs0 is up after ${i} checks"
-                  exit 0
-                fi
-                sleep 2
-              done
-              echo "no replica set after 60s — a standalone mongod cannot serve transactions"
-              exit 1
-            ddl: docker run --rm --network host -v "$PWD/apps/server/src/core/db/schema/mongodb:/schema" mongo:7 mongosh "mongodb://localhost:27017/apiconfy_test?directConnection=true" /schema/mongodb.js
     services:
       db:
         image: ${{ matrix.image }}
@@ -87,7 +65,6 @@ jobs:
         ports:
           - 5432:5432   # postgres
           - 3306:3306   # mariadb
-          - 27017:27017 # mongodb
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -106,6 +83,43 @@ jobs:
         working-directory: apps/server
         env: ${{ matrix.env }}
         run: bun test __tests__/db/${{ matrix.db }}-adapter.test.ts --parallel --bail
+
+  # MongoDB needs --replSet, which a service container cannot receive, so this job starts its
+  # own container. Transactions are unavailable on a standalone mongod (decision #7), and a
+  # standalone also reports isWritablePrimary, so the wait requires setName == rs0.
+  db-parity-mongodb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: 1.4.0
+      - run: pnpm install --frozen-lockfile
+      - name: Start mongod as a single-node replica set
+        run: |
+          docker run -d --name mongo-rs -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            docker exec mongo-rs mongosh --quiet --eval "db.runCommand({ping:1}).ok" | grep -q 1 && break
+            sleep 2
+          done
+          docker exec mongo-rs mongosh --quiet --eval "try { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}) } catch (e) { print('initiate said: ' + e.message) }"
+          for i in $(seq 1 30); do
+            docker exec mongo-rs mongosh --quiet --eval "db.hello().setName" | grep -q rs0 && break
+            sleep 2
+          done
+          docker exec mongo-rs mongosh --quiet --eval "db.hello().setName" | grep -q rs0
+      - name: Apply schema (operator script — the app never creates schema)
+        run: |
+          docker cp apps/server/src/core/db/schema/mongodb/mongodb.js mongo-rs:/tmp/mongodb.js
+          docker exec mongo-rs mongosh "mongodb://localhost:27017/apiconfy_test?directConnection=true" /tmp/mongodb.js
+      - name: mongodb parity suite
+        working-directory: apps/server
+        env:
+          DATABASE_URL: mongodb://localhost:27017/apiconfy_test?replicaSet=rs0&directConnection=true
+        run: bun test __tests__/db/mongodb-adapter.test.ts --parallel --bail
 
   # Heavy engines — oracle (~1.5 GB image, slow first boot) and couchbase — still as
   # parallel matrix jobs, but gated to PRs into main and to main itself, so feature
@@ -128,7 +142,11 @@ jobs:
             # client (gvenzl's entrypoint starts a database): wait for readiness ourselves by
             # exec'ing sqlplus in the running container, then apply the schema there.
             ddl: |
-              CID=$(docker ps -qf "ancestor=gvenzl/oracle-free:23-slim" | head -1)
+              for i in $(seq 1 60); do
+                CID=$(docker ps -q --filter "publish=1521" | head -1)
+                [ -n "$CID" ] && break
+                sleep 5
+              done
               echo "oracle container: $CID"
               for i in $(seq 1 60); do
                 if docker exec "$CID" bash -c "echo 'select 1 from dual;' | sqlplus -s system/oracle@//localhost:1521/FREEPDB1"; then
@@ -148,12 +166,12 @@ jobs:
             # the container: the earlier curl flow swallowed its errors, which surfaced later as
             # AuthenticationFailureError from the schema script.
             setup: |
-              CID=$(docker ps -qf "ancestor=couchbase/server:7.2.9" | head -1)
-              echo "couchbase container: $CID"
-              for i in $(seq 1 30); do
-                curl -sf http://localhost:8091/pools > /dev/null && break
-                sleep 2
+              for i in $(seq 1 60); do
+                CID=$(docker ps -q --filter "publish=8091" | head -1)
+                [ -n "$CID" ] && curl -sf http://localhost:8091/pools > /dev/null && break
+                sleep 5
               done
+              echo "couchbase container: $CID"
               docker exec "$CID" couchbase-cli cluster-init \
                 --cluster http://127.0.0.1:8091 \
                 --cluster-username Administrator --cluster-password password \
@@ -170,7 +188,22 @@ jobs:
               done
               docker exec "$CID" couchbase-cli bucket-list \
                 --cluster http://127.0.0.1:8091 --username Administrator --password password | grep apiconfy
-            ddl: CB_URL=couchbase://localhost CB_USER=Administrator CB_PASS=password CB_BUCKET=apiconfy bun run apps/server/src/core/db/schema/couchbase/couchbase.js
+              # The query service comes up asynchronously; without this wait the schema
+              # script's CREATE INDEX fails with service_not_available (4).
+              for i in $(seq 1 60); do
+                curl -sf http://localhost:8093/admin/ping > /dev/null && { echo "query service up after ${i} checks"; break; }
+                sleep 5
+              done
+            ddl: |
+              for attempt in $(seq 1 6); do
+                if CB_URL=couchbase://localhost CB_USER=Administrator CB_PASS=password CB_BUCKET=apiconfy \
+                  bun run apps/server/src/core/db/schema/couchbase/couchbase.js; then
+                  exit 0
+                fi
+                echo "schema attempt ${attempt} failed — retrying in 15s (index service warming up)"
+                sleep 15
+              done
+              exit 1
     services:
       db:
         image: ${{ matrix.image }}
