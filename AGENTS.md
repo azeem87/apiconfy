@@ -42,7 +42,27 @@ Extract complex conditions into meaningful boolean variables
 Use optional chaining (`?.`) as much as possible and wherever applicable to avoid if/else and else-if logic. Use the guard pattern (early return) to handle null/undefined cases cleanly.
 
 Environment Variables — Always Document
-When adding a new environment variable (anything read from `process.env`), you MUST update the "Environment Variables" table in `README.md`. Include the variable name, default value, and a description of its purpose and security implications (if any). This is non-negotiable — undocumented env vars cause confusion and deployment failures.
+When adding a new environment variable (anything read from `process.env`), you MUST update ALL of the following:
+1. The "Environment Variables" table in `README.md` — include the variable name, default value, and a description of its purpose and security implications (if any)
+2. `.env.example` — add the variable with a descriptive comment explaining its purpose, grouped by phase/feature. This file is committed to git as a template for all users
+3. `.env.local` — add the variable (commented out unless needed for local testing). This file is gitignored and used for local development
+
+This is non-negotiable — undocumented env vars cause confusion and deployment failures. The three-file rule ensures: (a) users see all options in `.env.example`, (b) operators have a production reference in `README.md`, (c) developers can test locally with `.env.local`.
+
+Database Selection — DATABASE_URL scheme only
+Database engine is determined by `DATABASE_URL` scheme prefix.
+- `postgres://` → PostgreSQL
+- `mysql://` or `mariadb://` → MariaDB (MySQL protocol)
+- `oracle://` → Oracle
+- `mongodb://` → MongoDB
+- `couchbase://` → Couchbase (requires `CB_BUCKET` env var)
+- No `DATABASE_URL` → SQLite (uses `SQLITE_PATH`)
+- Unknown scheme or scheme-less URL → hard fail at startup
+
+Schema Migration Strategy — Before vs After Public Release
+**Before public release:** No migration framework needed. Update DDL scripts directly in `apps/server/src/core/db/schema/`. Fresh installs get the latest schema.
+**After public release:** Introduce migration framework to handle schema evolution for existing deployments. Migration files track applied changes, enable safe upgrades, and prevent data loss.
+**Why the distinction:** Pre-release has no existing deployments to migrate. Post-release needs version-controlled schema changes to avoid breaking production databases.
 
 Git & Commits
 - **NEVER commit directly to the `main` branch.** This is a hard rule.
