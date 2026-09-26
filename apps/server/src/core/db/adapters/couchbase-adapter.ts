@@ -3,6 +3,7 @@ import {
   BucketNotFoundError,
   DocumentExistsError,
   DocumentNotFoundError,
+  QueryScanConsistency,
   UnambiguousTimeoutError,
   connect,
 } from 'couchbase';
@@ -479,7 +480,13 @@ export async function createCouchbaseAdapter(databaseUrl: string): Promise<DBAda
 
   const collectionKv = (name: string): Kv => scope.collection(name);
   const clusterQuery: QueryFn = async (statement, params) => {
-    const result = await cluster.query(statement, { parameters: params });
+    const result = await cluster.query(statement, {
+      parameters: params,
+      // KV writes are visible immediately, GSI indexes are not: without request_plus a read right
+      // after an insert can miss the document. The SQL engines are read-your-writes, so parity
+      // means waiting for the index to catch up to this request.
+      scanConsistency: QueryScanConsistency.RequestPlus,
+    });
     return result.rows as QueryRow[];
   };
   const methods = buildMethods(collectionKv, clusterQuery, bucketName, scopeName, databaseUrl);
