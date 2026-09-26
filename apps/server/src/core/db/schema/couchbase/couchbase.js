@@ -45,7 +45,8 @@ const indexes = [
   { collection: 'workflow_steps', name: 'ix_steps_workflow', keys: 'workflowId, stepOrder' },
   { collection: 'workflow_steps', name: 'ix_steps_component', keys: 'componentId' },
   { collection: 'executions', name: 'ix_execution_id', keys: 'executionId' },
-  { collection: 'master_configuration', name: 'ix_config_key', keys: 'key' },
+  // No index on master_configuration: the adapter reaches config only by KV (`cfg::<key>`),
+  // and `key` is a reserved word in N1QL anyway.
 ];
 
 const cluster = await connect(url, { username, password });
@@ -73,8 +74,9 @@ try {
       await cluster.query(`CREATE INDEX ${name} ON ${ks(collection)} (${keys})`);
       console.log(`ensured index ${name} on ${collection} (${keys})`);
     } catch (err) {
+      // 18 = index_exists from the SDK; 4300 is the inner query error code.
       const message = String(err?.message ?? err);
-      if (err?.code === 4300 || /already exists/i.test(message)) return;
+      if (err?.code === 18 || err?.code === 4300 || /exists/i.test(message)) return;
       throw err;
     }
   };
