@@ -31,6 +31,10 @@ jobs:
   # Fast engines on every push and PR — three parallel jobs, ~1.5-2.5 min each.
   # Each job starts its own container, applies that engine's operator schema
   # script, then runs only that engine's parity suite.
+  #
+  # Note: the `job` context (job.services.<id>.id) is only valid inside step `if:`
+  # conditions, so nothing here execs into the service container — engine setup
+  # talks to the engine over its published port instead.
   db-parity:
     runs-on: ubuntu-latest
     strategy:
@@ -55,12 +59,29 @@ jobs:
             env:
               DATABASE_URL: mongodb://localhost:27017/apiconfy_test?replicaSet=rs0&directConnection=true
             # Transactions need a replica set (decision #7); a standalone server fails by design.
+            # Driven through the mongodb driver we already installed — no docker exec needed.
             setup: |
-              docker exec ${{ job.services.db.id }} mongosh --quiet --eval "try { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}) } catch (e) {}"
-              for i in $(seq 1 30); do
-                docker exec ${{ job.services.db.id }} mongosh --quiet --eval "db.hello().isWritablePrimary" | grep -q true && break
-                sleep 2
-              done
+              cd apps/server
+              bun -e '
+              const { MongoClient } = await import("mongodb");
+              const client = new MongoClient("mongodb://localhost:27017/?directConnection=true");
+              await client.connect();
+              try {
+                await client.db("admin").command({
+                  replSetInitiate: { _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] },
+                });
+              } catch {}
+              for (let attempt = 0; attempt < 30; attempt += 1) {
+                const hello = await client.db("admin").command({ hello: 1 });
+                if (hello.isWritablePrimary) {
+                  console.log("replica set primary is ready");
+                  process.exit(0);
+                }
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+              }
+              console.error("replica set primary never appeared");
+              process.exit(1);
+              '
             ddl: docker run --rm --network host -v "$PWD/apps/server/src/core/db/schema/mongodb:/schema" mongo:7 mongosh "mongodb://localhost:27017/apiconfy_test?directConnection=true" /schema/mongodb.js
     services:
       db:
@@ -106,6 +127,9 @@ jobs:
         include:
           - db: oracle
             image: gvenzl/oracle-free:23-slim
+            # No docker exec (the job context is unavailable in run steps): wait for the
+            # image's own service health instead, which exercises sqlplus inside the container.
+            healthOptions: --health-cmd "echo 'select 1 from dual;' | sqlplus -s system/oracle@//localhost:1521/FREEPDB1" --health-interval 10s --health-timeout 10s --health-retries 30 --health-start-period 120s
             env:
               DATABASE_URL: oracle://system:oracle@localhost:1521/FREEPDB1
             ddl: docker run --rm --network host -v "$PWD/apps/server/src/core/db/schema/oracle:/schema" gvenzl/oracle-free:23-slim sqlplus -s system/oracle@//localhost:1521/FREEPDB1 @/schema/oracle.sql
@@ -114,21 +138,28 @@ jobs:
             env:
               DATABASE_URL: couchbase://localhost
               CB_BUCKET: apiconfy
+            # clusterInit and bucket-create below are the same REST calls couchbase-cli makes.
             setup: |
               for i in $(seq 1 30); do
-                curl -s http://localhost:8091/pools > /dev/null && break
+                curl -sf http://localhost:8091/pools > /dev/null && break
                 sleep 2
               done
-              docker exec ${{ job.services.db.id }} couchbase-cli cluster-init \
-                --cluster-username Administrator --cluster-password password \
-                --cluster-ramsize 256 --services data,index,query || true
-              docker exec ${{ job.services.db.id }} couchbase-cli bucket-create \
-                --cluster localhost --username Administrator --password password \
-                --bucket apiconfy --bucket-ramsize 128 --bucket-type couchbase || true
+              curl -s -X POST http://localhost:8091/clusterInit \
+                -d hostname=127.0.0.1 -d username=Administrator -d password=password \
+                -d "services=data,index,query" \
+                -d memoryQuota=256 -d indexMemoryQuota=256 -d port=SAME | head -c 200 || true
+              for i in $(seq 1 30); do
+                curl -sf -u Administrator:password \
+                  -X POST http://localhost:8091/pools/default/buckets \
+                  -d name=apiconfy -d ramQuotaMB=128 -d bucketType=couchbase -d authType=sasl \
+                  > /dev/null && break
+                sleep 2
+              done
             ddl: CB_URL=couchbase://localhost CB_USER=Administrator CB_PASS=password CB_BUCKET=apiconfy bun run apps/server/src/core/db/schema/couchbase/couchbase.js
     services:
       db:
         image: ${{ matrix.image }}
+        options: ${{ matrix.healthOptions }}
         env:
           ORACLE_PASSWORD: oracle
           ORACLE_DATABASE: FREEPDB1
@@ -145,13 +176,6 @@ jobs:
         with:
           bun-version: 1.4.0
       - run: pnpm install --frozen-lockfile
-      - name: Wait for Oracle readiness
-        if: matrix.db == 'oracle'
-        run: |
-          for i in $(seq 1 60); do
-            docker exec ${{ job.services.db.id }} bash -c "echo 'select 1 from dual;' | sqlplus -s system/oracle@//localhost:1521/FREEPDB1" && break
-            sleep 5
-          done
       - name: Engine setup
         if: matrix.setup
         run: ${{ matrix.setup }}
