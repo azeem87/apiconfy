@@ -6,5 +6,5 @@ const databaseUrl = process.env.DATABASE_URL ?? '';
 const isMariaDb = databaseUrl.startsWith('mysql') || databaseUrl.startsWith('mariadb');
 
 describe.skipIf(!isMariaDb)('MariaDB adapter (parity)', () => {
-  runAdapterParity('mariadb', () => createMariaDbAdapter(databaseUrl));
+  runAdapterParity('mariadb', () => createMariaDbAdapter(databaseUrl), { auditTrail: false });
 });

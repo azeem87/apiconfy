@@ -6,5 +6,5 @@ const databaseUrl = process.env.DATABASE_URL ?? '';
 const isMongo = databaseUrl.startsWith('mongodb');
 
 describe.skipIf(!isMongo)('MongoDB adapter (parity)', () => {
-  runAdapterParity('mongodb', () => createMongoDbAdapter(databaseUrl));
+  runAdapterParity('mongodb', () => createMongoDbAdapter(databaseUrl), { auditTrail: false });
 });

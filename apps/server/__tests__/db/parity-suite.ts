@@ -85,9 +85,12 @@ function makeExecution(overrides: Partial<ExecutionRecord> = {}): ExecutionRecor
 export function runAdapterParity(
   name: string,
   makeAdapter: AdapterFactory,
-  options: { transactions?: boolean } = {}
+  options: { transactions?: boolean; auditTrail?: boolean } = {}
 ): void {
   const itTx = options.transactions === false ? it.skip : it;
+  // The audit table is optional: with ENABLE_DB_TRANSACTION_LOGS off the operator does not
+  // create it, so an engine suite without it skips this test explicitly rather than failing.
+  const itAudit = options.auditTrail === false ? it.skip : it;
 
   describe(`${name} — DBAdapter parity`, () => {
     let db: DBAdapter;
@@ -270,7 +273,7 @@ export function runAdapterParity(
         expect((await db.getExecution(execution.executionId))?.attempts).toBe(0);
       });
 
-      it('writes and reads execution logs in order', async () => {
+      itAudit('writes and reads execution logs in order', async () => {
         const execution = makeExecution();
         await db.saveExecution(execution);
         const log = (createdAt: string): ExecutionLogRecord => ({

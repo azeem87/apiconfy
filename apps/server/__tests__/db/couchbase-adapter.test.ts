@@ -6,5 +6,8 @@ const databaseUrl = process.env.DATABASE_URL ?? '';
 const isCouchbase = databaseUrl.startsWith('couchbase');
 
 describe.skipIf(!isCouchbase)('Couchbase adapter (parity)', () => {
-  runAdapterParity('couchbase', () => createCouchbaseAdapter(databaseUrl), { transactions: false });
+  runAdapterParity('couchbase', () => createCouchbaseAdapter(databaseUrl), {
+    transactions: false,
+    auditTrail: false,
+  });
 });

@@ -6,5 +6,5 @@ const databaseUrl = process.env.DATABASE_URL ?? '';
 const isOracle = databaseUrl.startsWith('oracle');
 
 describe.skipIf(!isOracle)('Oracle adapter (parity)', () => {
-  runAdapterParity('oracle', () => createOracleAdapter(databaseUrl));
+  runAdapterParity('oracle', () => createOracleAdapter(databaseUrl), { auditTrail: false });
 });

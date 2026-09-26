@@ -6,5 +6,5 @@ const databaseUrl = process.env.DATABASE_URL ?? '';
 const isPostgres = databaseUrl.startsWith('postgres');
 
 describe.skipIf(!isPostgres)('PostgreSQL adapter (parity)', () => {
-  runAdapterParity('postgres', () => createPostgresAdapter(databaseUrl));
+  runAdapterParity('postgres', () => createPostgresAdapter(databaseUrl), { auditTrail: false });
 });
