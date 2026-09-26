@@ -132,31 +132,34 @@ jobs:
       matrix:
         include:
           - db: oracle
-            image: gvenzl/oracle-free:23-slim
-            # readiness is handled inside the DDL step below
-            # No docker exec (the job context is unavailable in run steps): wait for the
-            # image's own service health instead, which exercises sqlplus inside the container.
             env:
               DATABASE_URL: oracle://system:oracle@localhost:1521/FREEPDB1
-            # No service health gate for Oracle (the runner gave up on it) and no docker-run
-            # client (gvenzl's entrypoint starts a database): wait for readiness ourselves by
-            # exec'ing sqlplus in the running container, then apply the schema there.
+            setup: |
+              docker rm -f oracle-ci >/dev/null 2>&1 || true
+              docker run -d --name oracle-ci \
+                -e ORACLE_PASSWORD=oracle \
+                -p 1521:1521 \
+                gvenzl/oracle-free:23-slim
             ddl: |
-              for i in $(seq 1 60); do
-                CID=$(docker ps -q --filter "publish=1521" | head -1)
-                [ -n "$CID" ] && break
-                sleep 5
-              done
-              echo "oracle container: $CID"
-              for i in $(seq 1 60); do
-                if docker exec "$CID" bash -c "echo 'select 1 from dual;' | sqlplus -s system/oracle@//localhost:1521/FREEPDB1"; then
-                  echo "oracle ready after ${i} checks"
+              set -e
+
+              for i in $(seq 1 90); do
+                if docker exec oracle-ci bash -lc "echo 'select 1 from dual;' | sqlplus -s system/oracle@//localhost:1521/FREEPDB1" >/dev/null 2>&1; then
+                  echo "Oracle ready"
                   break
                 fi
+                echo "Oracle not ready yet (${i}/90)"
                 sleep 10
               done
-              docker cp apps/server/src/core/db/schema/oracle/oracle.sql "$CID":/tmp/oracle.sql
-              docker exec "$CID" sqlplus -s system/oracle@//localhost:1521/FREEPDB1 @/tmp/oracle.sql
+
+              if ! docker exec oracle-ci bash -lc "echo 'select 1 from dual;' | sqlplus -s system/oracle@//localhost:1521/FREEPDB1" >/dev/null 2>&1; then
+                echo "Oracle failed to become ready"
+                docker logs oracle-ci | tail -100
+                exit 1
+              fi
+
+              docker cp apps/server/src/core/db/schema/oracle/oracle.sql oracle-ci:/tmp/oracle.sql
+              docker exec oracle-ci bash -lc "sqlplus -s system/oracle@//localhost:1521/FREEPDB1 @/tmp/oracle.sql"
           - db: couchbase
             image: couchbase/server:7.2.9
             env:
