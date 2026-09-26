@@ -143,23 +143,34 @@ jobs:
             ddl: |
               set -e
 
+              # sqlplus exits 0 even on connection failure (e.g. ORA-12541 no listener) —
+              # it only prints "ERROR:" to stdout — so the readiness probe must check the
+              # output, not the exit code, or it reports "ready" before the listener is up.
+              READY=false
               for i in $(seq 1 90); do
-                if docker exec oracle-ci bash -lc "echo 'select 1 from dual;' | sqlplus -s system/oracle@//localhost:1521/FREEPDB1" >/dev/null 2>&1; then
+                OUT=$(docker exec oracle-ci bash -lc "echo 'select 1 from dual;' | sqlplus -s system/oracle@//localhost:1521/FREEPDB1" 2>&1) || true
+                if echo "$OUT" | grep -q '^1$'; then
                   echo "Oracle ready"
+                  READY=true
                   break
                 fi
                 echo "Oracle not ready yet (${i}/90)"
                 sleep 10
               done
 
-              if ! docker exec oracle-ci bash -lc "echo 'select 1 from dual;' | sqlplus -s system/oracle@//localhost:1521/FREEPDB1" >/dev/null 2>&1; then
+              if [ "$READY" != "true" ]; then
                 echo "Oracle failed to become ready"
                 docker logs oracle-ci | tail -100
                 exit 1
               fi
 
               docker cp apps/server/src/core/db/schema/oracle/oracle.sql oracle-ci:/tmp/oracle.sql
-              docker exec oracle-ci bash -lc "sqlplus -s system/oracle@//localhost:1521/FREEPDB1 @/tmp/oracle.sql"
+              DDL_OUT=$(docker exec oracle-ci bash -lc "sqlplus -s system/oracle@//localhost:1521/FREEPDB1 @/tmp/oracle.sql" 2>&1)
+              echo "$DDL_OUT"
+              if echo "$DDL_OUT" | grep -q 'ORA-'; then
+                echo "Oracle schema script reported an error"
+                exit 1
+              fi
           - db: couchbase
             image: couchbase/server:7.2.9
             env:
