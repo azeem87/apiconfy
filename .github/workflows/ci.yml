@@ -58,35 +58,22 @@ jobs:
             healthOptions: --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'" --health-interval 5s --health-timeout 5s --health-retries 15
             env:
               DATABASE_URL: mongodb://localhost:27017/apiconfy_test?replicaSet=rs0&directConnection=true
-            # Transactions need a replica set (decision #7); a standalone server fails by design.
-            # Driven through the mongodb driver we already installed — no docker exec needed.
+            # Transactions need a replica set (decision #7). Initiate it through mongosh inside
+            # the running container — the driver path left the node standalone, and a standalone
+            # also reports isWritablePrimary, so require setName explicitly.
             setup: |
-              cd apps/server
-              bun -e '
-              const { MongoClient } = await import("mongodb");
-              const client = new MongoClient("mongodb://localhost:27017/?directConnection=true");
-              await client.connect();
-              try {
-                await client.db("admin").command({
-                  replSetInitiate: { _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] },
-                });
-                console.log("replSetInitiate sent");
-              } catch (err) {
-                console.log("replSetInitiate said:", err.message);
-              }
-              // A standalone mongod also reports isWritablePrimary: true, so require setName —
-              // the adapter keys transaction support off exactly that field.
-              for (let attempt = 0; attempt < 30; attempt += 1) {
-                const hello = await client.db("admin").command({ hello: 1 });
-                if (hello.setName) {
-                  console.log(`replica set ${hello.setName}, primary=${hello.isWritablePrimary}`);
-                  process.exit(0);
-                }
-                await new Promise((resolve) => setTimeout(resolve, 2000));
-              }
-              console.error("no replica set after 60s — a standalone mongod cannot serve transactions");
-              process.exit(1);
-              '
+              CID=$(docker ps -qf "ancestor=mongo:7" | head -1)
+              echo "mongo container: $CID"
+              docker exec "$CID" mongosh --quiet --eval "try { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}) } catch (e) { print('initiate said: ' + e.message) }"
+              for i in $(seq 1 30); do
+                if docker exec "$CID" mongosh --quiet --eval "db.hello().setName" | grep -q rs0; then
+                  echo "replica set rs0 is up after ${i} checks"
+                  exit 0
+                fi
+                sleep 2
+              done
+              echo "no replica set after 60s — a standalone mongod cannot serve transactions"
+              exit 1
             ddl: docker run --rm --network host -v "$PWD/apps/server/src/core/db/schema/mongodb:/schema" mongo:7 mongosh "mongodb://localhost:27017/apiconfy_test?directConnection=true" /schema/mongodb.js
     services:
       db:
@@ -132,16 +119,24 @@ jobs:
         include:
           - db: oracle
             image: gvenzl/oracle-free:23-slim
+            # readiness is handled inside the DDL step below
             # No docker exec (the job context is unavailable in run steps): wait for the
             # image's own service health instead, which exercises sqlplus inside the container.
-            healthOptions: --health-cmd "echo 'select 1 from dual;' | sqlplus -s system/oracle@//localhost:1521/FREEPDB1" --health-interval 10s --health-timeout 10s --health-retries 30 --health-start-period 120s
             env:
               DATABASE_URL: oracle://system:oracle@localhost:1521/FREEPDB1
-            # gvenzl's entrypoint starts a database, not a client, so copy the schema into
-            # the running service container and run sqlplus there (no job context needed).
+            # No service health gate for Oracle (the runner gave up on it) and no docker-run
+            # client (gvenzl's entrypoint starts a database): wait for readiness ourselves by
+            # exec'ing sqlplus in the running container, then apply the schema there.
             ddl: |
               CID=$(docker ps -qf "ancestor=gvenzl/oracle-free:23-slim" | head -1)
               echo "oracle container: $CID"
+              for i in $(seq 1 60); do
+                if docker exec "$CID" bash -c "echo 'select 1 from dual;' | sqlplus -s system/oracle@//localhost:1521/FREEPDB1"; then
+                  echo "oracle ready after ${i} checks"
+                  break
+                fi
+                sleep 10
+              done
               docker cp apps/server/src/core/db/schema/oracle/oracle.sql "$CID":/tmp/oracle.sql
               docker exec "$CID" sqlplus -s system/oracle@//localhost:1521/FREEPDB1 @/tmp/oracle.sql
           - db: couchbase
@@ -149,23 +144,32 @@ jobs:
             env:
               DATABASE_URL: couchbase://localhost
               CB_BUCKET: apiconfy
-            # clusterInit and bucket-create below are the same REST calls couchbase-cli makes.
+            # clusterInit and bucket-create run through the image's own couchbase-cli, inside
+            # the container: the earlier curl flow swallowed its errors, which surfaced later as
+            # AuthenticationFailureError from the schema script.
             setup: |
+              CID=$(docker ps -qf "ancestor=couchbase/server:7.2.9" | head -1)
+              echo "couchbase container: $CID"
               for i in $(seq 1 30); do
                 curl -sf http://localhost:8091/pools > /dev/null && break
                 sleep 2
               done
-              curl -s -X POST http://localhost:8091/clusterInit \
-                -d hostname=127.0.0.1 -d username=Administrator -d password=password \
-                -d "services=data,index,query" \
-                -d memoryQuota=256 -d indexMemoryQuota=256 -d port=SAME | head -c 200 || true
+              docker exec "$CID" couchbase-cli cluster-init \
+                --cluster http://127.0.0.1:8091 \
+                --cluster-username Administrator --cluster-password password \
+                --cluster-ramsize 512 --cluster-index-ramsize 256 \
+                --services data,index,query
               for i in $(seq 1 30); do
-                curl -sf -u Administrator:password \
-                  -X POST http://localhost:8091/pools/default/buckets \
-                  -d name=apiconfy -d ramQuotaMB=128 -d bucketType=couchbase -d authType=sasl \
-                  > /dev/null && break
+                if docker exec "$CID" couchbase-cli bucket-create \
+                  --cluster http://127.0.0.1:8091 \
+                  --username Administrator --password password \
+                  --bucket apiconfy --bucket-ramsize 128 --bucket-type couchbase; then
+                  break
+                fi
                 sleep 2
               done
+              docker exec "$CID" couchbase-cli bucket-list \
+                --cluster http://127.0.0.1:8091 --username Administrator --password password | grep apiconfy
             ddl: CB_URL=couchbase://localhost CB_USER=Administrator CB_PASS=password CB_BUCKET=apiconfy bun run apps/server/src/core/db/schema/couchbase/couchbase.js
     services:
       db:
