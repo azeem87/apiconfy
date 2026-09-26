@@ -162,6 +162,8 @@ jobs:
             env:
               DATABASE_URL: couchbase://localhost
               CB_BUCKET: apiconfy
+              CB_USER: Administrator
+              CB_PASS: password
             # clusterInit and bucket-create run through the image's own couchbase-cli, inside
             # the container: the earlier curl flow swallowed its errors, which surfaced later as
             # AuthenticationFailureError from the schema script.

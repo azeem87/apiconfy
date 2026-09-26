@@ -463,8 +463,15 @@ export async function createCouchbaseAdapter(databaseUrl: string): Promise<DBAda
   }
   const scopeName = process.env.CB_SCOPE ?? '_default';
   const url = new URL(databaseUrl);
-  const username = decodeURIComponent(url.username);
-  const password = decodeURIComponent(url.password);
+  // The documented form is `couchbase://host` with credentials in the environment, so accept
+  // both: credentials in the URL win, otherwise CB_USER / CB_PASS.
+  const username = decodeURIComponent(url.username) || process.env.CB_USER || 'Administrator';
+  const password = decodeURIComponent(url.password) || process.env.CB_PASS || '';
+  if (password === '') {
+    throw new DatabaseError(
+      'Couchbase credentials are missing — put them in DATABASE_URL or set CB_USER / CB_PASS'
+    );
+  }
 
   const cluster = await connect(`couchbase://${url.hostname}`, { username, password });
   let bucket: Bucket;

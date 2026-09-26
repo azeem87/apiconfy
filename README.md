@@ -391,6 +391,9 @@ The server starts on `http://localhost:3000` with a health check at `GET /health
 | `REQUIRE_API_KEY` | `false` | When `true`, server refuses to start if `API_KEY` is missing. Set this in production |
 | `DATABASE_URL` | *(unset → SQLite)* | Selects the database engine by URL scheme. Implemented today: `postgres://` (stub until Phase 3). Phase 3 adds `mysql://`/`mariadb://`, `oracle://`, `mongodb://`, `couchbase://` (+ `CB_BUCKET`), and the explicit `sqlite:` scheme. Unset or empty → SQLite, with a local-development warning logged at startup |
 | `SQLITE_PATH` | `../../data/apiconfy.db` | SQLite database file path when no engine is selected — and, from Phase 3, when the `sqlite:` URL omits a path |
+| `CB_BUCKET` | *(unset)* | Couchbase bucket name — required whenever `DATABASE_URL` uses `couchbase://` |
+| `CB_USER` | `Administrator` | Couchbase username, used when the `couchbase://` URL carries none |
+| `CB_PASS` | *(unset)* | Couchbase password, used when the `couchbase://` URL carries none — required in that case, or the adapter refuses to start |
 
 **Security note:** If `API_KEY` is not set, a warning is logged at startup and all `/api/*` routes are accessible without authentication. For production deployments, always set `API_KEY` and `REQUIRE_API_KEY=true`.
 
