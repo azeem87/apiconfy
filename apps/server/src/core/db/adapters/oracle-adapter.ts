@@ -576,6 +576,11 @@ function buildMethods(acquire: () => Promise<Lease>, autoCommit: boolean, dsn: s
     async setConfig(key, value, valueType) {
       return run(async (conn) => {
         const ts = now();
+        // Oracle numbered bind placeholders (:1, :2, ...) each require their own bind
+        // value even when the same number is reused in the SQL text — repeating a
+        // bind array value under the same number does not reuse it, so every
+        // occurrence below is given its own sequential placeholder.
+        const id = generateId();
         await mutate(
           conn,
           `MERGE INTO master_configuration t
@@ -583,8 +588,8 @@ function buildMethods(acquire: () => Promise<Lease>, autoCommit: boolean, dsn: s
            ON (t.key = s.key)
            WHEN MATCHED THEN UPDATE SET t.value = :2, t.value_type = :3, t.updated_at = :4
            WHEN NOT MATCHED THEN INSERT (id, key, value, value_type, created_at, updated_at)
-             VALUES (:5, :1, :2, :3, :4, :4)`,
-          [key, value, valueType, ts, generateId()]
+             VALUES (:5, :6, :7, :8, :9, :10)`,
+          [key, value, valueType, ts, id, key, value, valueType, ts, ts]
         );
       });
     },
