@@ -4,9 +4,8 @@
     "outDir": "./dist",
     "rootDir": ".",
     "sourceMap": true,
-    "baseUrl": "./src",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src", "__tests__"]

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { DBAdapter } from '@/core/db/adapter.js';
 import { createSqliteAdapter } from '@/core/db/adapters/sqlite-adapter.js';
-import { DbExecutionRepository } from '@/core/db/repositories/execution.repository.js';
+import { AuditWriteError, DbExecutionRepository } from '@/core/db/repositories/execution.repository.js';
 import type { InvocationRecord } from '@/core/runtime/types.js';
 import { generateId } from '@/lib/index.js';
 
@@ -189,13 +189,33 @@ describe('DbExecutionRepository', () => {
     expect(await repo.findByExecutionId(entry.executionId)).toEqual([]);
   });
 
-  it('retains the record but rejects when the second audit write fails', async () => {
+  it('retains the record but rejects when the second audit write fails and the flag is on', async () => {
+    process.env.ENABLE_DB_TRANSACTION_LOGS = 'true';
+    try {
+      const entry = invocation();
+      const broken = new DbExecutionRepository({
+        ...db,
+        saveExecutionLog: async () => { throw new Error('audit write failed'); },
+      });
+      const thrown = await broken.recordInvocation(entry).catch((err: unknown) => err);
+      expect(thrown).toBeInstanceOf(AuditWriteError);
+      expect((thrown as AuditWriteError).reason).toMatchObject({ message: 'audit write failed' });
+      expect(await repo.get(entry.executionId)).not.toBeNull();
+      expect(await repo.findByExecutionId(entry.executionId)).toEqual([]);
+    } finally {
+      delete process.env.ENABLE_DB_TRANSACTION_LOGS;
+    }
+  });
+
+  it('swallows a failed audit write when the flag is off — the table is optional', async () => {
     const entry = invocation();
     const broken = new DbExecutionRepository({
       ...db,
-      saveExecutionLog: async () => { throw new Error('audit write failed'); },
+      saveExecutionLog: async () => { throw new Error('audit table is absent'); },
     });
-    await expect(broken.recordInvocation(entry)).rejects.toThrow('audit write failed');
+
+    await broken.recordInvocation(entry);
+
     expect(await repo.get(entry.executionId)).not.toBeNull();
     expect(await repo.findByExecutionId(entry.executionId)).toEqual([]);
   });

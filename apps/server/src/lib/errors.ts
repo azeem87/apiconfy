@@ -102,3 +102,15 @@ export class ConflictError extends AppError {
     super(message, 'VERSION_CONFLICT', 409, details);
   }
 }
+
+export class DatabaseError extends AppError {
+  constructor(message: string, details?: Record<string, unknown> | unknown[]) {
+    super(message, 'DATABASE_ERROR', 500, details);
+  }
+}
+
+export class UnsupportedOperationError extends AppError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'UNSUPPORTED_OPERATION', 501, details);
+  }
+}

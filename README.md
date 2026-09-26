@@ -371,12 +371,9 @@ pnpm build
 
 The server starts on `http://localhost:3000` with a health check at `GET /health`.
 
-**Database:** SQLite is the default for local development — no configuration needed. The database file is created automatically at `data/apiconfy.db` on first run. The `data/` directory is gitignored and only used locally. With `DATABASE_URL` unset or empty the server selects SQLite and logs a warning at startup — it is a single local file with no durability guarantees, so keep it to local development.
+**Database:** SQLite is the default for local development — no configuration needed. The database file is created automatically at `data/apiconfy.db` on first run. The `data/` directory is gitignored and only used locally. With `DATABASE_URL` unset or empty the server selects SQLite and logs a warning at startup: a single local file has no durability guarantees of its own, so for production prefer a **replicated SQLite** (Turso, LiteFS) or a server engine. The warning is informational — the process never refuses to start over it.
 
-**Current adapter limitation:** SQLite is the implemented backend. PostgreSQL selection
-is a target deployment contract; its adapter is still a throwing stub until Phase 3
-implements the database adapters. Do not use the PostgreSQL setting below yet. The
-planned schemes are listed in [`.env.example`](.env.example).
+**Current adapter status:** all six engines are implemented — SQLite (default), **PostgreSQL**, **MariaDB**, **Oracle**, **MongoDB** and **Couchbase**. The schema scripts ship in `apps/server/src/core/db/schema/` and are run **once by the operator** with an admin account: `psql -f apps/server/src/core/db/schema/sql/postgres.sql`, `mysql --user=<admin> --password --database=apiconfy < apps/server/src/core/db/schema/sql/mariadb.sql`, `sqlplus <admin>@//host:1521/service @apps/server/src/core/db/schema/oracle/oracle.sql`, `mongosh "<DATABASE_URL>" apps/server/src/core/db/schema/mongodb/mongodb.js`, or `CB_BUCKET=apiconfy bun run apps/server/src/core/db/schema/couchbase/couchbase.js`. The app never creates schema: on startup it probes for the required tables/collections/indexes and exits with the script path if any are missing. Couchbase transactions are intentionally not implemented — the config/CRUD writes that would use them are rare, while the hot paths (invoke, workflow reads) are key-value reads (see the plan's Step 7 notes). A per-engine prerequisite table lands with the Phase 3 README work.
 
 **Production / Cloud:** set `DATABASE_URL` to the engine you run — today `postgres://user:pass@host:5432/db`, with `mysql://`/`mariadb://`, `oracle://`, `mongodb://` and `couchbase://` (+ `CB_BUCKET`) arriving in Phase 3. A named engine is never bypassed in favour of SQLite; an unknown scheme refuses to start.
 
