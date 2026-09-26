@@ -1,6 +1,6 @@
 import type { ExecutionStatus, ExecutionStep } from '@/core/types.js';
 
-export type DbType = 'sqlite' | 'postgres';
+export type DbType = 'sqlite' | 'postgres' | 'mysql' | 'oracle' | 'mongodb' | 'couchbase';
 
 export interface ComponentRecord {
   id: string;
@@ -95,6 +95,8 @@ export interface DBAdapter {
   type: DbType;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
+  /** Runs `fn` atomically. Unsupported or nested transactions throw an AppError. */
+  transaction<T>(fn: (tx: DBAdapter) => Promise<T>): Promise<T>;
 
   saveComponent(comp: ComponentRecord): Promise<ComponentRecord>;
   getComponent(id: string): Promise<ComponentRecord | null>;

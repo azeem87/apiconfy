@@ -27,6 +27,19 @@ function redactText(value: string | undefined): string | undefined {
   return toJson(parsed);
 }
 
+/** The audit table is optional: with the flag off the operator is told not to create it. */
+function auditEnabled(): boolean {
+  return process.env.ENABLE_DB_TRANSACTION_LOGS === 'true';
+}
+
+/** The executions row was persisted; only the audit row failed. */
+export class AuditWriteError extends Error {
+  constructor(readonly reason: unknown) {
+    super('Execution persisted, but the audit row could not be written');
+    this.name = 'AuditWriteError';
+  }
+}
+
 export class DbExecutionRepository implements ExecutionRepository {
   constructor(private readonly db: DBAdapter) {}
 
@@ -67,7 +80,15 @@ export class DbExecutionRepository implements ExecutionRepository {
       createdAt: entry.startedAt,
       updatedAt: entry.completedAt,
     });
-    await this.log(log);
+    try {
+      await this.log(log);
+    } catch (reason) {
+      // With the flag off the audit table is optional, so a missing table is expected —
+      // the trail lives in console/OTel instead. With the flag on it must exist, and the
+      // runtime needs to know the execution row was already written.
+      if (!auditEnabled()) return;
+      throw new AuditWriteError(reason);
+    }
   }
 
   get(executionId: string): Promise<ExecutionRecord | null> {

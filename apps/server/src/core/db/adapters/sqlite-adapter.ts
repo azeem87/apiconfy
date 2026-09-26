@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { eq, and, count } from 'drizzle-orm';
 import { generateId } from '@/lib/id.js';
+import { AppError, ConflictError, NotFoundError } from '@/lib/errors.js';
 import type { DBAdapter, ComponentRecord, ComponentFilters, WorkflowRecord, WorkflowStepRecord, ExecutionRecord, ExecutionLogRecord } from '../adapter.js';
 import * as schema from '../schema/index.js';
 
@@ -67,7 +68,7 @@ CREATE TABLE IF NOT EXISTS executions (
   error_code TEXT,
   error_message TEXT,
   error_details TEXT,
-  attempts INTEGER DEFAULT 1,
+  attempts INTEGER NOT NULL DEFAULT 0,
   started_at TEXT NOT NULL,
   completed_at TEXT,
   created_at TEXT NOT NULL,
@@ -207,6 +208,19 @@ function now(): string {
   return new Date().toISOString();
 }
 
+/** Constraint failures become domain errors; everything else is rethrown unchanged. */
+function translateSqliteError(err: unknown): Error {
+  if (err instanceof AppError) return err;
+  const { code = '', message = 'SQLite error' } = (err ?? {}) as { code?: string; message?: string };
+  if (code.startsWith('SQLITE_CONSTRAINT_UNIQUE') || message.includes('UNIQUE constraint failed')) {
+    return new ConflictError(message);
+  }
+  if (code.startsWith('SQLITE_CONSTRAINT_FOREIGNKEY') || message.includes('FOREIGN KEY constraint failed')) {
+    return new ConflictError(message);
+  }
+  return err instanceof Error ? err : new Error(message);
+}
+
 function componentFilters(
   t: typeof schema,
   filters?: ComponentFilters
@@ -239,20 +253,37 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
       sqliteDb.close();
     },
 
+    /** One connection: the callback can reuse this adapter and stay inside the transaction. */
+    async transaction<T>(fn: (tx: DBAdapter) => Promise<T>): Promise<T> {
+      sqliteDb.exec('BEGIN');
+      try {
+        const result = await fn(adapter);
+        sqliteDb.exec('COMMIT');
+        return result;
+      } catch (err) {
+        sqliteDb.exec('ROLLBACK');
+        throw translateSqliteError(err);
+      }
+    },
+
     async saveComponent(comp) {
-      const row = db.insert(t.componentDefinitions).values({
-        id: comp.id,
-        service: comp.service,
-        action: comp.action,
-        componentType: comp.componentType,
-        description: comp.description ?? null,
-        config: comp.config,
-        condition: comp.condition ?? null,
-        metaData: comp.metaData ?? null,
-        createdAt: comp.createdAt,
-        updatedAt: comp.updatedAt,
-      }).returning().get();
-      return toComponent(row);
+      try {
+        const row = db.insert(t.componentDefinitions).values({
+          id: comp.id,
+          service: comp.service,
+          action: comp.action,
+          componentType: comp.componentType,
+          description: comp.description ?? null,
+          config: comp.config,
+          condition: comp.condition ?? null,
+          metaData: comp.metaData ?? null,
+          createdAt: comp.createdAt,
+          updatedAt: comp.updatedAt,
+        }).returning().get();
+        return toComponent(row);
+      } catch (err) {
+        throw translateSqliteError(err);
+      }
     },
 
     async getComponent(id) {
@@ -301,12 +332,19 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
       set.version = (changes.version ?? 0) + 1;
 
       const rows = db.update(t.componentDefinitions).set(set).where(eq(t.componentDefinitions.id, id)).returning().all();
-      if (!rows.length) throw new Error(`Component ${id} not found`);
+      if (!rows.length) throw new NotFoundError(`Component ${id} not found`);
       return toComponent(rows[0]);
     },
 
     async deleteComponent(id) {
-      db.delete(t.componentDefinitions).where(eq(t.componentDefinitions.id, id)).run();
+      try {
+        const rows = db.delete(t.componentDefinitions)
+          .where(eq(t.componentDefinitions.id, id))
+          .returning({ id: t.componentDefinitions.id }).all();
+        if (!rows.length) throw new NotFoundError(`Component ${id} not found`);
+      } catch (err) {
+        throw translateSqliteError(err);
+      }
     },
 
     async saveWorkflow(wf) {
@@ -336,7 +374,7 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
 
     async listWorkflows(limit = 50, offset = 0) {
       const rows = db.select().from(t.workflowDefinitions)
-        .orderBy(t.workflowDefinitions.createdAt)
+        .orderBy(t.workflowDefinitions.createdAt, t.workflowDefinitions.id)
         .limit(limit).offset(offset)
         .all();
       return rows.map(toWorkflow);
@@ -356,12 +394,15 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
       set.version = (changes.version ?? 0) + 1;
 
       const rows = db.update(t.workflowDefinitions).set(set).where(eq(t.workflowDefinitions.id, id)).returning().all();
-      if (!rows.length) throw new Error(`Workflow ${id} not found`);
+      if (!rows.length) throw new NotFoundError(`Workflow ${id} not found`);
       return toWorkflow(rows[0]);
     },
 
     async deleteWorkflow(id) {
-      db.delete(t.workflowDefinitions).where(eq(t.workflowDefinitions.id, id)).run();
+      const rows = db.delete(t.workflowDefinitions)
+        .where(eq(t.workflowDefinitions.id, id))
+        .returning({ id: t.workflowDefinitions.id }).all();
+      if (!rows.length) throw new NotFoundError(`Workflow ${id} not found`);
     },
 
     async saveWorkflowStep(step) {
@@ -411,7 +452,7 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
         errorCode: record.error?.code ?? null,
         errorMessage: record.error?.message ?? null,
         errorDetails: record.error?.details ?? null,
-        attempts: record.attempts ?? 1,
+        attempts: record.attempts ?? 0,
         startedAt: record.startedAt,
         completedAt: record.completedAt ?? null,
         createdAt: record.createdAt,
@@ -486,7 +527,10 @@ export function createSqliteAdapter(pathOrDb?: string | Database): DBAdapter {
     },
 
     async deleteConfig(key) {
-      db.delete(t.masterConfiguration).where(eq(t.masterConfiguration.key, key)).run();
+      const rows = db.delete(t.masterConfiguration)
+        .where(eq(t.masterConfiguration.key, key))
+        .returning({ id: t.masterConfiguration.id }).all();
+      if (!rows.length) throw new NotFoundError(`Config ${key} not found`);
     },
   };
 

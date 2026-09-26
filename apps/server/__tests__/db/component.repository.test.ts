@@ -93,10 +93,10 @@ describe('DbComponentRepository', () => {
     await expect(broken.create(createRequest('svc', 'act'))).rejects.toThrow('disk I/O error');
   });
 
-  it('deleting an already-deleted id is a no-op, not an error', async () => {
+  it('deleting an already-deleted id reports NotFound', async () => {
     const record = await repo.create(createRequest('svc', 'act'));
     await repo.delete(record.id);
-    await expect(repo.delete(record.id)).resolves.toBeUndefined();
+    await expect(repo.delete(record.id)).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it('treats the same action under a different service as a distinct record', async () => {

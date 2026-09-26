@@ -1,7 +1,11 @@
 name: CI
+
 on: [push, pull_request]
+
 jobs:
-  test:
+  # SQLite-backed suite: typecheck, lint, build, full tests + coverage. No container —
+  # the parity suite runs against :memory:, which is why this job needs nothing else.
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,3 +27,225 @@ jobs:
       - run: pnpm run lint
       - run: pnpm run build
       - run: pnpm run test:coverage
+
+  # Fast engines on every push and PR — three parallel jobs, ~1.5-2.5 min each.
+  # Each job starts its own container, applies that engine's operator schema
+  # script, then runs only that engine's parity suite.
+  #
+  # Note: the `job` context (job.services.<id>.id) is only valid inside step `if:`
+  # conditions, so nothing here execs into the service container — engine setup
+  # talks to the engine over its published port instead.
+  db-parity:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - db: postgres
+            image: postgres:15
+            healthOptions: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+            env:
+              DATABASE_URL: postgres://postgres:postgres@localhost:5432/apiconfy_test
+            ddl: psql "postgres://postgres:postgres@localhost:5432/apiconfy_test" -f apps/server/src/core/db/schema/sql/postgres.sql
+          - db: mariadb
+            image: mariadb:10.11
+            healthOptions: --health-cmd "healthcheck.sh --connect --innodb_initialized" --health-interval 5s --health-timeout 5s --health-retries 10
+            env:
+              DATABASE_URL: mysql://root:root@127.0.0.1:3306/apiconfy_test
+            ddl: mysql --host=127.0.0.1 --port=3306 --user=root --password=root apiconfy_test < apps/server/src/core/db/schema/sql/mariadb.sql
+    services:
+      db:
+        image: ${{ matrix.image }}
+        options: ${{ matrix.healthOptions }}
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: apiconfy_test
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: apiconfy_test
+        ports:
+          - 5432:5432   # postgres
+          - 3306:3306   # mariadb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: 1.4.0
+      - run: pnpm install --frozen-lockfile
+      - name: Engine setup
+        if: matrix.setup
+        run: ${{ matrix.setup }}
+      - name: Apply schema (operator script — the app never creates schema)
+        run: ${{ matrix.ddl }}
+      - name: ${{ matrix.db }} parity suite
+        working-directory: apps/server
+        env: ${{ matrix.env }}
+        run: bun test __tests__/db/${{ matrix.db }}-adapter.test.ts --parallel --bail
+
+  # MongoDB needs --replSet, which a service container cannot receive, so this job starts its
+  # own container. Transactions are unavailable on a standalone mongod (decision #7), and a
+  # standalone also reports isWritablePrimary, so the wait requires setName == rs0.
+  db-parity-mongodb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: 1.4.0
+      - run: pnpm install --frozen-lockfile
+      - name: Start mongod as a single-node replica set
+        run: |
+          docker run -d --name mongo-rs -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            docker exec mongo-rs mongosh --quiet --eval "db.runCommand({ping:1}).ok" | grep -q 1 && break
+            sleep 2
+          done
+          docker exec mongo-rs mongosh --quiet --eval "try { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}) } catch (e) { print('initiate said: ' + e.message) }"
+          for i in $(seq 1 30); do
+            docker exec mongo-rs mongosh --quiet --eval "db.hello().setName" | grep -q rs0 && break
+            sleep 2
+          done
+          docker exec mongo-rs mongosh --quiet --eval "db.hello().setName" | grep -q rs0
+      - name: Apply schema (operator script — the app never creates schema)
+        run: |
+          docker cp apps/server/src/core/db/schema/mongodb/mongodb.js mongo-rs:/tmp/mongodb.js
+          docker exec mongo-rs mongosh "mongodb://localhost:27017/apiconfy_test?directConnection=true" /tmp/mongodb.js
+      - name: mongodb parity suite
+        working-directory: apps/server
+        env:
+          DATABASE_URL: mongodb://localhost:27017/apiconfy_test?replicaSet=rs0&directConnection=true
+        run: bun test __tests__/db/mongodb-adapter.test.ts --parallel --bail
+
+  # Heavy engines — oracle (~1.5 GB image, slow first boot) and couchbase — still as
+  # parallel matrix jobs, but gated to PRs into main and to main itself, so feature
+  # pushes stay fast while merges still prove every engine.
+  db-parity-heavy:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - db: oracle
+            env:
+              DATABASE_URL: oracle://system:oracle@localhost:1521/FREEPDB1
+            setup: |
+              docker rm -f oracle-ci >/dev/null 2>&1 || true
+              docker run -d --name oracle-ci \
+                -e ORACLE_PASSWORD=oracle \
+                -p 1521:1521 \
+                gvenzl/oracle-free:23-slim
+            ddl: |
+              set -e
+
+              # The image ships its own healthcheck.sh, which returns a real exit code once
+              # the DB is actually open — sqlplus itself exits 0 even on connection failure
+              # (e.g. ORA-12541 no listener), so a raw "select 1 from dual" check reports
+              # "ready" before the listener is up (see gvenzl/oracle-free docs).
+              READY=false
+              for i in $(seq 1 90); do
+                if docker exec oracle-ci healthcheck.sh >/dev/null 2>&1; then
+                  echo "Oracle ready"
+                  READY=true
+                  break
+                fi
+                echo "Oracle not ready yet (${i}/90)"
+                sleep 10
+              done
+
+              if [ "$READY" != "true" ]; then
+                echo "Oracle failed to become ready"
+                docker logs oracle-ci | tail -100
+                exit 1
+              fi
+
+              docker cp apps/server/src/core/db/schema/oracle/oracle.sql oracle-ci:/tmp/oracle.sql
+              DDL_OUT=$(docker exec oracle-ci bash -lc "sqlplus -s system/oracle@//localhost:1521/FREEPDB1 @/tmp/oracle.sql" 2>&1)
+              echo "$DDL_OUT"
+              if echo "$DDL_OUT" | grep -q 'ORA-'; then
+                echo "Oracle schema script reported an error"
+                exit 1
+              fi
+          - db: couchbase
+            image: couchbase/server:7.2.9
+            env:
+              DATABASE_URL: couchbase://localhost
+              CB_BUCKET: apiconfy
+              CB_USER: Administrator
+              CB_PASS: password
+            # clusterInit and bucket-create run through the image's own couchbase-cli, inside
+            # the container: the earlier curl flow swallowed its errors, which surfaced later as
+            # AuthenticationFailureError from the schema script.
+            setup: |
+              for i in $(seq 1 60); do
+                CID=$(docker ps -q --filter "publish=8091" | head -1)
+                [ -n "$CID" ] && curl -sf http://localhost:8091/pools > /dev/null && break
+                sleep 5
+              done
+              echo "couchbase container: $CID"
+              docker exec "$CID" couchbase-cli cluster-init \
+                --cluster http://127.0.0.1:8091 \
+                --cluster-username Administrator --cluster-password password \
+                --cluster-ramsize 512 --cluster-index-ramsize 256 \
+                --services data,index,query
+              for i in $(seq 1 30); do
+                if docker exec "$CID" couchbase-cli bucket-create \
+                  --cluster http://127.0.0.1:8091 \
+                  --username Administrator --password password \
+                  --bucket apiconfy --bucket-ramsize 128 --bucket-type couchbase; then
+                  break
+                fi
+                sleep 2
+              done
+              docker exec "$CID" couchbase-cli bucket-list \
+                --cluster http://127.0.0.1:8091 --username Administrator --password password | grep apiconfy
+              # The query service comes up asynchronously; without this wait the schema
+              # script's CREATE INDEX fails with service_not_available (4).
+              for i in $(seq 1 60); do
+                curl -sf http://localhost:8093/admin/ping > /dev/null && { echo "query service up after ${i} checks"; break; }
+                sleep 5
+              done
+            ddl: |
+              for attempt in $(seq 1 6); do
+                if CB_URL=couchbase://localhost CB_USER=Administrator CB_PASS=password CB_BUCKET=apiconfy \
+                  bun run apps/server/src/core/db/schema/couchbase/couchbase.js; then
+                  exit 0
+                fi
+                echo "schema attempt ${attempt} failed — retrying in 15s (index service warming up)"
+                sleep 15
+              done
+              exit 1
+    services:
+      db:
+        image: ${{ matrix.image }}
+        options: ${{ matrix.healthOptions }}
+        env:
+          ORACLE_PASSWORD: oracle
+          ORACLE_DATABASE: FREEPDB1
+        ports:
+          - 1521:1521           # oracle
+          - 8091-8096:8091-8096 # couchbase: REST (8091) + query (8093) + views/analytics
+          - 11210:11210         # couchbase: KV data port — the SDK cannot operate without it
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: 1.4.0
+      - run: pnpm install --frozen-lockfile
+      - name: Engine setup
+        if: matrix.setup
+        run: ${{ matrix.setup }}
+      - name: Apply schema (operator script — the app never creates schema)
+        run: ${{ matrix.ddl }}
+      - name: ${{ matrix.db }} parity suite
+        working-directory: apps/server
+        env: ${{ matrix.env }}
+        run: bun test __tests__/db/${{ matrix.db }}-adapter.test.ts --parallel --bail

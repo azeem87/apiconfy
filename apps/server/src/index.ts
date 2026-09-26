@@ -1,6 +1,6 @@
 import { createApp } from '@/app.js';
 import { authPostureProblem, loadConfig } from '@/config.js';
-import { createDBAdapter } from '@/core/db/connection.js';
+import { createDBAdapter, type DBAdapter } from '@/core/db/connection.js';
 import { createLogger } from '@/lib/index.js';
 
 async function main() {
@@ -21,8 +21,20 @@ async function main() {
   logger.info({ port: config.port }, 'Starting server');
 
   const dbStartTime = performance.now();
-  const db = await createDBAdapter();
-  await db.connect();
+  let db: DBAdapter;
+  try {
+    db = await createDBAdapter();
+    await db.connect();
+  } catch (err) {
+    logger.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+  if (db.type === 'sqlite') {
+    logger.warn(
+      'SQLite selected — a single local file with no durability guarantees; local development only. '
+      + 'Set DATABASE_URL for a server engine (or a replicated SQLite such as Turso/LiteFS) in production.'
+    );
+  }
   const dbTime = performance.now() - dbStartTime;
   logger.info({ dbType: db.type, connectTimeMs: Math.round(dbTime) }, 'Database connected');
 

@@ -371,17 +371,17 @@ pnpm build
 
 The server starts on `http://localhost:3000` with a health check at `GET /health`.
 
-**Database:** SQLite is the default for local development — no configuration needed. The database file is created automatically at `data/apiconfy.db` on first run. The `data/` directory is gitignored and only used locally.
+**Database:** SQLite is the default for local development — no configuration needed. The database file is created automatically at `data/apiconfy.db` on first run. The `data/` directory is gitignored and only used locally. With `DATABASE_URL` unset or empty the server selects SQLite and logs a warning at startup: a single local file has no durability guarantees of its own, so for production prefer a **replicated SQLite** (Turso, LiteFS) or a server engine. The warning is informational — the process never refuses to start over it.
 
-**Current adapter limitation:** SQLite is the implemented backend. PostgreSQL selection
-is a target deployment contract; its adapter is still a throwing stub until the separately
-gated database phase is implemented. Do not use the PostgreSQL setting below yet.
+**Current adapter status:** all six engines are implemented — SQLite (default), **PostgreSQL**, **MariaDB**, **Oracle**, **MongoDB** and **Couchbase**. The schema scripts ship in `apps/server/src/core/db/schema/` and are run **once by the operator** with an admin account: `psql -f apps/server/src/core/db/schema/sql/postgres.sql`, `mysql --user=<admin> --password --database=apiconfy < apps/server/src/core/db/schema/sql/mariadb.sql`, `sqlplus <admin>@//host:1521/service @apps/server/src/core/db/schema/oracle/oracle.sql`, `mongosh "<DATABASE_URL>" apps/server/src/core/db/schema/mongodb/mongodb.js`, or `CB_BUCKET=apiconfy bun run apps/server/src/core/db/schema/couchbase/couchbase.js`. The app never creates schema: on startup it probes for the required tables/collections/indexes and exits with the script path if any are missing. Couchbase transactions are intentionally not implemented — the config/CRUD writes that would use them are rare, while the hot paths (invoke, workflow reads) are key-value reads (see the plan's Step 7 notes). A per-engine prerequisite table lands with the Phase 3 README work.
 
-**Production / Cloud:** Use PostgreSQL by setting `DATABASE_URL=postgres://user:pass@host:5432/db` before starting. The SQLite adapter is bypassed entirely when `DATABASE_URL` is configured.
+**Production / Cloud:** set `DATABASE_URL` to the engine you run — today `postgres://user:pass@host:5432/db`, with `mysql://`/`mariadb://`, `oracle://`, `mongodb://` and `couchbase://` (+ `CB_BUCKET`) arriving in Phase 3. A named engine is never bypassed in favour of SQLite; an unknown scheme refuses to start.
 
 ---
 
 ## Environment Variables
+
+> See [`.env.example`](.env.example) for a copy-ready template: every engine's connection string commented, SQLite as the local-development default, and the optional overrides.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -389,8 +389,11 @@ gated database phase is implemented. Do not use the PostgreSQL setting below yet
 | `LOG_LEVEL` | `info` | Log level for pino (`trace`, `debug`, `info`, `warn`, `error`, `fatal`) |
 | `API_KEY` | *(unset)* | Bearer token for `/api/*` routes. If unset, all routes are open (warning logged at startup) |
 | `REQUIRE_API_KEY` | `false` | When `true`, server refuses to start if `API_KEY` is missing. Set this in production |
-| `DATABASE_URL` | *(unset)* | PostgreSQL connection string (e.g., `postgres://user:pass@host:5432/db`). If set, uses Postgres adapter instead of SQLite |
-| `SQLITE_PATH` | `../../data/apiconfy.db` | SQLite database file path when `DATABASE_URL` is not set |
+| `DATABASE_URL` | *(unset → SQLite)* | Selects the database engine by URL scheme. Implemented today: `postgres://` (stub until Phase 3). Phase 3 adds `mysql://`/`mariadb://`, `oracle://`, `mongodb://`, `couchbase://` (+ `CB_BUCKET`), and the explicit `sqlite:` scheme. Unset or empty → SQLite, with a local-development warning logged at startup |
+| `SQLITE_PATH` | `../../data/apiconfy.db` | SQLite database file path when no engine is selected — and, from Phase 3, when the `sqlite:` URL omits a path |
+| `CB_BUCKET` | *(unset)* | Couchbase bucket name — required whenever `DATABASE_URL` uses `couchbase://` |
+| `CB_USER` | `Administrator` | Couchbase username, used when the `couchbase://` URL carries none |
+| `CB_PASS` | *(unset)* | Couchbase password, used when the `couchbase://` URL carries none — required in that case, or the adapter refuses to start |
 
 **Security note:** If `API_KEY` is not set, a warning is logged at startup and all `/api/*` routes are accessible without authentication. For production deployments, always set `API_KEY` and `REQUIRE_API_KEY=true`.
 

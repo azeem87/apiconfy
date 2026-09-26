@@ -1,6 +1,7 @@
-import postgres from 'postgres';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import mysql from 'mysql2/promise';
+import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
+import { drizzle } from 'drizzle-orm/mysql2';
+import type { MySql2Database } from 'drizzle-orm/mysql2';
 import { and, count, eq } from 'drizzle-orm';
 import {
   AppError,
@@ -20,10 +21,9 @@ import type {
   WorkflowRecord,
   WorkflowStepRecord,
 } from '../adapter.js';
-import * as schema from '../schema/pg.js';
+import * as schema from '../schema/mysql.js';
 
-type PgDb = PostgresJsDatabase<typeof schema>;
-type PgClient = ReturnType<typeof postgres>;
+type MySqlDb = MySql2Database<typeof schema>;
 
 const REQUIRED_TABLES = [
   'component_definitions',
@@ -34,9 +34,18 @@ const REQUIRED_TABLES = [
 ];
 const OPTIONAL_TABLES = ['execution_logs'];
 const UNIQUE_INDEX = 'natural_key_idx';
-const SCHEMA_FILE = 'apps/server/src/core/db/schema/sql/postgres.sql';
-const SCHEMA_URL = 'https://github.com/apiconfy/apiconfy/blob/main/apps/server/src/core/db/schema/sql/postgres.sql';
-const SCHEMA_COMMAND = `psql -f ${SCHEMA_FILE}`;
+const SCHEMA_FILE = 'apps/server/src/core/db/schema/sql/mariadb.sql';
+const SCHEMA_URL = 'https://github.com/apiconfy/apiconfy/blob/main/apps/server/src/core/db/schema/sql/mariadb.sql';
+const SCHEMA_COMMAND = `mysql --user=<admin> --password --database=apiconfy < ${SCHEMA_FILE}`;
+const DUPLICATE_CODES = new Set(['ER_DUP_ENTRY']);
+const DUPLICATE_ERRNOS = new Set([1062]);
+const FK_CODES = new Set([
+  'ER_NO_REFERENCED_ROW',
+  'ER_NO_REFERENCED_ROW_2',
+  'ER_ROW_IS_REFERENCED',
+  'ER_ROW_IS_REFERENCED_2',
+]);
+const FK_ERRNOS = new Set([1216, 1217, 1451, 1452]);
 const CONNECTION_CODES = new Set([
   'ECONNREFUSED',
   'ECONNRESET',
@@ -44,8 +53,18 @@ const CONNECTION_CODES = new Set([
   'EHOSTUNREACH',
   'ENETUNREACH',
   'ENOTFOUND',
-  'CONNECT_TIMEOUT',
+  'PROTOCOL_CONNECTION_LOST',
+  'ER_ACCESS_DENIED_ERROR',
+  'ER_CON_COUNT_ERROR',
 ]);
+const CONNECTION_ERRNOS = new Set([1040, 1045, 2002, 2003, 2006, 2013]);
+
+/** mysql2 parses `mysql://`; both schemes mean MariaDB here. */
+function normalizeUrl(databaseUrl: string): string {
+  return databaseUrl.startsWith('mariadb://')
+    ? `mysql://${databaseUrl.slice('mariadb://'.length)}`
+    : databaseUrl;
+}
 
 function auditEnabled(): boolean {
   return process.env.ENABLE_DB_TRANSACTION_LOGS === 'true';
@@ -57,15 +76,19 @@ function redact(dsn: string): string {
 
 function translate(err: unknown, dsn: string): AppError {
   if (err instanceof AppError) return err;
-  const { code = '', detail, message = 'PostgreSQL error' } = (err ?? {}) as {
+  const { code = '', errno = 0, message = 'MariaDB error' } = (err ?? {}) as {
     code?: string;
-    detail?: string;
+    errno?: number;
     message?: string;
   };
-  if (code === '23505') return new ConflictError(detail ?? 'Duplicate key');
-  if (code === '23503') return new ConflictError(detail ?? 'Referenced row is still in use');
-  if (code.startsWith('08') || CONNECTION_CODES.has(code)) {
-    return new ConnectionError(`PostgreSQL unavailable at ${redact(dsn)}: ${message}`);
+  if (DUPLICATE_CODES.has(code) || DUPLICATE_ERRNOS.has(errno)) {
+    return new ConflictError(message);
+  }
+  if (FK_CODES.has(code) || FK_ERRNOS.has(errno)) {
+    return new ConflictError(message);
+  }
+  if (CONNECTION_CODES.has(code) || CONNECTION_ERRNOS.has(errno)) {
+    return new ConnectionError(`MariaDB unavailable at ${redact(dsn)}: ${message}`);
   }
   return new DatabaseError(message);
 }
@@ -183,13 +206,12 @@ function componentFilterCondition(filters?: ComponentFilters) {
 type AdapterMethods = Omit<DBAdapter, 'type' | 'connect' | 'disconnect' | 'transaction'>;
 
 /**
- * The 23 schema-bearing methods, written once against an executor. The adapter
- * uses the pool; transaction() uses its transaction handle — same behaviour,
- * no duplicated bodies. Errors are translated at this boundary only, so no raw
- * driver error escapes (multi-db-strategy.md:101).
+ * The 23 schema-bearing methods, written once against an executor — pool or
+ * transaction connection. MySQL/MariaDB have no RETURNING, so writes re-read
+ * their row and use affectedRows to detect a miss.
  */
-function buildMethods(getDb: () => PgDb, dsn: string): AdapterMethods {
-  const guard = async <T>(run: (db: PgDb) => Promise<T>): Promise<T> => {
+function buildMethods(getDb: () => MySqlDb, dsn: string): AdapterMethods {
+  const guard = async <T>(run: (db: MySqlDb) => Promise<T>): Promise<T> => {
     try {
       return await run(getDb());
     } catch (err) {
@@ -198,10 +220,16 @@ function buildMethods(getDb: () => PgDb, dsn: string): AdapterMethods {
   };
   const now = () => new Date().toISOString();
 
+  const readComponent = async (db: MySqlDb, id: string): Promise<ComponentRecord> => {
+    const rows = await db.select().from(schema.componentDefinitions)
+      .where(eq(schema.componentDefinitions.id, id));
+    return toComponent(rows[0]);
+  };
+
   return {
     async saveComponent(comp: ComponentRecord): Promise<ComponentRecord> {
       return guard(async (db) => {
-        const rows = await db.insert(schema.componentDefinitions).values({
+        await db.insert(schema.componentDefinitions).values({
           id: comp.id,
           service: comp.service,
           action: comp.action,
@@ -212,8 +240,8 @@ function buildMethods(getDb: () => PgDb, dsn: string): AdapterMethods {
           metaData: comp.metaData ?? null,
           createdAt: comp.createdAt,
           updatedAt: comp.updatedAt,
-        }).returning();
-        return toComponent(rows[0]);
+        });
+        return readComponent(db, comp.id);
       });
     },
 
@@ -267,25 +295,24 @@ function buildMethods(getDb: () => PgDb, dsn: string): AdapterMethods {
         if ('metaData' in changes) set.metaData = changes.metaData ?? null;
         set.version = (changes.version ?? 0) + 1;
 
-        const rows = await db.update(schema.componentDefinitions).set(set)
-          .where(eq(schema.componentDefinitions.id, id)).returning();
-        if (!rows.length) throw new NotFoundError(`Component ${id} not found`);
-        return toComponent(rows[0]);
+        const [header] = await db.update(schema.componentDefinitions).set(set)
+          .where(eq(schema.componentDefinitions.id, id));
+        if (header.affectedRows === 0) throw new NotFoundError(`Component ${id} not found`);
+        return readComponent(db, id);
       });
     },
 
     async deleteComponent(id: string): Promise<void> {
       return guard(async (db) => {
-        const rows = await db.delete(schema.componentDefinitions)
-          .where(eq(schema.componentDefinitions.id, id))
-          .returning({ id: schema.componentDefinitions.id });
-        if (!rows.length) throw new NotFoundError(`Component ${id} not found`);
+        const [header] = await db.delete(schema.componentDefinitions)
+          .where(eq(schema.componentDefinitions.id, id));
+        if (header.affectedRows === 0) throw new NotFoundError(`Component ${id} not found`);
       });
     },
 
     async saveWorkflow(wf: WorkflowRecord): Promise<WorkflowRecord> {
       return guard(async (db) => {
-        const rows = await db.insert(schema.workflowDefinitions).values({
+        await db.insert(schema.workflowDefinitions).values({
           id: wf.id,
           name: wf.name,
           groupId: wf.groupId ?? null,
@@ -295,7 +322,9 @@ function buildMethods(getDb: () => PgDb, dsn: string): AdapterMethods {
           compensationFailureConfig: wf.compensationFailureConfig ?? null,
           createdAt: wf.createdAt,
           updatedAt: wf.updatedAt,
-        }).returning();
+        });
+        const rows = await db.select().from(schema.workflowDefinitions)
+          .where(eq(schema.workflowDefinitions.id, wf.id));
         return toWorkflow(rows[0]);
       });
     },
@@ -338,25 +367,26 @@ function buildMethods(getDb: () => PgDb, dsn: string): AdapterMethods {
         }
         set.version = (changes.version ?? 0) + 1;
 
-        const rows = await db.update(schema.workflowDefinitions).set(set)
-          .where(eq(schema.workflowDefinitions.id, id)).returning();
-        if (!rows.length) throw new NotFoundError(`Workflow ${id} not found`);
+        const [header] = await db.update(schema.workflowDefinitions).set(set)
+          .where(eq(schema.workflowDefinitions.id, id));
+        if (header.affectedRows === 0) throw new NotFoundError(`Workflow ${id} not found`);
+        const rows = await db.select().from(schema.workflowDefinitions)
+          .where(eq(schema.workflowDefinitions.id, id));
         return toWorkflow(rows[0]);
       });
     },
 
     async deleteWorkflow(id: string): Promise<void> {
       return guard(async (db) => {
-        const rows = await db.delete(schema.workflowDefinitions)
-          .where(eq(schema.workflowDefinitions.id, id))
-          .returning({ id: schema.workflowDefinitions.id });
-        if (!rows.length) throw new NotFoundError(`Workflow ${id} not found`);
+        const [header] = await db.delete(schema.workflowDefinitions)
+          .where(eq(schema.workflowDefinitions.id, id));
+        if (header.affectedRows === 0) throw new NotFoundError(`Workflow ${id} not found`);
       });
     },
 
     async saveWorkflowStep(step: WorkflowStepRecord): Promise<WorkflowStepRecord> {
       return guard(async (db) => {
-        const rows = await db.insert(schema.workflowSteps).values({
+        await db.insert(schema.workflowSteps).values({
           id: step.id,
           workflowId: step.workflowId,
           name: step.name ?? null,
@@ -370,7 +400,9 @@ function buildMethods(getDb: () => PgDb, dsn: string): AdapterMethods {
           onFailure: step.onFailure,
           idempotencyKeyHeader: step.idempotencyKeyHeader ?? null,
           verifyAction: step.verifyAction ?? null,
-        }).returning();
+        });
+        const rows = await db.select().from(schema.workflowSteps)
+          .where(eq(schema.workflowSteps.id, step.id));
         return toStep(rows[0]);
       });
     },
@@ -392,7 +424,7 @@ function buildMethods(getDb: () => PgDb, dsn: string): AdapterMethods {
 
     async saveExecution(record: ExecutionRecord): Promise<ExecutionRecord> {
       return guard(async (db) => {
-        const rows = await db.insert(schema.executions).values({
+        await db.insert(schema.executions).values({
           executionId: record.executionId,
           type: record.type,
           refName: record.refName,
@@ -412,7 +444,9 @@ function buildMethods(getDb: () => PgDb, dsn: string): AdapterMethods {
           completedAt: record.completedAt ?? null,
           createdAt: record.createdAt,
           updatedAt: record.updatedAt,
-        }).returning();
+        });
+        const rows = await db.select().from(schema.executions)
+          .where(eq(schema.executions.executionId, record.executionId));
         return toExecution(rows[0]);
       });
     },
@@ -427,7 +461,7 @@ function buildMethods(getDb: () => PgDb, dsn: string): AdapterMethods {
 
     async saveExecutionLog(log: ExecutionLogRecord): Promise<ExecutionLogRecord> {
       return guard(async (db) => {
-        const rows = await db.insert(schema.executionLogs).values({
+        await db.insert(schema.executionLogs).values({
           id: log.id,
           executionId: log.executionId,
           workflowName: log.workflowName ?? null,
@@ -441,7 +475,9 @@ function buildMethods(getDb: () => PgDb, dsn: string): AdapterMethods {
           errorMessage: log.errorMessage ?? null,
           durationMs: log.durationMs ?? null,
           createdAt: log.createdAt,
-        }).returning();
+        });
+        const rows = await db.select().from(schema.executionLogs)
+          .where(eq(schema.executionLogs.id, log.id));
         return toLog(rows[0]);
       });
     },
@@ -474,8 +510,7 @@ function buildMethods(getDb: () => PgDb, dsn: string): AdapterMethods {
           valueType,
           createdAt: ts,
           updatedAt: ts,
-        }).onConflictDoUpdate({
-          target: schema.masterConfiguration.key,
+        }).onDuplicateKeyUpdate({
           set: { value, valueType, updatedAt: ts },
         });
       });
@@ -483,31 +518,34 @@ function buildMethods(getDb: () => PgDb, dsn: string): AdapterMethods {
 
     async deleteConfig(key: string): Promise<void> {
       return guard(async (db) => {
-        const rows = await db.delete(schema.masterConfiguration)
-          .where(eq(schema.masterConfiguration.key, key))
-          .returning({ id: schema.masterConfiguration.id });
-        if (!rows.length) throw new NotFoundError(`Config ${key} not found`);
+        const [header] = await db.delete(schema.masterConfiguration)
+          .where(eq(schema.masterConfiguration.key, key));
+        if (header.affectedRows === 0) throw new NotFoundError(`Config ${key} not found`);
       });
     },
   };
 }
 
-async function probeSchema(client: PgClient, dsn: string): Promise<string[]> {
+async function probeSchema(pool: Pool, dsn: string): Promise<string[]> {
   const required = [...REQUIRED_TABLES, ...(auditEnabled() ? OPTIONAL_TABLES : [])];
   const missing: string[] = [];
 
   try {
-    const rows = await client<{ table_name: string }[]>`
-      SELECT table_name FROM information_schema.tables
-      WHERE table_schema = current_schema() AND table_name = ANY(${required})`;
-    const present = new Set(rows.map((row) => row.table_name));
+    const [tableRows] = await pool.query<RowDataPacket[]>(
+      'SELECT table_name AS name FROM information_schema.tables '
+      + 'WHERE table_schema = DATABASE() AND table_name IN (?)',
+      [required]
+    );
+    const present = new Set(tableRows.map((row) => String(row.name)));
     missing.push(...required.filter((table) => !present.has(table)));
 
     if (!missing.includes('component_definitions')) {
-      const indexes = await client`
-        SELECT 1 FROM pg_indexes
-        WHERE schemaname = current_schema() AND indexname = ${UNIQUE_INDEX}`;
-      if (indexes.length === 0) missing.push(`${UNIQUE_INDEX} (unique index on component_definitions)`);
+      const [indexRows] = await pool.query<RowDataPacket[]>(
+        'SELECT 1 FROM information_schema.statistics '
+        + 'WHERE table_schema = DATABASE() AND index_name = ? LIMIT 1',
+        [UNIQUE_INDEX]
+      );
+      if (indexRows.length === 0) missing.push(`${UNIQUE_INDEX} (unique index on component_definitions)`);
     }
   } catch (err) {
     throw translate(err, dsn);
@@ -525,36 +563,47 @@ async function probeSchema(client: PgClient, dsn: string): Promise<string[]> {
   return required;
 }
 
-export async function createPostgresAdapter(databaseUrl: string): Promise<DBAdapter> {
-  const client = postgres(databaseUrl, { max: 10, idle_timeout: 20, connect_timeout: 10 });
-  const db = drizzle(client, { schema });
+export async function createMariaDbAdapter(databaseUrl: string): Promise<DBAdapter> {
+  const dsn = normalizeUrl(databaseUrl);
+  const pool = mysql.createPool({ uri: dsn, connectionLimit: 10, connectTimeout: 10_000 });
+  const db = drizzle(pool, { schema, mode: 'default' });
   const methods = buildMethods(() => db, databaseUrl);
 
   return {
-    type: 'postgres',
+    type: 'mysql',
     ...methods,
 
     async connect(): Promise<void> {
-      await probeSchema(client, databaseUrl);
+      await probeSchema(pool, databaseUrl);
     },
 
     async disconnect(): Promise<void> {
-      await client.end();
+      await pool.end();
     },
 
     async transaction<T>(fn: (tx: DBAdapter) => Promise<T>): Promise<T> {
-      return db.transaction(async (tx) => {
+      const connection: PoolConnection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        const txDb = drizzle(connection, { schema, mode: 'default' }) as unknown as MySqlDb;
         const txAdapter: DBAdapter = {
-          type: 'postgres',
-          ...buildMethods(() => tx as unknown as PgDb, databaseUrl),
+          type: 'mysql',
+          ...buildMethods(() => txDb, databaseUrl),
           async connect(): Promise<void> {},
           async disconnect(): Promise<void> {},
           async transaction<R>(): Promise<R> {
             throw new UnsupportedOperationError('Nested transactions are not supported');
           },
         };
-        return fn(txAdapter);
-      });
+        const result = await fn(txAdapter);
+        await connection.commit();
+        return result;
+      } catch (err) {
+        await connection.rollback();
+        throw translate(err, databaseUrl);
+      } finally {
+        connection.release();
+      }
     },
   };
 }

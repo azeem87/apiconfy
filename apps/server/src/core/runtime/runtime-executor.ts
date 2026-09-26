@@ -12,6 +12,7 @@ import {
   AppError, NotFoundError, TransformationError, UnknownComponentTypeError,
   collectSensitiveValues, redactSensitiveFields, scrubSecretValues, type Logger,
 } from '@/lib/index.js';
+import { AuditWriteError } from '@/core/db/repositories/execution.repository.js';
 
 const MAX_DOWNSTREAM_BODY_SIZE = 1024; // 1KB
 
@@ -20,7 +21,7 @@ function truncateResponseBody(body: unknown): unknown {
   
   if (typeof body === 'string') {
     if (body.length > MAX_DOWNSTREAM_BODY_SIZE) {
-      return body.slice(0, MAX_DOWNSTREAM_BODY_SIZE) + '... [truncated]';
+      return `${body.slice(0, MAX_DOWNSTREAM_BODY_SIZE)}... [truncated]`;
     }
     return body;
   }
@@ -28,7 +29,7 @@ function truncateResponseBody(body: unknown): unknown {
   // For objects/arrays, serialize and truncate
   const serialized = JSON.stringify(body);
   if (serialized.length > MAX_DOWNSTREAM_BODY_SIZE) {
-    return { _truncated: true, preview: serialized.slice(0, MAX_DOWNSTREAM_BODY_SIZE) + '...' };
+    return { _truncated: true, preview: `${serialized.slice(0, MAX_DOWNSTREAM_BODY_SIZE)}...` };
   }
   return body;
 }
@@ -183,7 +184,14 @@ export class DefaultRuntimeExecutor implements RuntimeExecutor {
   private async record(entry: InvocationRecord): Promise<void> {
     try {
       await this.options.recorder.recordInvocation(entry);
-    } catch {
+    } catch (err) {
+      if (err instanceof AuditWriteError) {
+        this.options.logger.warn(
+          { executionId: entry.executionId },
+          'Execution record persisted; audit row could not be written'
+        );
+        return;
+      }
       this.options.logger.warn({ executionId: entry.executionId }, 'Failed to persist execution record');
     }
   }

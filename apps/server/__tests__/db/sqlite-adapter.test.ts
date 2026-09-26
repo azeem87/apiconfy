@@ -206,7 +206,7 @@ describe('SQLite Adapter', () => {
     it('defaults attempts and absent results without fabricating errors', async () => {
       const record = execution({ completedAt: undefined });
       const saved = await adapter.saveExecution(record);
-      expect(saved.attempts).toBe(1);
+      expect(saved.attempts).toBe(0);
       expect(saved.result).toBeNull();
       expect(saved.error).toBeUndefined();
       expect(saved.steps).toBeUndefined();
