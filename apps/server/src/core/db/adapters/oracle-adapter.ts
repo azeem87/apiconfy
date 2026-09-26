@@ -327,12 +327,13 @@ function buildMethods(acquire: () => Promise<Lease>, autoCommit: boolean, dsn: s
         if ('config' in changes) push('config', toJson(changes.config));
         if ('condition' in changes) push('condition', changes.condition ?? null);
         if ('metaData' in changes) push('meta_data', toJson(changes.metaData));
+        push('version', (changes.version ?? 0) + 1);
         push('updated_at', now());
         binds.push(id);
 
         const affected = await mutate(
           conn,
-          `UPDATE component_definitions SET ${sets.join(', ')}, version = version + 1 WHERE id = :${binds.length}`,
+          `UPDATE component_definitions SET ${sets.join(', ')} WHERE id = :${binds.length}`,
           binds
         );
         if (affected === 0) throw new NotFoundError(`Component ${id} not found`);
@@ -413,12 +414,13 @@ function buildMethods(acquire: () => Promise<Lease>, autoCommit: boolean, dsn: s
         if (changes.compensationFailureConfig !== undefined) {
           push('compensation_failure_config', toJson(changes.compensationFailureConfig));
         }
+        push('version', (changes.version ?? 0) + 1);
         push('updated_at', now());
         binds.push(id);
 
         const affected = await mutate(
           conn,
-          `UPDATE workflow_definitions SET ${sets.join(', ')}, version = version + 1 WHERE id = :${binds.length}`,
+          `UPDATE workflow_definitions SET ${sets.join(', ')} WHERE id = :${binds.length}`,
           binds
         );
         if (affected === 0) throw new NotFoundError(`Workflow ${id} not found`);
