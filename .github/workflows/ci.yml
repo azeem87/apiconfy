@@ -143,13 +143,13 @@ jobs:
             ddl: |
               set -e
 
-              # sqlplus exits 0 even on connection failure (e.g. ORA-12541 no listener) —
-              # it only prints "ERROR:" to stdout — so the readiness probe must check the
-              # output, not the exit code, or it reports "ready" before the listener is up.
+              # The image ships its own healthcheck.sh, which returns a real exit code once
+              # the DB is actually open — sqlplus itself exits 0 even on connection failure
+              # (e.g. ORA-12541 no listener), so a raw "select 1 from dual" check reports
+              # "ready" before the listener is up (see gvenzl/oracle-free docs).
               READY=false
               for i in $(seq 1 90); do
-                OUT=$(docker exec oracle-ci bash -lc "echo 'select 1 from dual;' | sqlplus -s system/oracle@//localhost:1521/FREEPDB1" 2>&1) || true
-                if echo "$OUT" | grep -q '^1$'; then
+                if docker exec oracle-ci healthcheck.sh >/dev/null 2>&1; then
                   echo "Oracle ready"
                   READY=true
                   break
