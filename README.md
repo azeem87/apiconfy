@@ -104,6 +104,9 @@ Content-Type: application/json
       "method": "POST",
       "payloadTemplate": {
         "customerId": "{$context.id}"
+      },
+      "validation": {
+        "fields": [{ "path": "id", "required": true, "type": "string" }]
       }
     },
     "output": {
@@ -410,15 +413,18 @@ A [Postman collection](postman/apiconfy.postman_collection.json) is included for
 4. Start the server (`pnpm dev`) and run the requests
 
 The collection is organized **by component type**. REST → Invoke contains ordered
-Simple Examples, Complex Examples and Error Cases: register each example before invoking
-it. Invoke scripts save `meta.executionId` as `execution_id` for execution lookup.
-The simple scenario calls the local health endpoint. Complex scenarios use `upstream_url`
-(default `https://httpbin.org`); send only dummy data or point it at your own compatible server.
+Simple Examples, Complex Examples, Payload Validation and Error Cases: register each
+example before invoking it. Invoke scripts save `meta.executionId` as `execution_id`
+for execution lookup. The simple scenario calls the local health endpoint. Complex
+scenarios use `upstream_url` (default `https://httpbin.org`); send only dummy data or
+point it at your own compatible server.
 
 Existing auth/TLS/circuit-breaker complex examples are **registration-only** until their
 execution capabilities arrive. Runnable Phase 2 complex examples include every supported
-section (request, timeout, retry, condition, validation, transformation and metadata)
-and intentionally omit unsupported auth/TLS/circuit-breaker fields.
+section (request, timeout, retry, condition, request-payload validation, response
+validation, transformation and metadata) and intentionally omit unsupported
+auth/TLS/circuit-breaker fields. Future component folders (Mapper, Database, Script, SQS)
+show the same `validation` block in their own config sections.
 
 ### Phase 2 invocation behavior
 
@@ -429,6 +435,15 @@ and intentionally omit unsupported auth/TLS/circuit-breaker fields.
   Validation reads `{$output.*}`; default applies only to an empty/null body after rules pass.
   Transformation still runs on failure. Single-service output is returned directly;
   accumulation into `{$context.output.<uniqueKey>}` is Phase 5.
+- `config.request.validation.fields` validates the invoke payload after `condition` and
+  before any upstream call. Each entry is a payload-relative `path` (dotted keys,
+  `[n]` indices, `[*]` for every array element, `["quoted key"]` segments for names like
+  `user-id`) plus at least one of `required`, `type` (`string`, `number`, `integer`,
+  `boolean`, `array`, `object`), `minItems` (arrays) or `minLength` (strings). `required`
+  accepts `[]` and `""` — use `minItems`/`minLength` to reject empties — while `0`, `false`
+  and `{}` count as present. Failures return `400 VALIDATION_FAILED` with a Zod-style
+  `details` array of `{ path, message }`, zero upstream requests and `attempts: 0`; a
+  custom `message` per field overrides the generated one.
 - `GET /api/v1/executions/:executionId` retrieves sanitized service execution state,
   including failed transformed output and actual dispatch attempts (zero before dispatch).
   Recording is queued off the response path (best-effort, not durable workflow recovery),

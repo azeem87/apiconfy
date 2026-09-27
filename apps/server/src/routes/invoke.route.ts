@@ -35,7 +35,12 @@ export function invokeRoute(executor: RuntimeExecutor): Hono {
         error: { code: error.code, message: error.message, details: error.details },
         meta: { executionId, durationMs: Date.now() - startedAtMs },
       };
-      return c.json(failure, error.statusCode as ContentfulStatusCode);
+      // Surface the upstream's own status (e.g. 401) instead of the gateway's generic 502.
+      const downstreamStatus = error.code === 'EXTERNAL_ERROR'
+        ? (error.details as { downstream?: { status?: number } } | undefined)?.downstream?.status
+        : undefined;
+      const statusCode = downstreamStatus ?? error.statusCode;
+      return c.json(failure, statusCode as ContentfulStatusCode);
     }
   });
   return router;

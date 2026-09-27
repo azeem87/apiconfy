@@ -5,11 +5,12 @@ import type { ComponentHandlerRegistry } from './component-handler-registry.js';
 import type { ResilienceExecutor } from './resilience-executor.js';
 import type { ComponentRequestSummary } from '@/core/components/base.js';
 import { buildStandardError, injectStandardError, runResponsePipeline, transformResponse } from './response-pipeline.js';
+import { collectFieldFailures } from './request-validation.js';
 import { evaluatePredicate } from '@/core/transform/index.js';
 import { resolveEnvRefsDetailed } from '@/core/env-ref/index.js';
 import type { InvocationResult, ResilienceConfig, TimeoutConfig } from '@/core/types.js';
 import {
-  AppError, NotFoundError, TransformationError, UnknownComponentTypeError,
+  AppError, NotFoundError, TransformationError, UnknownComponentTypeError, ValidationError,
   collectSensitiveValues, redactSensitiveFields, scrubSecretValues, type Logger,
 } from '@/lib/index.js';
 import { AuditWriteError } from '@/core/db/repositories/execution.repository.js';
@@ -98,6 +99,8 @@ export class DefaultRuntimeExecutor implements RuntimeExecutor {
       const handler = this.options.handlers.get(record.componentType);
       if (!handler) throw new UnknownComponentTypeError(record.componentType, this.options.handlers.registeredTypes());
       handler.assertExecutable?.(record.config);
+      const failures = collectFieldFailures(handler.validationFields?.(record.config) ?? [], context);
+      if (failures.length > 0) throw new ValidationError(failures[0].message, failures);
       secrets.push(...collectSensitiveValues(record.config));
       const resolved = resolveEnvRefsDetailed(record.config, this.options.env, secret => { secrets.push(secret); });
       config = resolved.config;

@@ -1,8 +1,9 @@
 import type {
   ComponentExecuteParams, ComponentExecuteResult, ComponentHandler, ComponentRequestSummary,
 } from '@/core/components/base.js';
-import type { RequestConfig } from '@/core/types.js';
-import { resolveTemplate } from '@/core/transform/index.js';
+import type { ExecutionContext } from '@/core/runtime/types.js';
+import type { RequestConfig, ValidationField } from '@/core/types.js';
+import { lookupPath, parsePath, resolveTemplate } from '@/core/transform/index.js';
 import { mediaType, parseResponseBody } from '@/lib/http.js';
 import {
   AppError, ConnectionError, ExternalServiceError, NotImplementedError, TimeoutError, TransformationError,
@@ -10,6 +11,37 @@ import {
 
 const JSON_TYPE = 'application/json';
 const FORM_TYPE = 'application/x-www-form-urlencoded';
+
+/**
+ * Detects config template references the runtime could not resolve. Scanning the template
+ * (not the resolved values) keeps arbitrary caller data containing `{$...}` untouched.
+ */
+function hasUnresolvedTemplate(template: unknown, scope: ExecutionContext): boolean {
+  if (typeof template === 'string') return hasUnresolvedTemplateString(template, scope);
+  if (Array.isArray(template)) return template.some(item => hasUnresolvedTemplate(item, scope));
+  if (template !== null && typeof template === 'object') {
+    return Object.values(template).some(child => hasUnresolvedTemplate(child, scope));
+  }
+  return false;
+}
+
+function hasUnresolvedTemplateString(source: string, scope: ExecutionContext): boolean {
+  let cursor = 0;
+  while (cursor < source.length) {
+    const start = source.indexOf('{$', cursor);
+    if (start === -1) return false;
+    const end = source.indexOf('}', start + 2);
+    if (end === -1) return false;
+    const candidate = source.slice(start, end + 1);
+    const segments = parsePath(candidate);
+    if (segments) {
+      const lookup = lookupPath(scope, segments);
+      if (!lookup.found || lookup.value === undefined) return true;
+    }
+    cursor = end + 1;
+  }
+  return false;
+}
 
 export class RestComponent implements ComponentHandler {
   readonly componentType = 'rest';
@@ -40,6 +72,10 @@ export class RestComponent implements ComponentHandler {
         { unsupported }
       );
     }
+  }
+
+  validationFields(config: Record<string, unknown>): ValidationField[] {
+    return (config.request as RequestConfig | undefined)?.validation?.fields ?? [];
   }
 
   async execute(params: ComponentExecuteParams): Promise<ComponentExecuteResult> {
@@ -87,6 +123,9 @@ export class RestComponent implements ComponentHandler {
       headers.set('X-Execution-Id', params.executionId);
     } catch {
       throw new TransformationError('REST request could not be serialized');
+    }
+    if (request.payloadTemplate !== undefined && hasUnresolvedTemplate(request.payloadTemplate, params.context)) {
+      throw new TransformationError('Request body contains an unresolved expression');
     }
     const summary: ComponentRequestSummary = { uri, method: request.method, ...(body !== undefined ? { body: payload } : {}) };
     params.onRequest?.(summary);

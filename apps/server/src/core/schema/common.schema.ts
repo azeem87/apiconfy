@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { assertValidExpression, assertValidPath } from '@/core/transform/index.js';
 import { collectTemplateIssues } from '@/core/transform/template-validation.js';
+import { parseFieldPath } from '@/core/runtime/request-validation.js';
 
 export const TimeoutConfigSchema = z.object({
   connect: z.number().int().positive().optional(),
@@ -79,6 +80,73 @@ export const OutputConfigSchema = z.object({
       }
     }
   }
+});
+
+const PAYLOAD_RUNTIME_ROOTS = new Set(['context', 'output', 'env']);
+
+export const ValidationFieldSchema = z.object({
+  path: z.string().min(1),
+  required: z.boolean().optional(),
+  type: z.enum(['string', 'number', 'integer', 'boolean', 'array', 'object']).optional(),
+  minItems: z.number().int().min(1).optional(),
+  minLength: z.number().int().min(1).optional(),
+  message: z.string().min(1).optional(),
+}).strict();
+
+/**
+ * Shared payload-validation block: one definition, per-component placement.
+ * REST nests it under `config.request.validation`; flat configs declare it at config level.
+ */
+export const RequestValidationSchema = z.object({
+  fields: z.array(ValidationFieldSchema).min(1),
+}).strict().superRefine((validation, ctx) => {
+  validation.fields.forEach((field, index) => {
+    const at = (...suffix: Array<string | number>) => ['fields', index, ...suffix];
+    if (field.required === undefined && field.type === undefined
+      && field.minItems === undefined && field.minLength === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: at(),
+        message: 'field must declare at least one of: required, type, minItems, minLength',
+      });
+    }
+    if (field.minItems !== undefined && field.type !== 'array') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: at('minItems'), message: 'minItems requires type "array"',
+      });
+    }
+    if (field.minLength !== undefined && field.type !== 'string') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: at('minLength'), message: 'minLength requires type "string"',
+      });
+    }
+    if (field.path.startsWith('{$')) {
+      const inner = field.path.startsWith('{$context.') && field.path.endsWith('}')
+        ? field.path.slice('{$context.'.length, -1)
+        : null;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: at('path'),
+        message: inner && parseFieldPath(inner)
+          ? `write the payload field path directly — "${inner}", not "${field.path}"`
+          : 'write the payload field path directly, without {$...} expressions',
+      });
+      return;
+    }
+    const segments = parseFieldPath(field.path);
+    if (!segments) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: at('path'), message: 'invalid field path' });
+      return;
+    }
+    const first = segments[0];
+    if (first?.kind === 'key' && PAYLOAD_RUNTIME_ROOTS.has(first.value)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: at('path'),
+        message: `"${first.value}" is a runtime namespace, not a payload field — write the payload path directly, or quote it (["${first.value}"].…) if the payload really has that key`,
+      });
+    }
+  });
 });
 
 export const SSLConfigSchema = z.object({

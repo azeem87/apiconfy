@@ -335,3 +335,50 @@ describe('template validation', () => {
     }).success).toBe(true);
   });
 });
+
+describe('payload validation fields (request.validation)', () => {
+  const withValidation = (fields: unknown[]) => ({
+    request: { ...request, validation: { fields } },
+  });
+
+  it('accepts a full validation block including quoted paths and wildcards', () => {
+    expect(RestConfigSchema.safeParse(withValidation([
+      { path: 'userId', required: true, type: 'string' },
+      { path: 'customer.email', required: true, type: 'string', minLength: 1 },
+      { path: 'items', required: true, type: 'array', minItems: 1, message: 'items must contain at least one entry' },
+      { path: 'items[*].sku', required: true, type: 'string' },
+      { path: 'meta["external-id"]', type: 'string' },
+    ])).success).toBe(true);
+  });
+
+  it('rejects empty field lists and entries without constraints', () => {
+    expect(RestConfigSchema.safeParse(withValidation([])).success).toBe(false);
+    expect(RestConfigSchema.safeParse(withValidation([{ path: 'userId', message: 'only a message' }])).success).toBe(false);
+  });
+
+  it('rejects {$context.} entries with a pointed message', () => {
+    const result = RestConfigSchema.safeParse(withValidation([{ path: '{$context.userId}', required: true }]));
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0].message).toContain('write the payload field path directly — "userId"');
+    expect(result.error?.issues[0].path).toEqual(['request', 'validation', 'fields', 0, 'path']);
+  });
+
+  it('rejects runtime namespace prefixes but allows the quoted literal form', () => {
+    const rejected = RestConfigSchema.safeParse(withValidation([{ path: 'context.userId', required: true }]));
+    expect(rejected.success).toBe(false);
+    expect(rejected.error?.issues[0].message).toContain('runtime namespace');
+    expect(RestConfigSchema.safeParse(withValidation([{ path: '["context"].userId', required: true }])).success).toBe(true);
+  });
+
+  it('rejects malformed paths and unknown keys', () => {
+    expect(RestConfigSchema.safeParse(withValidation([{ path: 'a..b', required: true }])).success).toBe(false);
+    expect(RestConfigSchema.safeParse(withValidation([{ path: 'userId', required: true, minLength: 1 }])).success).toBe(false);
+  });
+
+  it('couples minItems to array and minLength to string', () => {
+    expect(RestConfigSchema.safeParse(withValidation([{ path: 'items', minItems: 1 }])).success).toBe(false);
+    expect(RestConfigSchema.safeParse(withValidation([{ path: 'text', type: 'string', minItems: 1 }])).success).toBe(false);
+    expect(RestConfigSchema.safeParse(withValidation([{ path: 'text', minLength: 1 }])).success).toBe(false);
+    expect(RestConfigSchema.safeParse(withValidation([{ path: 'text', type: 'number', minLength: 1 }])).success).toBe(false);
+  });
+});

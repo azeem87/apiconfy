@@ -30,6 +30,7 @@ it('executes through two real HTTP servers and returns a queryable redacted exec
             uri: `${upstream.url}items/{$context.id}`, method: 'POST',
             headers: { Authorization: '{$env.UPSTREAM_TOKEN}' },
             payloadTemplate: { number: '{$context.id}' },
+            validation: { fields: [{ path: 'password', required: true, type: 'string' }] },
           },
           output: {
             validation: { rules: [{ expression: '{$output.id} exists' }] },
@@ -59,6 +60,16 @@ it('executes through two real HTTP servers and returns a queryable redacted exec
       method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"context":{"id":null}}',
     });
     expect((await skipped.json()).skippedExecution).toBe(true);
+    const rejected = await fetch(new URL('/api/v1/services/network/create/invoke', server.url), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ context: { id: 1 } }),
+    });
+    expect(rejected.status).toBe(400);
+    expect((await rejected.json()).error).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      message: 'password is required',
+      details: [{ path: ['password'], message: 'password is required' }],
+    });
     expect(requests).toHaveLength(1);
   } finally {
     await server.stop(true);

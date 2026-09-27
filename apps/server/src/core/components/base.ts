@@ -1,10 +1,13 @@
 import type { ExecutionContext } from '@/core/runtime/types.js';
+import type { ValidationField } from '@/core/types.js';
 
 export interface ComponentHandler {
   readonly componentType: string;
   /** Human-readable label for future admin/UI surfaces; not read by the runtime today. */
   readonly displayName?: string;
   assertExecutable?(config: Record<string, unknown>): void;
+  /** Declares payload field constraints from this component's config; the runtime validates them before dispatch. */
+  validationFields?(config: Record<string, unknown>): ValidationField[];
   execute(params: ComponentExecuteParams): Promise<ComponentExecuteResult>;
 }
 

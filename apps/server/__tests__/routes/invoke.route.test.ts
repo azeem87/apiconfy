@@ -164,7 +164,7 @@ describe('Phase 2 invocation API', () => {
     }, resilience: { retryCount: 2, retryDelay: 1, retryOn: [400] } });
     const res = await invoke();
     const result = await res.json();
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(400);
     expect(result.error.code).toBe('EXTERNAL_ERROR');
     expect((await recorded(result)).result.itemResponse).toMatchObject({
       id: null, error: { code: 'EXTERNAL_ERROR', downstream: { status: 400 } },
@@ -383,5 +383,90 @@ describe('Phase 2 invocation API', () => {
     const audit = JSON.stringify([await recorded(result), await db.getExecutionLogs(result.meta.executionId)]);
     expect(audit).not.toContain('hunter2');
     expect(audit).toContain('***');
+  });
+
+  it('rejects payloads missing required fields before dispatch and records attempts=0', async () => {
+    await register({
+      request: { ...request, validation: { fields: [{ path: 'userId', required: true }] } },
+    });
+    const res = await invoke({ context: { other: true } });
+    expect(res.status).toBe(400);
+    const result = await res.json();
+    expect(result).toMatchObject({
+      success: false,
+      data: null,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'userId is required',
+        details: [{ path: ['userId'], message: 'userId is required' }],
+      },
+    });
+    expect(calls).toHaveLength(0);
+    expect(await recorded(result)).toMatchObject({ status: 'FAILED', attempts: 0 });
+  });
+
+  it('rejects null values, type mismatches, empty collections and blank strings with custom messages', async () => {
+    await register({
+      request: { ...request, validation: { fields: [
+        { path: 'userId', required: true, type: 'string', message: 'userId must be a string' },
+        { path: 'items', type: 'array', minItems: 1 },
+        { path: 'note', type: 'string', minLength: 1 },
+      ] } },
+    });
+    const nulled = await invoke({ context: { userId: null, items: [{}], note: 'x' } });
+    expect(nulled.status).toBe(400);
+    expect((await nulled.json()).error.message).toBe('userId must be a string');
+
+    const typed = await invoke({ context: { userId: 42, items: [{}], note: 'x' } });
+    expect(typed.status).toBe(400);
+    expect((await typed.json()).error.message).toBe('userId must be a string');
+
+    const empty = await invoke({ context: { userId: 'u-1', items: [], note: 'x' } });
+    expect(empty.status).toBe(400);
+    expect((await empty.json()).error.message).toBe('items must contain at least 1 entry');
+
+    const blank = await invoke({ context: { userId: 'u-1', items: [{}], note: '' } });
+    expect(blank.status).toBe(400);
+    expect((await blank.json()).error.message).toBe('note must have at least 1 character');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('reports the concrete failing element for wildcard rules', async () => {
+    await register({
+      request: { ...request, validation: { fields: [{ path: 'items[*].sku', required: true, type: 'string' }] } },
+    });
+    const res = await invoke({ context: { id: 7, items: [{ sku: 'A-1' }, { qty: 2 }] } });
+    expect(res.status).toBe(400);
+    const result = await res.json();
+    expect(result.error.details).toEqual([
+      { path: ['items', 1, 'sku'], message: 'items[1].sku is required' },
+    ]);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('skips payload validation when the condition already skips', async () => {
+    await register({
+      request: { ...request, validation: { fields: [{ path: 'userId', required: true }] } },
+    }, '{$context.enabled} == true');
+    const result = await (await invoke({ context: {} })).json();
+    expect(result).toMatchObject({ success: true, data: null, skippedExecution: true });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('fails fast on unresolved body template references and leaves caller data untouched', async () => {
+    await register({
+      request: { ...request, payloadTemplate: { input: '{$context.id}', extra: '{$context.absent}' } },
+    });
+    const failed = await invoke();
+    expect(failed.status).toBe(500);
+    expect((await failed.json()).error.code).toBe('TRANSFORMATION_ERROR');
+    expect(calls).toHaveLength(0);
+
+    await register({
+      request: { ...request, payloadTemplate: { input: '{$context.note}' } },
+    });
+    const ok = await invoke({ context: { id: 7, note: '{$custom.token}' } });
+    expect(ok.status).toBe(200);
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ input: '{$custom.token}' });
   });
 });
