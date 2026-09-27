@@ -15,7 +15,7 @@ import { createCoreSchemaRegistry, type SchemaRegistry } from '@/core/schema/ind
 import { createCoreHandlerRegistry } from '@/core/components/index.js';
 import {
   type ComponentHandlerRegistry, DefaultResilienceExecutor,
-  DefaultRuntimeExecutor,
+  DefaultRuntimeExecutor, QueuedExecutionRecorder,
 } from '@/core/runtime/index.js';
 import { DbComponentRepository } from '@/core/db/repositories/component.repository.js';
 import { DbExecutionRepository } from '@/core/db/repositories/execution.repository.js';
@@ -48,7 +48,14 @@ async function requireJsonContentType(c: Context, next: Next) {
   return next();
 }
 
-export function createApp(config: AppConfig, db: DBAdapter, deps: AppDependencies = {}): { app: Hono; logger: Logger } {
+export interface CreatedApp {
+  app: Hono;
+  logger: Logger;
+  /** Drains queued execution records, bounded by `timeoutMs`; call before shutting down the process. */
+  drainExecutionQueue: (timeoutMs?: number) => Promise<void>;
+}
+
+export function createApp(config: AppConfig, db: DBAdapter, deps: AppDependencies = {}): CreatedApp {
   const logger = createLogger('server', config.logLevel);
   const app = new Hono();
 
@@ -69,11 +76,12 @@ export function createApp(config: AppConfig, db: DBAdapter, deps: AppDependencie
 
   const components = new DbComponentRepository(db);
   const executions = new DbExecutionRepository(db);
+  const recorder = new QueuedExecutionRecorder(executions, logger);
   const executor = new DefaultRuntimeExecutor({
     lookup: components,
     handlers: deps.handlers ?? createCoreHandlerRegistry(deps.fetch),
     resilience: new DefaultResilienceExecutor(),
-    recorder: executions,
+    recorder,
     logger,
     env: deps.env,
   });
@@ -83,7 +91,7 @@ export function createApp(config: AppConfig, db: DBAdapter, deps: AppDependencie
   app.route('/api', invokeRoute(executor));
   app.route('/api', executionsRoute(executions));
 
-  return { app, logger };
+  return { app, logger, drainExecutionQueue: (timeoutMs?: number) => recorder.drain(timeoutMs) };
 }
 
 export type { Logger };

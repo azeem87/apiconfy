@@ -373,9 +373,9 @@ The server starts on `http://localhost:3000` with a health check at `GET /health
 
 **Database:** SQLite is the default for local development — no configuration needed. The database file is created automatically at `data/apiconfy.db` on first run. The `data/` directory is gitignored and only used locally. With `DATABASE_URL` unset or empty the server selects SQLite and logs a warning at startup: a single local file has no durability guarantees of its own, so for production prefer a **replicated SQLite** (Turso, LiteFS) or a server engine. The warning is informational — the process never refuses to start over it.
 
-**Current adapter status:** all six engines are implemented — SQLite (default), **PostgreSQL**, **MariaDB**, **Oracle**, **MongoDB** and **Couchbase**. The schema scripts ship in `apps/server/src/core/db/schema/` and are run **once by the operator** with an admin account: `psql -f apps/server/src/core/db/schema/sql/postgres.sql`, `mysql --user=<admin> --password --database=apiconfy < apps/server/src/core/db/schema/sql/mariadb.sql`, `sqlplus <admin>@//host:1521/service @apps/server/src/core/db/schema/oracle/oracle.sql`, `mongosh "<DATABASE_URL>" apps/server/src/core/db/schema/mongodb/mongodb.js`, or `CB_BUCKET=apiconfy bun run apps/server/src/core/db/schema/couchbase/couchbase.js`. The app never creates schema: on startup it probes for the required tables/collections/indexes and exits with the script path if any are missing. Couchbase transactions are intentionally not implemented — the config/CRUD writes that would use them are rare, while the hot paths (invoke, workflow reads) are key-value reads (see the plan's Step 7 notes). A per-engine prerequisite table lands with the Phase 3 README work.
+**Current adapter status:** all five engines are implemented — SQLite (default), **PostgreSQL**, **Oracle**, **MongoDB** and **Couchbase**. The schema scripts ship in `apps/server/src/core/db/schema/` and are run **once by the operator** with an admin account: `psql -f apps/server/src/core/db/schema/sql/postgres.sql`, `sqlplus <admin>@//host:1521/service @apps/server/src/core/db/schema/oracle/oracle.sql`, `mongosh "<DATABASE_URL>" apps/server/src/core/db/schema/mongodb/mongodb.js`, or `CB_BUCKET=apiconfy bun run apps/server/src/core/db/schema/couchbase/couchbase.js`. The app never creates schema: on startup it probes for the required tables/collections/indexes and exits with the script path if any are missing. Couchbase transactions are intentionally not implemented — the config/CRUD writes that would use them are rare, while the hot paths (invoke, workflow reads) are key-value reads (see the plan's Step 7 notes). A per-engine prerequisite table lands with the Phase 3 README work.
 
-**Production / Cloud:** set `DATABASE_URL` to the engine you run — today `postgres://user:pass@host:5432/db`, with `mysql://`/`mariadb://`, `oracle://`, `mongodb://` and `couchbase://` (+ `CB_BUCKET`) arriving in Phase 3. A named engine is never bypassed in favour of SQLite; an unknown scheme refuses to start.
+**Production / Cloud:** set `DATABASE_URL` to the engine you run — today `postgres://user:pass@host:5432/db`, with `oracle://`, `mongodb://` and `couchbase://` (+ `CB_BUCKET`) arriving in Phase 3. A named engine is never bypassed in favour of SQLite; an unknown scheme refuses to start. **Graceful shutdown:** on `SIGTERM` the server stops accepting connections, lets in-flight requests finish, flushes queued execution records (bounded 10s drain), then closes the database — keep `terminationGracePeriodSeconds` above ~15s (the default 30s fits) and prefer a `preStop` sleep so endpoint removal doesn't cut off traffic.
 
 ---
 
@@ -389,7 +389,7 @@ The server starts on `http://localhost:3000` with a health check at `GET /health
 | `LOG_LEVEL` | `info` | Log level for pino (`trace`, `debug`, `info`, `warn`, `error`, `fatal`) |
 | `API_KEY` | *(unset)* | Bearer token for `/api/*` routes. If unset, all routes are open (warning logged at startup) |
 | `REQUIRE_API_KEY` | `false` | When `true`, server refuses to start if `API_KEY` is missing. Set this in production |
-| `DATABASE_URL` | *(unset → SQLite)* | Selects the database engine by URL scheme. Implemented today: `postgres://` (stub until Phase 3). Phase 3 adds `mysql://`/`mariadb://`, `oracle://`, `mongodb://`, `couchbase://` (+ `CB_BUCKET`), and the explicit `sqlite:` scheme. Unset or empty → SQLite, with a local-development warning logged at startup |
+| `DATABASE_URL` | *(unset → SQLite)* | Selects the database engine by URL scheme. Implemented today: `postgres://` (stub until Phase 3). Phase 3 adds `oracle://`, `mongodb://`, `couchbase://` (+ `CB_BUCKET`), and the explicit `sqlite:` scheme. Unset or empty → SQLite, with a local-development warning logged at startup |
 | `SQLITE_PATH` | `../../data/apiconfy.db` | SQLite database file path when no engine is selected — and, from Phase 3, when the `sqlite:` URL omits a path |
 | `CB_BUCKET` | *(unset)* | Couchbase bucket name — required whenever `DATABASE_URL` uses `couchbase://` |
 | `CB_USER` | `Administrator` | Couchbase username, used when the `couchbase://` URL carries none |
@@ -431,7 +431,8 @@ and intentionally omit unsupported auth/TLS/circuit-breaker fields.
   accumulation into `{$context.output.<uniqueKey>}` is Phase 5.
 - `GET /api/v1/executions/:executionId` retrieves sanitized service execution state,
   including failed transformed output and actual dispatch attempts (zero before dispatch).
-  Recording is awaited but best-effort, not durable workflow recovery.
+  Recording is queued off the response path (best-effort, not durable workflow recovery),
+  so a lookup immediately after an invoke response can briefly 404 until the write lands.
 - `timeout.response` defaults to 30 seconds **per attempt**, including response-body reads.
   Retries use fixed/exponential backoff; never retry 4xx. Retrying writes may duplicate
   upstream side effects unless that upstream provides idempotency.

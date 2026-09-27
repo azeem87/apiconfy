@@ -16,7 +16,7 @@ it('executes through two real HTTP servers and returns a queryable redacted exec
   });
   const db = createSqliteAdapter(':memory:');
   await db.connect();
-  const { app } = createApp({ port: 0, logLevel: 'silent' }, db, { env: { UPSTREAM_TOKEN: 'local-test-credential' } });
+  const { app, drainExecutionQueue } = createApp({ port: 0, logLevel: 'silent' }, db, { env: { UPSTREAM_TOKEN: 'local-test-credential' } });
   const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: app.fetch });
   try {
     expect((await fetch(new URL('/health', server.url))).status).toBe(200);
@@ -47,6 +47,9 @@ it('executes through two real HTTP servers and returns a queryable redacted exec
     const result = await invocation.json();
     expect(result.data).toEqual({ networkResponse: { id: 'network-1', echo: '***' } });
     expect(requests).toEqual([{ path: '/items/42', executionId: result.meta.executionId, body: { number: 42 } }]);
+    // Execution recording is queued off the response path (see QueuedExecutionRecorder);
+    // drain deterministically instead of polling for the write to land.
+    await drainExecutionQueue();
     const retrieved = await fetch(new URL(`/api/v1/executions/${result.meta.executionId}`, server.url));
     expect(retrieved.status).toBe(200);
     const execution = (await retrieved.json()).data;

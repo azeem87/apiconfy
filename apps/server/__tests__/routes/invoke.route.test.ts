@@ -17,16 +17,19 @@ const appConfig = { port: 3000, logLevel: 'silent' };
 describe('Phase 2 invocation API', () => {
   let db: DBAdapter;
   let app: Hono;
+  let drainExecutionQueue: () => Promise<void>;
   let calls: Array<{ uri: string; init?: RequestInit }>;
   let upstream: (input: string, init?: RequestInit) => Promise<Response>;
   const build = (deps: AppDependencies = {}, apiKey?: string) => {
-    app = createApp({ ...appConfig, apiKey }, db, {
+    const created = createApp({ ...appConfig, apiKey }, db, {
       fetch: (async (input, init) => {
         calls.push({ uri: String(input), init });
         return upstream(String(input), init);
       }) as typeof fetch,
       ...deps,
-    }).app;
+    });
+    app = created.app;
+    drainExecutionQueue = created.drainExecutionQueue;
   };
   const register = async (config: Record<string, unknown> = { request, output }, condition?: string) => {
     const createBody = { service: 'items', action: 'create', componentType: 'rest', config, condition };
@@ -50,6 +53,8 @@ describe('Phase 2 invocation API', () => {
       body: typeof body === 'string' ? body : JSON.stringify(body),
     });
   const recorded = async (result: any) => {
+    // Execution recording is queued off the response path — drain deterministically.
+    await drainExecutionQueue();
     const res = await app.request(`/api/v1/executions/${result.meta.executionId}`);
     expect(res.status).toBe(200);
     const record = (await res.json()).data;
