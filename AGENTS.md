@@ -1,6 +1,6 @@
-Memory
-Project Overview
-See @README.md for project overview.
+# Memory
+
+Project Overview: See README.md (loaded separately).
 
 Plan Files — ALWAYS resolve to `plans/` folder
 Hard rule, zero exceptions. Any time the user mentions a plan, design doc, spec, or markdown file by name or reference — "plan ", "plans ", "the plan ", "plan md ", "plan doc ", "check the plan ", "design doc ", "spec ", "api-routes ", "core-types ", "validation ", "component-configs ", "multi-db-strategy ", "phase1-implementation ", "roadmap ", "prd ", or any similar reference — always look in `plans/<filename>.md` at the repo root.
@@ -52,7 +52,6 @@ This is non-negotiable — undocumented env vars cause confusion and deployment 
 Database Selection — DATABASE_URL scheme only
 Database engine is determined by `DATABASE_URL` scheme prefix.
 - `postgres://` → PostgreSQL
-- `mysql://` or `mariadb://` → MariaDB (MySQL protocol)
 - `oracle://` → Oracle
 - `mongodb://` → MongoDB
 - `couchbase://` → Couchbase (requires `CB_BUCKET` env var)

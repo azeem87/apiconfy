@@ -83,6 +83,61 @@ describe('services routes', () => {
       expect(json.error.details[0].path).toContain('uri');
     });
 
+    it('rejects {$context.} payload validation paths with a pointed message', async () => {
+      const res = await post(app, body({
+        config: {
+          request: {
+            uri: 'https://api.example.com/customers', method: 'POST',
+            validation: { fields: [{ path: '{$context.userId}', required: true }] },
+          },
+        },
+      }));
+      expect(res.status).toBe(400);
+
+      const json = await res.json();
+      expect(json.error.code).toBe('VALIDATION_FAILED');
+      expect(json.error.details).toEqual([
+        {
+          path: ['config', 'request', 'validation', 'fields', 0, 'path'],
+          message: 'write the payload field path directly — "userId", not "{$context.userId}"',
+        },
+      ]);
+    });
+
+    it('accepts a full validation block and rejects fields without constraints', async () => {
+      const accepted = await post(app, body({
+        config: {
+          request: {
+            uri: 'https://api.example.com/customers', method: 'POST',
+            validation: { fields: [
+              { path: 'userId', required: true, type: 'string' },
+              { path: 'customer.email', required: true, type: 'string', minLength: 1 },
+              { path: 'items', required: true, type: 'array', minItems: 1, message: 'items must contain at least one entry' },
+              { path: 'items[*].sku', required: true, type: 'string' },
+              { path: 'meta["external-id"]', type: 'string' },
+            ] },
+          },
+        },
+      }));
+      expect(accepted.status).toBe(201);
+
+      const rejected = await post(app, body({
+        action: 'create_customer_2',
+        config: {
+          request: {
+            uri: 'https://api.example.com/customers', method: 'POST',
+            validation: { fields: [{ path: 'userId', message: 'no constraint' }] },
+          },
+        },
+      }));
+      expect(rejected.status).toBe(400);
+
+      const json = await rejected.json();
+      expect(json.error.code).toBe('VALIDATION_FAILED');
+      expect(json.error.details[0].path).toEqual(['config', 'request', 'validation', 'fields', 0]);
+      expect(json.error.details[0].message).toContain('at least one of');
+    });
+
     it('returns 400, not 500, for a malformed JSON body', async () => {
       const res = await app.request('/api/v1/services', {
         method: 'POST',

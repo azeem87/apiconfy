@@ -154,6 +154,22 @@ export interface SSLConfig {
   passphrase?: string;
 }
 
+export type ValidationFieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object';
+
+/** One payload validation entry: `path` plus at least one constraint. */
+export interface ValidationField {
+  path: string;
+  required?: boolean;
+  type?: ValidationFieldType;
+  minItems?: number;
+  minLength?: number;
+  message?: string;
+}
+
+export interface RequestValidation {
+  fields: ValidationField[];
+}
+
 export interface RequestConfig {
   uri: string;
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -162,6 +178,7 @@ export interface RequestConfig {
   ssl?: SSLConfig;
   headers?: Record<string, string>;
   payloadTemplate?: Record<string, unknown>;
+  validation?: RequestValidation;
   /** Phase 2 refuses auth; Phase 4 owns its executable contract. */
   auth?: Record<string, unknown>;
 }

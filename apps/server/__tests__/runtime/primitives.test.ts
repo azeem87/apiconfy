@@ -13,14 +13,14 @@ it('resolves $output paths from the scope', () => {
   expect(resolveTemplate('{$output.data.id}', scope)).toBe('x');
 });
 
-it('returns literal for missing $context paths', () => {
+it('returns null for missing $context paths', () => {
   const scope = { context: { id: 1 }, env: {}, output: null };
-  expect(resolveTemplate('{$context.missing}', scope)).toBe('{$context.missing}');
+  expect(resolveTemplate('{$context.missing}', scope)).toBeNull();
 });
 
-it('returns literal for missing $output paths', () => {
+it('returns null for missing $output paths', () => {
   const scope = { context: {}, env: {}, output: { id: 1 } };
-  expect(resolveTemplate('{$output.missing}', scope)).toBe('{$output.missing}');
+  expect(resolveTemplate('{$output.missing}', scope)).toBeNull();
 });
 
 it('resolves $env references from the scope', () => {
@@ -28,7 +28,7 @@ it('resolves $env references from the scope', () => {
   expect(resolveTemplate('{$env.API_KEY}', scope)).toBe('secret');
 });
 
-it('handles null $output gracefully', () => {
+it('reads a null $output as missing', () => {
   const scope = { context: { id: 1 }, env: {}, output: null };
-  expect(resolveTemplate('{$output.id}', scope)).toBe('{$output.id}');
+  expect(resolveTemplate('{$output.id}', scope)).toBeNull();
 });

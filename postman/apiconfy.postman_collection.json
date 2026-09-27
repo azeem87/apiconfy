@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Apiconfy",
-    "description": "API collection for Apiconfy integration runtime.\n\n## Setup\n1. Start the server with `pnpm dev` (install dependencies with pnpm only).\n2. Set base_url (default http://localhost:3000) and api_key if API_KEY is configured.\n3. REST > Invoke folders run in order: registration, invocation, execution lookup. Invoke scripts save execution_id.\n4. Complex/error examples use upstream_url (default https://httpbin.org). Use dummy data only, or your own httpbin-compatible upstream.\n\n## Structure — by component type\nHealth and Service Management retain existing requests. REST includes registration plus Phase 2 Invoke > Simple Examples, Complex Examples, Error Cases. Existing full auth/TLS/circuitBreaker registrations are registration-only; invoking them returns 501. Runnable Phase 2 complex examples include every supported section and intentionally omit unsupported capabilities. Mapper, Database, Script and SQS are future Phase 11 designs, not registered handlers in Phase 2; Scheduler is Phase 10.\n\n## Data bag\nInput uses {$context.*}; ephemeral raw upstream response uses {$output.*}. Response transformations wrap output under unique keys. Phase 2 returns transformed output directly and leaves context.output empty; callers must not supply context.output. Transformation still runs on failure: wire data is null, while GET /api/v1/executions/{{execution_id}} exposes the sanitized transformed, error-injected result. Merging into {$context.output.<uniqueKey>} is Phase 5 workflow behavior.\n\n## Limits\nOnly timeout.response is enforced, per attempt through body consumption. Auth, custom TLS/disableSSL=true, connect/socket/idle, circuitBreaker and unsupported content types return 501. Phase 2 implementation verification is pending; this collection is not test-run evidence.",
+    "description": "API collection for Apiconfy integration runtime.\n\n## Setup\n1. Start the server with `pnpm dev` (install dependencies with pnpm only).\n2. Set base_url (default http://localhost:3000) and api_key if API_KEY is configured.\n3. REST > Invoke folders run in order: registration, invocation, execution lookup. Invoke scripts save execution_id. Execution recording is queued off the response path, so an execution-lookup request run immediately after invoke can occasionally 404 — rerun it once if that happens (Newman users: add a short delay or a retry-on-404 script).\n4. Complex/error examples use upstream_url (default https://httpbin.org). Use dummy data only, or your own httpbin-compatible upstream.\n\n## Structure — by component type\nHealth and Service Management retain existing requests. REST includes registration plus Phase 2 Invoke > Simple Examples, Complex Examples, Error Cases. Existing full auth/TLS/circuitBreaker registrations are registration-only; invoking them returns 501. Runnable Phase 2 complex examples include every supported section and intentionally omit unsupported capabilities. Payload validation (request.validation.fields) is part of every complex example and has dedicated manual examples under REST > Payload Validation; the future component folders show the same block in their own sections. Mapper, Database, Script and SQS are future Phase 11 designs, not registered handlers in Phase 2; Scheduler is Phase 10.\n\n## Data bag\nInput uses {$context.*}; ephemeral raw upstream response uses {$output.*}. Response transformations wrap output under unique keys. Phase 2 returns transformed output directly and leaves context.output empty; callers must not supply context.output. Transformation still runs on failure: wire data is null, while GET /api/v1/executions/{{execution_id}} exposes the sanitized transformed, error-injected result. Merging into {$context.output.<uniqueKey>} is Phase 5 workflow behavior.\n\n## Limits\nOnly timeout.response is enforced, per attempt through body consumption. Auth, custom TLS/disableSSL=true, connect/socket/idle, circuitBreaker and unsupported content types return 501. Phase 2 implementation verification is pending; this collection is not test-run evidence.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "version": "1.0.0"
   },
@@ -117,7 +117,7 @@
       "item": [
         {
           "name": "Invoke",
-          "description": "Run each folder in order: register before invoke. Simple Examples use local /health. Complex and selected error examples require an httpbin-compatible upstream_url; default is public httpbin.org, so use dummy data only. Each invoke saves execution_id. Failure data is null on the wire; execution lookup exposes the sanitized transformed error-injected result. No workflow context merge in Phase 2.",
+          "description": "Run each folder in order: register before invoke. Simple Examples use local /health. Complex and selected error examples require an httpbin-compatible upstream_url; default is public httpbin.org, so use dummy data only. Each invoke saves execution_id. Failure data is null on the wire; execution lookup exposes the sanitized transformed error-injected result. No workflow context merge in Phase 2. Payload validation runs before dispatch (after condition); see REST > Payload Validation for manual examples of request.validation.fields.",
           "event": [
             {
               "listen": "test",
@@ -162,7 +162,7 @@
                     "method": "GET",
                     "header": [],
                     "url": "{{base_url}}/api/v1/executions/{{execution_id}}",
-                    "description": "Expected 200; data.type=service, status=COMPLETED, attempts=1. Recording is awaited best-effort; a failed DB write can leave a 404."
+                    "description": "Expected 200; data.type=service, status=COMPLETED, attempts=1. Recording is queued off the response path — a lookup run immediately after invoke can briefly 404; rerun it once."
                   }
                 }
               ]
@@ -179,7 +179,7 @@
                     "url": "{{base_url}}/api/v1/services",
                     "body": {
                       "mode": "raw",
-                      "raw": "{\n  \"service\": \"phase2-complex\",\n  \"action\": \"echo\",\n  \"componentType\": \"rest\",\n  \"description\": \"Runnable Phase 2 JSON echo with all supported sections\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"{{upstream_url}}/anything\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Customer-Id\": \"{$context.id}\", \"X-Request-Label\": \"demo-{$context.label}\" },\n      \"payloadTemplate\": { \"customerId\": \"{$context.id}\", \"name\": \"{$context.name}\", \"items\": \"{$context.items}\" }\n    },\n    \"timeout\": { \"response\": 5000 },\n    \"resilience\": {\n      \"retryCount\": 2, \"retryDelay\": 100, \"backoff\": \"exponential\", \"maxDelay\": 1000,\n      \"retryOn\": [500, 502, 503]\n    },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.json.customerId} != null\", \"message\": \"Echo omitted customer ID\", \"errorPath\": \"{$output.message}\" }] },\n      \"default\": { \"json\": { \"customerId\": \"no-body\" } },\n      \"transformation\": { \"echoResponse\": { \"customerId\": \"{$output.json.customerId}\", \"name\": \"{$output.json.name}\", \"items\": \"{$output.json.items}\" } }\n    }\n  },\n  \"condition\": \"{$context.enabled} == true && {$context.id} != null\",\n  \"metaData\": { \"example\": \"phase2\", \"purpose\": \"dummy-data-only\" }\n}"
+                      "raw": "{\n  \"service\": \"phase2-complex\",\n  \"action\": \"echo\",\n  \"componentType\": \"rest\",\n  \"description\": \"Runnable Phase 2 JSON echo with all supported sections\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"{{upstream_url}}/anything\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Customer-Id\": \"{$context.id}\", \"X-Request-Label\": \"demo-{$context.label}\" },\n      \"payloadTemplate\": { \"customerId\": \"{$context.id}\", \"name\": \"{$context.name}\", \"items\": \"{$context.items}\" },\n      \"validation\": { \"fields\": [ { \"path\": \"id\", \"required\": true, \"type\": \"string\" }, { \"path\": \"name\", \"required\": true, \"type\": \"string\" }, { \"path\": \"items\", \"required\": true, \"type\": \"array\", \"minItems\": 1 }, { \"path\": \"items[*].sku\", \"required\": true, \"type\": \"string\" } ] }\n    },\n    \"timeout\": { \"response\": 5000 },\n    \"resilience\": {\n      \"retryCount\": 2, \"retryDelay\": 100, \"backoff\": \"exponential\", \"maxDelay\": 1000,\n      \"retryOn\": [500, 502, 503]\n    },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.json.customerId} != null\", \"message\": \"Echo omitted customer ID\", \"errorPath\": \"{$output.message}\" }] },\n      \"default\": { \"json\": { \"customerId\": \"no-body\" } },\n      \"transformation\": { \"echoResponse\": { \"customerId\": \"{$output.json.customerId}\", \"name\": \"{$output.json.name}\", \"items\": \"{$output.json.items}\" } }\n    }\n  },\n  \"condition\": \"{$context.enabled} == true && {$context.id} != null\",\n  \"metaData\": { \"example\": \"phase2\", \"purpose\": \"dummy-data-only\" }\n}"
                     },
                     "description": "Expected 201/200. Validation precedes default, so default cannot rescue a failed rule. Unique echoResponse key prevents future workflow collisions. No real credentials are used."
                   }
@@ -210,7 +210,7 @@
                     "method": "POST",
                     "header": [{ "key": "Content-Type", "value": "application/json" }],
                     "url": "{{base_url}}/api/v1/services",
-                    "body": { "mode": "raw", "raw": "{\n  \"service\": \"phase2-complex\", \"action\": \"form\", \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": { \"uri\": \"{{upstream_url}}/anything\", \"method\": \"POST\", \"contentType\": \"application/x-www-form-urlencoded\", \"headers\": { \"X-Demo\": \"{$context.id}\" }, \"payloadTemplate\": { \"customerId\": \"{$context.id}\", \"label\": \"{$context.label}\" } },\n    \"timeout\": { \"response\": 5000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 100, \"backoff\": \"fixed\", \"maxDelay\": 500, \"retryOn\": [502, 503] },\n    \"output\": { \"validation\": { \"rules\": [{ \"expression\": \"{$output.form.customerId} != null\", \"message\": \"Missing form ID\", \"errorPath\": \"{$output.message}\" }] }, \"default\": { \"form\": {} }, \"transformation\": { \"formEchoResponse\": { \"customerId\": \"{$output.form.customerId}\", \"label\": \"{$output.form.label}\" } } }\n  },\n  \"condition\": \"{$context.id} != null\", \"metaData\": { \"example\": \"phase2-form\" }\n}" },
+                    "body": { "mode": "raw", "raw": "{\n  \"service\": \"phase2-complex\", \"action\": \"form\", \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": { \"uri\": \"{{upstream_url}}/anything\", \"method\": \"POST\", \"contentType\": \"application/x-www-form-urlencoded\", \"headers\": { \"X-Demo\": \"{$context.id}\" }, \"payloadTemplate\": { \"customerId\": \"{$context.id}\", \"label\": \"{$context.label}\" }, \"validation\": { \"fields\": [ { \"path\": \"id\", \"required\": true, \"type\": \"string\" }, { \"path\": \"label\", \"required\": true, \"type\": \"string\" } ] } },\n    \"timeout\": { \"response\": 5000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 100, \"backoff\": \"fixed\", \"maxDelay\": 500, \"retryOn\": [502, 503] },\n    \"output\": { \"validation\": { \"rules\": [{ \"expression\": \"{$output.form.customerId} != null\", \"message\": \"Missing form ID\", \"errorPath\": \"{$output.message}\" }] }, \"default\": { \"form\": {} }, \"transformation\": { \"formEchoResponse\": { \"customerId\": \"{$output.form.customerId}\", \"label\": \"{$output.form.label}\" } } }\n  },\n  \"condition\": \"{$context.id} != null\", \"metaData\": { \"example\": \"phase2-form\" }\n}" },
                     "description": "Expected 201/200. Every supported section is shown; unsupported auth/TLS/circuitBreaker blocks are omitted. Form bodies are serialized with URLSearchParams."
                   }
                 },
@@ -230,7 +230,7 @@
                     "method": "POST",
                     "header": [{ "key": "Content-Type", "value": "application/json" }],
                     "url": "{{base_url}}/api/v1/services",
-                    "body": { "mode": "raw", "raw": "{\n  \"service\": \"phase2-complex\", \"action\": \"default\", \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": { \"uri\": \"{{upstream_url}}/status/204\", \"method\": \"GET\", \"contentType\": \"application/json\", \"headers\": { \"X-Demo\": \"{$context.id}\" }, \"payloadTemplate\": { \"unusedForGet\": \"{$context.id}\" } },\n    \"timeout\": { \"response\": 5000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 100, \"backoff\": \"fixed\", \"maxDelay\": 500, \"retryOn\": [503] },\n    \"output\": { \"validation\": { \"rules\": [{ \"expression\": \"true\", \"message\": \"Default scenario permits an empty response\" }] }, \"default\": { \"status\": \"empty\" }, \"transformation\": { \"defaultResponse\": { \"status\": \"{$output.status}\", \"customerId\": \"{$context.id}\" } } }\n  },\n  \"condition\": \"{$context.id} != null\", \"metaData\": { \"example\": \"phase2-default\" }\n}" },
+                    "body": { "mode": "raw", "raw": "{\n  \"service\": \"phase2-complex\", \"action\": \"default\", \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": { \"uri\": \"{{upstream_url}}/status/204\", \"method\": \"GET\", \"contentType\": \"application/json\", \"headers\": { \"X-Demo\": \"{$context.id}\" }, \"payloadTemplate\": { \"unusedForGet\": \"{$context.id}\" }, \"validation\": { \"fields\": [ { \"path\": \"id\", \"required\": true, \"type\": \"string\" } ] } },\n    \"timeout\": { \"response\": 5000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 100, \"backoff\": \"fixed\", \"maxDelay\": 500, \"retryOn\": [503] },\n    \"output\": { \"validation\": { \"rules\": [{ \"expression\": \"true\", \"message\": \"Default scenario permits an empty response\" }] }, \"default\": { \"status\": \"empty\" }, \"transformation\": { \"defaultResponse\": { \"status\": \"{$output.status}\", \"customerId\": \"{$context.id}\" } } }\n  },\n  \"condition\": \"{$context.id} != null\", \"metaData\": { \"example\": \"phase2-default\" }\n}" },
                     "description": "Expected 201/200. GET ignores payloadTemplate; all supported sections are shown. The true validation rule permits a 204 body, then default resolves context before transformation reads response."
                   }
                 },
@@ -299,11 +299,11 @@
                   "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services", "body": { "mode": "raw", "raw": "{ \"service\": \"phase2-errors\", \"action\": \"upstream\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{upstream_url}}/status/{$context.status}\", \"method\": \"GET\" }, \"timeout\": { \"response\": 5000 }, \"resilience\": { \"retryCount\": 1, \"retryDelay\": 100, \"backoff\": \"fixed\", \"retryOn\": [503] }, \"output\": { \"transformation\": { \"upstreamFailureResponse\": { \"body\": \"{$output}\" } } } } }" }, "description": "Expected 201/200. Uses a dummy public status endpoint or your configured compatible upstream." }
                 },
                 {
-                  "name": "502 — retryable upstream 503",
+                  "name": "503 — retryable upstream 503",
                   "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{ \"context\": { \"status\": 503 } }" }, "description": "EXTERNAL_ERROR after two actual attempts. One execution and one audit row; failed transformed result contains upstreamFailureResponse.error.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"EXTERNAL_ERROR\",\n    \"message\": \"External API returned 503\",\n    \"details\": {\n      \"downstream\": {\n        \"status\": 503,\n        \"body\": {}\n      }\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 250\n  }\n}\n```" }
                 },
                 {
-                  "name": "502 — nonretryable upstream 404",
+                  "name": "404 — nonretryable upstream 404",
                   "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{ \"context\": { \"status\": 404 } }" }, "description": "EXTERNAL_ERROR after one attempt. Upstream 404 is not the runtime's own NOT_FOUND.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"EXTERNAL_ERROR\",\n    \"message\": \"External API returned 404\",\n    \"details\": {\n      \"downstream\": {\n        \"status\": 404,\n        \"body\": {}\n      }\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 120\n  }\n}\n```" }
                 },
                 {
@@ -368,7 +368,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Create order in upstream system with auth, retry, and response mapping\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": {\n        \"X-Tenant-Id\": \"{$context.tenantId}\",\n        \"X-Request-Id\": \"{$context.requestId}\"\n      },\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"{$env.ORDER_API_CLIENT_ID}\",\n          \"clientSecret\": \"{$env.ORDER_API_CLIENT_SECRET}\",\n          \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n          \"scope\": \"orders:write\"\n        }\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"{$context.customerId}\",\n        \"items\": \"{$context.items}\",\n        \"totalAmount\": \"{$context.totalAmount}\"\n      }\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 30000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504]\n    },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"{$output.id} != null\", \"message\": \"Order ID is missing\" },\n          { \"expression\": \"{$output.status} == 'created'\", \"message\": \"Order not created\" }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"{$output.id}\",\n          \"status\": \"{$output.status}\",\n          \"createdAt\": \"{$output.created_at}\"\n        }\n      }\n    }\n  },\n  \"condition\": \"{$context.customerId} != null\",\n  \"metaData\": {\n    \"owner\": \"platform-team\",\n    \"slack\": \"#orders-alerts\"\n  }\n}"
+                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Create order in upstream system with auth, retry, and response mapping\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": {\n        \"X-Tenant-Id\": \"{$context.tenantId}\",\n        \"X-Request-Id\": \"{$context.requestId}\"\n      },\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"{$env.ORDER_API_CLIENT_ID}\",\n          \"clientSecret\": \"{$env.ORDER_API_CLIENT_SECRET}\",\n          \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n          \"scope\": \"orders:write\"\n        }\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"{$context.customerId}\",\n        \"items\": \"{$context.items}\",\n        \"totalAmount\": \"{$context.totalAmount}\"\n      },\n      \"validation\": {\n        \"fields\": [\n          { \"path\": \"tenantId\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"customerId\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"items\", \"required\": true, \"type\": \"array\", \"minItems\": 1 },\n          { \"path\": \"totalAmount\", \"required\": true, \"type\": \"number\" }\n        ]\n      }\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 30000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504]\n    },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"{$output.id} != null\", \"message\": \"Order ID is missing\" },\n          { \"expression\": \"{$output.status} == 'created'\", \"message\": \"Order not created\" }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"{$output.id}\",\n          \"status\": \"{$output.status}\",\n          \"createdAt\": \"{$output.created_at}\"\n        }\n      }\n    }\n  },\n  \"condition\": \"{$context.customerId} != null\",\n  \"metaData\": {\n    \"owner\": \"platform-team\",\n    \"slack\": \"#orders-alerts\"\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
@@ -385,7 +385,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Updated: increased timeout and added circuit breaker\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"{$env.ORDER_API_CLIENT_ID}\",\n          \"clientSecret\": \"{$env.ORDER_API_CLIENT_SECRET}\",\n          \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n          \"scope\": \"orders:write\"\n        }\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"{$context.customerId}\",\n        \"items\": \"{$context.items}\",\n        \"totalAmount\": \"{$context.totalAmount}\"\n      }\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 60000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504],\n      \"circuitBreaker\": {\n        \"failureThreshold\": 5,\n        \"windowSize\": 60000,\n        \"openDuration\": 30000,\n        \"halfOpenMaxAttempts\": 3\n      }\n    },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"{$output.id} != null\", \"message\": \"Order ID is missing\" },\n          { \"expression\": \"{$output.status} == 'created'\", \"message\": \"Order not created\" }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"{$output.id}\",\n          \"status\": \"{$output.status}\",\n          \"createdAt\": \"{$output.created_at}\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"order-service\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Updated: increased timeout and added circuit breaker\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"{$env.ORDER_API_CLIENT_ID}\",\n          \"clientSecret\": \"{$env.ORDER_API_CLIENT_SECRET}\",\n          \"accessTokenUri\": \"https://auth.example.com/oauth/token\",\n          \"scope\": \"orders:write\"\n        }\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"{$context.customerId}\",\n        \"items\": \"{$context.items}\",\n        \"totalAmount\": \"{$context.totalAmount}\"\n      },\n      \"validation\": {\n        \"fields\": [\n          { \"path\": \"tenantId\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"customerId\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"items\", \"required\": true, \"type\": \"array\", \"minItems\": 1 },\n          { \"path\": \"totalAmount\", \"required\": true, \"type\": \"number\" }\n        ]\n      }\n    },\n    \"timeout\": {\n      \"connect\": 5000,\n      \"response\": 60000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [502, 503, 504],\n      \"circuitBreaker\": {\n        \"failureThreshold\": 5,\n        \"windowSize\": 60000,\n        \"openDuration\": 30000,\n        \"halfOpenMaxAttempts\": 3\n      }\n    },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"{$output.id} != null\", \"message\": \"Order ID is missing\" },\n          { \"expression\": \"{$output.status} == 'created'\", \"message\": \"Order not created\" }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"{$output.id}\",\n          \"status\": \"{$output.status}\",\n          \"createdAt\": \"{$output.created_at}\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
@@ -393,6 +393,138 @@
                   "path": ["api", "v1", "services"]
                 },
                 "description": "Send the same (service, action) again to upsert. Returns 200 (not 201) on update. Includes response validation and transformation wraps output under unique key `createOrderResponse`."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Payload Validation",
+          "description": "Manual request.validation.fields examples (not part of the automated collection runner): required, type, minItems, minLength, wildcard array-element checks and quoted keys. Run against a live server after the registration below — invalid payloads return 400 with attempts=0 and zero upstream requests.",
+          "item": [
+            {
+              "name": "1. Register payload validation showcase",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/v1/services",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"service\":\"phase2-validation\",\"action\":\"validated\",\"componentType\":\"rest\",\"description\":\"Payload validation showcase with every request.validation.fields feature\",\"config\":{\"request\":{\"uri\":\"{{upstream_url}}/anything\",\"method\":\"POST\",\"contentType\":\"application/json\",\"validation\":{\"fields\":[{\"path\":\"userId\",\"required\":true,\"type\":\"string\"},{\"path\":\"customer.email\",\"required\":true,\"type\":\"string\",\"minLength\":1},{\"path\":\"items\",\"required\":true,\"type\":\"array\",\"minItems\":1,\"message\":\"items must contain at least one entry\"},{\"path\":\"items[*].sku\",\"required\":true,\"type\":\"string\"},{\"path\":\"items[*].qty\",\"type\":\"integer\"},{\"path\":\"meta[\\\"external-id\\\"]\",\"required\":true,\"type\":\"string\"}]},\"payloadTemplate\":{\"customerId\":\"{$context.userId}\",\"email\":\"{$context.customer.email}\",\"items\":\"{$context.items}\"}},\"timeout\":{\"response\":5000},\"output\":{\"transformation\":{\"validatedResponse\":{\"customerId\":\"{$output.json.customerId}\"}}}}}"
+                },
+                "description": "Expected 201/200. One entry per validation feature: required + type, minLength, minItems, wildcard element rule and the quoted key meta[\"external-id\"]. Payload paths are the caller payload's own fields — never context.* or {$...}."
+              }
+            },
+            {
+              "name": "2. Valid payload passes validation",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"context\":{\"userId\":\"u-123\",\"customer\":{\"email\":\"demo@example.com\"},\"items\":[{\"sku\":\"A-1\",\"qty\":2}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                },
+                "description": "Expected 200; data.validatedResponse.customerId is the mapped payload value. Validation passed before the upstream call."
+              }
+            },
+            {
+              "name": "400 — missing required field",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"context\":{\"customer\":{\"email\":\"demo@example.com\"},\"items\":[{\"sku\":\"A-1\"}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                },
+                "description": "VALIDATION_FAILED before dispatch, attempts=0, no upstream request.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"VALIDATION_FAILED\",\n    \"message\": \"userId is required\",\n    \"details\": [\n      { \"path\": [\"userId\"], \"message\": \"userId is required\" }\n    ]\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 2\n  }\n}\n```"
+              }
+            },
+            {
+              "name": "400 — field type mismatch",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"context\":{\"userId\":42,\"customer\":{\"email\":\"demo@example.com\"},\"items\":[{\"sku\":\"A-1\",\"qty\":2}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                },
+                "description": "VALIDATION_FAILED: userId must be a string. Strict typing — a number is not accepted for a string field."
+              }
+            },
+            {
+              "name": "400 — empty array fails minItems",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"context\":{\"userId\":\"u-123\",\"customer\":{\"email\":\"demo@example.com\"},\"items\":[],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                },
+                "description": "VALIDATION_FAILED: items must contain at least one entry. required accepts [], so emptiness needs minItems; wildcard element rules pass vacuously on an empty array."
+              }
+            },
+            {
+              "name": "400 — empty string fails minLength",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"context\":{\"userId\":\"u-123\",\"customer\":{\"email\":\"\"},\"items\":[{\"sku\":\"A-1\",\"qty\":2}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                },
+                "description": "VALIDATION_FAILED: customer.email must have at least 1 character. required accepts \"\", so blank strings need minLength."
+              }
+            },
+            {
+              "name": "400 — array element missing",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"context\":{\"userId\":\"u-123\",\"customer\":{\"email\":\"demo@example.com\"},\"items\":[{\"sku\":\"A-1\"},{\"qty\":2}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                },
+                "description": "VALIDATION_FAILED with the concrete element index: path [\"items\", 1, \"sku\"], message \"items[1].sku is required\". Wildcard rules report the first failing element only."
               }
             }
           ]
@@ -508,7 +640,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"data-mapper\",\n  \"action\": \"enrich_order\",\n  \"componentType\": \"mapper\",\n  \"description\": \"Enrich order data with computed fields\",\n  \"config\": {\n    \"template\": {\n      \"orderId\": \"{$context.orderId}\",\n      \"totalWithTax\": \"{$context.subtotal} * 1.1\",\n      \"itemCount\": \"{$context.items.length}\"\n    },\n    \"condition\": \"{$context.orderId} != null\",\n    \"output\": {\n      \"transformation\": {\n        \"enrichOrderResponse\": {\n          \"orderId\": \"{$context.output.enrichOrderResponse.orderId}\",\n          \"totalWithTax\": \"{$context.output.enrichOrderResponse.totalWithTax}\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"data-mapper\",\n  \"action\": \"enrich_order\",\n  \"componentType\": \"mapper\",\n  \"description\": \"Enrich order data with computed fields\",\n  \"config\": {\n    \"template\": {\n      \"orderId\": \"{$context.orderId}\",\n      \"totalWithTax\": \"{$context.subtotal} * 1.1\",\n      \"itemCount\": \"{$context.items.length}\"\n    },\n    \"validation\": { \"fields\": [ { \"path\": \"orderId\", \"required\": true, \"type\": \"string\" }, { \"path\": \"subtotal\", \"required\": true, \"type\": \"number\" } ] },\n    \"condition\": \"{$context.orderId} != null\",\n    \"output\": {\n      \"transformation\": {\n        \"enrichOrderResponse\": {\n          \"orderId\": \"{$context.output.enrichOrderResponse.orderId}\",\n          \"totalWithTax\": \"{$context.output.enrichOrderResponse.totalWithTax}\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
@@ -580,7 +712,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"order-db\",\n  \"action\": \"save_order\",\n  \"componentType\": \"database\",\n  \"description\": \"Save order to database\",\n  \"config\": {\n    \"operation\": \"INSERT\",\n    \"query\": \"INSERT INTO orders (customer_id, total, status) VALUES ($customerId, $total, $status) RETURNING *\",\n    \"parameters\": {\n      \"customerId\": \"{$context.customerId}\",\n      \"total\": \"{$context.total}\",\n      \"status\": \"{$context.status}\"\n    },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"{$output.rows} != null\", \"message\": \"Order not saved\" }\n        ]\n      },\n      \"transformation\": {\n        \"saveOrderResponse\": {\n          \"orderId\": \"{$output.rows}[0].id\",\n          \"createdAt\": \"{$output.rows}[0].created_at\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"order-db\",\n  \"action\": \"save_order\",\n  \"componentType\": \"database\",\n  \"description\": \"Save order to database\",\n  \"config\": {\n    \"operation\": \"INSERT\",\n    \"query\": \"INSERT INTO orders (customer_id, total, status) VALUES ($customerId, $total, $status) RETURNING *\",\n    \"parameters\": {\n      \"customerId\": \"{$context.customerId}\",\n      \"total\": \"{$context.total}\",\n      \"status\": \"{$context.status}\"\n    },\n    \"validation\": { \"fields\": [ { \"path\": \"customerId\", \"required\": true, \"type\": \"string\" }, { \"path\": \"total\", \"required\": true, \"type\": \"number\" }, { \"path\": \"status\", \"required\": true, \"type\": \"string\" } ] },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"{$output.rows} != null\", \"message\": \"Order not saved\" }\n        ]\n      },\n      \"transformation\": {\n        \"saveOrderResponse\": {\n          \"orderId\": \"{$output.rows}[0].id\",\n          \"createdAt\": \"{$output.rows}[0].created_at\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
@@ -652,7 +784,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"calculate_discount\",\n  \"componentType\": \"script\",\n  \"description\": \"Calculate discount based on customer tier\",\n  \"config\": {\n    \"expression\": \"(function($context){ const discount = $context.tier === 'gold' ? 0.2 : 0.1; return { discount: $context.subtotal * discount, tier: $context.tier }; })()\",\n    \"condition\": \"{$context.subtotal} != null && {$context.tier} != null\",\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"{$output.discount} >= 0\", \"message\": \"Invalid discount calculated\" }\n        ]\n      },\n      \"transformation\": {\n        \"calculateDiscountResponse\": {\n          \"discount\": \"{$output.discount}\",\n          \"tier\": \"{$output.tier}\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"calculate_discount\",\n  \"componentType\": \"script\",\n  \"description\": \"Calculate discount based on customer tier\",\n  \"config\": {\n    \"expression\": \"(function($context){ const discount = $context.tier === 'gold' ? 0.2 : 0.1; return { discount: $context.subtotal * discount, tier: $context.tier }; })()\",\n    \"condition\": \"{$context.subtotal} != null && {$context.tier} != null\", \"validation\": { \"fields\": [ { \"path\": \"subtotal\", \"required\": true, \"type\": \"number\" }, { \"path\": \"tier\", \"required\": true, \"type\": \"string\" } ] },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"{$output.discount} >= 0\", \"message\": \"Invalid discount calculated\" }\n        ]\n      },\n      \"transformation\": {\n        \"calculateDiscountResponse\": {\n          \"discount\": \"{$output.discount}\",\n          \"tier\": \"{$output.tier}\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
@@ -724,7 +856,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"order-queue\",\n  \"action\": \"enqueue_order\",\n  \"componentType\": \"sqs\",\n  \"description\": \"Push order to FIFO queue\",\n  \"config\": {\n    \"queueName\": \"order-queue.fifo\",\n    \"isFifo\": true,\n    \"groupId\": \"{$context.orderGroupId}\",\n    \"messageBody\": {\n      \"orderId\": \"{$context.orderId}\",\n      \"customerId\": \"{$context.customerId}\",\n      \"total\": \"{$context.total}\"\n    },\n    \"condition\": \"{$context.orderId} != null\",\n    \"output\": {\n      \"transformation\": {\n        \"enqueueOrderResponse\": {\n          \"messageId\": \"{$output.messageId}\",\n          \"sequenceNumber\": \"{$output.sequenceNumber}\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"order-queue\",\n  \"action\": \"enqueue_order\",\n  \"componentType\": \"sqs\",\n  \"description\": \"Push order to FIFO queue\",\n  \"config\": {\n    \"queueName\": \"order-queue.fifo\",\n    \"isFifo\": true,\n    \"groupId\": \"{$context.orderGroupId}\",\n    \"messageBody\": {\n      \"orderId\": \"{$context.orderId}\",\n      \"customerId\": \"{$context.customerId}\",\n      \"total\": \"{$context.total}\"\n    },\n    \"validation\": { \"fields\": [ { \"path\": \"orderId\", \"required\": true, \"type\": \"string\" }, { \"path\": \"customerId\", \"required\": true, \"type\": \"string\" }, { \"path\": \"total\", \"required\": true, \"type\": \"number\" } ] },\n    \"condition\": \"{$context.orderId} != null\",\n    \"output\": {\n      \"transformation\": {\n        \"enqueueOrderResponse\": {\n          \"messageId\": \"{$output.messageId}\",\n          \"sequenceNumber\": \"{$output.sequenceNumber}\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",

@@ -39,20 +39,8 @@ async function main() {
   logger.info({ dbType: db.type, connectTimeMs: Math.round(dbTime) }, 'Database connected');
 
   const appStartTime = performance.now();
-  const { app } = createApp(config, db);
+  const { app, drainExecutionQueue } = createApp(config, db);
   const appTime = performance.now() - appStartTime;
-
-  process.on('SIGTERM', async () => {
-    logger.info('SIGTERM received, shutting down');
-    await db.disconnect();
-    process.exit(0);
-  });
-
-  process.on('SIGINT', async () => {
-    logger.info('SIGINT received, shutting down');
-    await db.disconnect();
-    process.exit(0);
-  });
 
   const serverStartTime = performance.now();
   const server = Bun.serve({
@@ -74,6 +62,43 @@ async function main() {
     }, 
     `Server ready in ${Math.round(totalTime)}ms`
   );
+
+  // OpenShift/Kubernetes send SIGTERM, then SIGKILL once terminationGracePeriodSeconds
+  // (default 30s) elapses. Stop accepting connections first so nothing enqueues mid-drain,
+  // let in-flight requests finish, then flush queued execution records and close the DB.
+  // Keep the grace period above STOP_WAIT_MS + DRAIN_TIMEOUT_MS.
+  const STOP_WAIT_MS = 5_000;
+  const DRAIN_TIMEOUT_MS = 10_000;
+  let shuttingDown = false;
+
+  async function shutdown(signal: 'SIGTERM' | 'SIGINT'): Promise<void> {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info(`${signal} received, shutting down`);
+    try {
+      await Promise.race([server.stop(), Bun.sleep(STOP_WAIT_MS)]);
+      if (server.pendingRequests > 0) {
+        logger.warn(
+          { pendingRequests: server.pendingRequests },
+          'In-flight requests did not finish in time; closing connections',
+        );
+        await server.stop(true);
+      }
+      await drainExecutionQueue(DRAIN_TIMEOUT_MS);
+      await db.disconnect();
+    } catch (err) {
+      // Exit 0 regardless: a failed shutdown during a rollout must not look like a crash.
+      logger.error(
+        { error: err instanceof Error ? err.message : String(err) },
+        'Error during shutdown',
+      );
+    } finally {
+      process.exit(0);
+    }
+  }
+
+  process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
+  process.on('SIGINT', () => { void shutdown('SIGINT'); });
 }
 
 main().catch((err) => {

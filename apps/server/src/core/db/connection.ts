@@ -2,7 +2,6 @@ import type { DBAdapter } from './adapter.js';
 import { DatabaseError } from '@/lib/errors.js';
 import { createSqliteAdapter } from './adapters/sqlite-adapter.js';
 import { createPostgresAdapter } from './adapters/postgres-adapter.js';
-import { createMariaDbAdapter } from './adapters/mariadb-adapter.js';
 import { createOracleAdapter } from './adapters/oracle-adapter.js';
 import { createMongoDbAdapter } from './adapters/mongodb-adapter.js';
 import { createCouchbaseAdapter } from './adapters/couchbase-adapter.js';
@@ -14,8 +13,6 @@ const DEFAULT_SQLITE_PATH = '../../data/apiconfy.db';
 const SUPPORTED_SCHEMES = [
   'sqlite:<path>',
   'postgres://',
-  'mysql://',
-  'mariadb://',
   'oracle://',
   'mongodb://',
   'couchbase:// (+ CB_BUCKET)',
@@ -47,9 +44,6 @@ export async function createDBAdapter(): Promise<DBAdapter> {
   }
   if (databaseUrl.startsWith('postgres')) {
     return createPostgresAdapter(databaseUrl);
-  }
-  if (databaseUrl.startsWith('mysql://') || databaseUrl.startsWith('mariadb://')) {
-    return createMariaDbAdapter(databaseUrl);
   }
   if (databaseUrl.startsWith('oracle://')) {
     return createOracleAdapter(databaseUrl);

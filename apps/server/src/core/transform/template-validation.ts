@@ -16,10 +16,10 @@ const UNTERMINATED = 'Unterminated template — missing "}"';
 /**
  * Registration-time validation for template fields.
  *
- * `resolveTemplate` resolves a `{$...}` candidate only when it parses *and* its root exists in the
- * bag; anything else is left literal on the wire. Silent literality is the failure mode this
- * guards against: a typo like `{$ context.id}` ships as text and the upstream rejects the request,
- * instead of the registry rejecting the config.
+ * `resolveTemplate` resolves every `{$...}` candidate that parses — a path missing from the bag
+ * resolves to `null`, like a present null. Only malformed candidates stay literal on the wire, and
+ * that is the failure mode this guards against: a typo like `{$ context.id}` would ship as text
+ * and the upstream would reject the request, instead of the registry rejecting the config.
  *
  * Scans the same spans the runtime scans (`{$` to the first `}`) and reports every candidate that
  * cannot resolve. Values only — `resolveTemplate` never resolves object keys, so keys are skipped.

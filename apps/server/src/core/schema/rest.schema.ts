@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   AuthConfigSchema,
   OutputConfigSchema,
+  RequestValidationSchema,
   ResilienceConfigSchema,
   SSLConfigSchema,
   TimeoutConfigSchema,
@@ -14,6 +15,7 @@ const RequestConfigSchema = z.object({
   contentType: z.string().optional(),
   headers: z.record(z.string()).optional(),
   payloadTemplate: z.record(z.unknown()).optional(),
+  validation: RequestValidationSchema.optional(),
   auth: AuthConfigSchema.optional(),
   ssl: SSLConfigSchema.optional(),
   disableSSL: z.boolean().optional(),

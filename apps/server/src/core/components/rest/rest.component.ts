@@ -1,7 +1,7 @@
 import type {
   ComponentExecuteParams, ComponentExecuteResult, ComponentHandler, ComponentRequestSummary,
 } from '@/core/components/base.js';
-import type { RequestConfig } from '@/core/types.js';
+import type { RequestConfig, ValidationField } from '@/core/types.js';
 import { resolveTemplate } from '@/core/transform/index.js';
 import { mediaType, parseResponseBody } from '@/lib/http.js';
 import {
@@ -40,6 +40,10 @@ export class RestComponent implements ComponentHandler {
         { unsupported }
       );
     }
+  }
+
+  validationFields(config: Record<string, unknown>): ValidationField[] {
+    return (config.request as RequestConfig | undefined)?.validation?.fields ?? [];
   }
 
   async execute(params: ComponentExecuteParams): Promise<ComponentExecuteResult> {

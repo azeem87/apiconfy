@@ -14,12 +14,18 @@ import type { ExpressionScope } from './scope.js';
  * can be stored, so neither behaviour is reachable for a config that was accepted. Note this
  * differs from `expression.ts`'s tokenizer, which throws on an invalid path — templates are data,
  * predicates are control flow.
+ *
+ * A candidate that parses but whose path is missing resolves to `null` — identical to a present
+ * `null` value — so no `{$...}` text can leak into a payload, header or transformed output.
+ * Missing-field protection is explicit elsewhere: `request.validation.fields` rejects the invoke
+ * before dispatch, the uri guard rejects a non-string target, and predicates already read
+ * missing as null-like.
  */
 function resolveString(source: string, scope: ExpressionScope): unknown {
   const segments = parsePath(source);
   if (segments) {
     const lookup = lookupPath(scope, segments);
-    return lookup.found ? lookup.value : source;
+    return lookup.found && lookup.value !== undefined ? lookup.value : null;
   }
 
   let result = '';
@@ -40,7 +46,8 @@ function resolveString(source: string, scope: ExpressionScope): unknown {
     const embedded = parsePath(candidate);
     const lookup = embedded ? lookupPath(scope, embedded) : undefined;
     if (!lookup?.found || lookup.value === undefined) {
-      result += candidate;
+      // A malformed candidate stays literal; a missing path becomes null, like a present null.
+      result += embedded ? 'null' : candidate;
     } else {
       result += typeof lookup.value === 'object' ? JSON.stringify(lookup.value) : String(lookup.value);
     }
@@ -49,7 +56,7 @@ function resolveString(source: string, scope: ExpressionScope): unknown {
   return result;
 }
 
-/** Resolves templates without mutating them; unresolved paths remain literal. */
+/** Resolves templates without mutating them; missing paths resolve to null. */
 export function resolveTemplate(template: unknown, scope: ExpressionScope): unknown {
   if (typeof template === 'string') return resolveString(template, scope);
   if (Array.isArray(template)) return template.map((item) => resolveTemplate(item, scope));
