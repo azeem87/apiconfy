@@ -1,6 +1,6 @@
 import type { ExecutionStatus, ExecutionStep } from '@/core/types.js';
 
-export type DbType = 'sqlite' | 'postgres' | 'mysql' | 'oracle' | 'mongodb' | 'couchbase';
+export type DbType = 'sqlite' | 'postgres' | 'oracle' | 'mongodb' | 'couchbase';
 
 export interface ComponentRecord {
   id: string;

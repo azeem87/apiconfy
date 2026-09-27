@@ -52,7 +52,6 @@ This is non-negotiable — undocumented env vars cause confusion and deployment 
 Database Selection — DATABASE_URL scheme only
 Database engine is determined by `DATABASE_URL` scheme prefix.
 - `postgres://` → PostgreSQL
-- `mysql://` or `mariadb://` → MariaDB (MySQL protocol)
 - `oracle://` → Oracle
 - `mongodb://` → MongoDB
 - `couchbase://` → Couchbase (requires `CB_BUCKET` env var)

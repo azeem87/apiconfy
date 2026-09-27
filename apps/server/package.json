@@ -21,7 +21,6 @@
     "drizzle-orm": "^0.40.0",
     "hono": "^4.7.0",
     "mongodb": "^6.10.0",
-    "mysql2": "^3.11.0",
     "oracledb": "^6.0.0",
     "pino": "^9.6.0",
     "postgres": "^3.4.5",

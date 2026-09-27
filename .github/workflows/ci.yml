@@ -28,7 +28,7 @@ jobs:
       - run: pnpm run build
       - run: pnpm run test:coverage
 
-  # Fast engines on every push and PR — three parallel jobs, ~1.5-2.5 min each.
+  # Fast engines on every push and PR — two parallel jobs, ~1.5-2.5 min each.
   # Each job starts its own container, applies that engine's operator schema
   # script, then runs only that engine's parity suite.
   #
@@ -47,12 +47,6 @@ jobs:
             env:
               DATABASE_URL: postgres://postgres:postgres@localhost:5432/apiconfy_test
             ddl: psql "postgres://postgres:postgres@localhost:5432/apiconfy_test" -f apps/server/src/core/db/schema/sql/postgres.sql
-          - db: mariadb
-            image: mariadb:10.11
-            healthOptions: --health-cmd "healthcheck.sh --connect --innodb_initialized" --health-interval 5s --health-timeout 5s --health-retries 10
-            env:
-              DATABASE_URL: mysql://root:root@127.0.0.1:3306/apiconfy_test
-            ddl: mysql --host=127.0.0.1 --port=3306 --user=root --password=root apiconfy_test < apps/server/src/core/db/schema/sql/mariadb.sql
     services:
       db:
         image: ${{ matrix.image }}
@@ -60,11 +54,8 @@ jobs:
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: apiconfy_test
-          MARIADB_ROOT_PASSWORD: root
-          MARIADB_DATABASE: apiconfy_test
         ports:
           - 5432:5432   # postgres
-          - 3306:3306   # mariadb
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
