@@ -240,3 +240,21 @@ jobs:
         working-directory: apps/server
         env: ${{ matrix.env }}
         run: bun test __tests__/db/${{ matrix.db }}-adapter.test.ts --parallel --bail
+
+  # Single required status check for branch protection. Matrix job check names embed
+  # the full matrix env/args string, which is unstable to reference directly, so this
+  # job fans in every parallel job's result and fails the merge if any of them did.
+  # db-parity-heavy is skipped (not failed) on non-main/non-PR pushes, which is fine.
+  ci-success:
+    if: always()
+    needs: [quality, db-parity, db-parity-mongodb, db-parity-heavy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any required job failed or was cancelled
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" || "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more required CI jobs did not succeed:"
+            echo '${{ toJson(needs) }}'
+            exit 1
+          fi
+          echo "All required CI jobs succeeded (or were legitimately skipped)."
