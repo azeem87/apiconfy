@@ -91,7 +91,7 @@ describe('Phase 2 invocation API', () => {
     const headers = new Headers(calls[0].init?.headers);
     expect(headers.get('x-caller')).toBe('7');
     expect(headers.get('x-missing')).toBeNull();
-    expect(headers.get('x-embedded-missing')).toBeNull();
+    expect(headers.get('x-embedded-missing')).toBe('Bearer null');
     expect(headers.get('x-null')).toBeNull();
     expect(headers.get('x-execution-id')).toBe(body.meta.executionId);
     expect(headers.get('content-type')).toBe('application/json');
@@ -300,10 +300,11 @@ describe('Phase 2 invocation API', () => {
     expect((await recorded(unknown)).attempts).toBe(0);
     await db.updateComponent(row!.id, { componentType: 'rest' });
     await db.updateComponent(row!.id, {
-      config: { request: { uri: 'https://example.test/{$context.missing}', method: 'POST' } },
+      config: { request: { uri: '{$context.missing}', method: 'POST' } },
     });
     const unresolved = await (await invoke({ context: { id: 7 } })).json();
     expect(unresolved.error.code).toBe('TRANSFORMATION_ERROR');
+    expect(unresolved.error.message).toBe('Resolved uri is not a string');
     expect((await recorded(unresolved)).attempts).toBe(1);
     expect(calls).toHaveLength(0);
     await db.updateComponent(row!.id, { config: { request, output } });
@@ -453,20 +454,31 @@ describe('Phase 2 invocation API', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('fails fast on unresolved body template references and leaves caller data untouched', async () => {
+  it('resolves missing payload references to null and leaves caller data untouched', async () => {
     await register({
-      request: { ...request, payloadTemplate: { input: '{$context.id}', extra: '{$context.absent}' } },
+      request: {
+        ...request,
+        payloadTemplate: { input: '{$context.id}', extra: '{$context.absent}', label: 'id-{$context.absent}' },
+      },
     });
-    const failed = await invoke();
-    expect(failed.status).toBe(500);
-    expect((await failed.json()).error.code).toBe('TRANSFORMATION_ERROR');
-    expect(calls).toHaveLength(0);
+    const res = await invoke();
+    expect(res.status).toBe(200);
+    expect(JSON.parse(String(calls[0].init?.body)))
+      .toEqual({ input: 7, extra: null, label: 'id-null' });
 
-    await register({
-      request: { ...request, payloadTemplate: { input: '{$context.note}' } },
-    });
+    await register({ request: { ...request, payloadTemplate: { input: '{$context.note}' } } });
     const ok = await invoke({ context: { id: 7, note: '{$custom.token}' } });
     expect(ok.status).toBe(200);
-    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ input: '{$custom.token}' });
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ input: '{$custom.token}' });
+  });
+
+  it('maps missing response fields to null in transformed output', async () => {
+    await register({ request, output: {
+      transformation: {
+        out: { id: '{$output.id}', absent: '{$output.missing}', label: 'v-{$output.missing}' },
+      },
+    } });
+    const result = await (await invoke()).json();
+    expect(result.data).toEqual({ out: { id: 'I-1', absent: null, label: 'v-null' } });
   });
 });

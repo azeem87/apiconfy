@@ -87,6 +87,14 @@ Instead of writing integration-specific code, developers **register** a componen
 > examples later in this README remain planned (Phase 5).
 
 > **Note on `context`:** `context` is an arbitrary JSON payload — its shape is entirely up to the caller and the component definition's mapping rules. It is not a fixed schema. The `customer`/`id` fields used throughout these examples are illustrative only, to keep the examples concrete and easy to follow.
+>
+> **`$context` is internal.** The runtime wraps the caller's payload into its own execution bag and
+> references it as `{$context.*}` in templates, conditions and validation rules; the same wrapping
+> serves workflow execution (Phase 5). Callers send plain JSON — never `$context`, `$output` or
+> `$env` fields — and `output` inside the payload is reserved (`400`). Payload validation paths name
+> the payload's own fields (`userId`), never `context.userId`. A template reference to a missing
+> field resolves to `null` (identical to a present null), so placeholder text can never leak into a
+> payload or a transformed response.
 
 **Register a service:**
 
@@ -343,7 +351,7 @@ The runtime focuses on execution — components provide the capabilities.
 | **Package Manager** | pnpm |
 | **Framework** | Hono |
 | **ORM** | Drizzle |
-| **Databases** | SQLite (default), PostgreSQL |
+| **Databases** | SQLite (default), PostgreSQL, Oracle, MongoDB, Couchbase |
 | **Monorepo** | Turborepo |
 | **Design Goals** | Lightweight, extensible, plugin-based, developer friendly, cloud native, easy to deploy |
 
@@ -376,9 +384,21 @@ The server starts on `http://localhost:3000` with a health check at `GET /health
 
 **Database:** SQLite is the default for local development — no configuration needed. The database file is created automatically at `data/apiconfy.db` on first run. The `data/` directory is gitignored and only used locally. With `DATABASE_URL` unset or empty the server selects SQLite and logs a warning at startup: a single local file has no durability guarantees of its own, so for production prefer a **replicated SQLite** (Turso, LiteFS) or a server engine. The warning is informational — the process never refuses to start over it.
 
-**Current adapter status:** all five engines are implemented — SQLite (default), **PostgreSQL**, **Oracle**, **MongoDB** and **Couchbase**. The schema scripts ship in `apps/server/src/core/db/schema/` and are run **once by the operator** with an admin account: `psql -f apps/server/src/core/db/schema/sql/postgres.sql`, `sqlplus <admin>@//host:1521/service @apps/server/src/core/db/schema/oracle/oracle.sql`, `mongosh "<DATABASE_URL>" apps/server/src/core/db/schema/mongodb/mongodb.js`, or `CB_BUCKET=apiconfy bun run apps/server/src/core/db/schema/couchbase/couchbase.js`. The app never creates schema: on startup it probes for the required tables/collections/indexes and exits with the script path if any are missing. Couchbase transactions are intentionally not implemented — the config/CRUD writes that would use them are rare, while the hot paths (invoke, workflow reads) are key-value reads (see the plan's Step 7 notes). A per-engine prerequisite table lands with the Phase 3 README work.
+**Supported databases (Phase 3 complete):** the engine is selected by the `DATABASE_URL` scheme — a named engine is never bypassed in favour of SQLite, and an unknown scheme refuses to start.
 
-**Production / Cloud:** set `DATABASE_URL` to the engine you run — today `postgres://user:pass@host:5432/db`, with `oracle://`, `mongodb://` and `couchbase://` (+ `CB_BUCKET`) arriving in Phase 3. A named engine is never bypassed in favour of SQLite; an unknown scheme refuses to start. **Graceful shutdown:** on `SIGTERM` the server stops accepting connections, lets in-flight requests finish, flushes queued execution records (bounded 10s drain), then closes the database — keep `terminationGracePeriodSeconds` above ~15s (the default 30s fits) and prefer a `preStop` sleep so endpoint removal doesn't cut off traffic.
+| Engine | `DATABASE_URL` | Notes |
+|---|---|---|
+| **SQLite** (default) | unset/empty, or `sqlite:./data/apiconfy.db` (or `SQLITE_PATH`) | Local-development engine and the only one that **self-creates** its schema; a single local file — for production prefer a replicated SQLite (Turso, LiteFS) or a server engine |
+| **PostgreSQL** | `postgres://user:pass@host:5432/apiconfy` | Drizzle + postgres.js; run the DDL once: `psql -f apps/server/src/core/db/schema/sql/postgres.sql` |
+| **Oracle** | `oracle://user:pass@host:1521/ORCL` | `oracledb` driver with raw SQL; run `sqlplus <admin>@//host:1521/service @apps/server/src/core/db/schema/oracle/oracle.sql` |
+| **MongoDB** | `mongodb://user:pass@host:27017/apiconfy` | Native driver; transactions require a replica set (CI runs a single-node `rs.initiate`); run `mongosh "<DATABASE_URL>" apps/server/src/core/db/schema/mongodb/mongodb.js` |
+| **Couchbase** | `couchbase://localhost` + `CB_BUCKET` (+ `CB_USER`/`CB_PASS`) | SDK with KV inserts and N1QL by-id reads; run `CB_BUCKET=apiconfy bun run apps/server/src/core/db/schema/couchbase/couchbase.js`. Transactions are intentionally not implemented |
+
+The app never creates schema on a named engine: on startup it **probes** for the required tables/collections/indexes and exits with the missing-object list, the script path and the GitHub URL when any are absent.
+
+**Execution log saving is optional.** Per-invocation audit rows in `execution_logs` are written only when `ENABLE_DB_TRANSACTION_LOGS=true` (off by default — the startup probe then treats the table as optional). When you enable it on a named engine, uncomment the `execution_logs` block in that engine's schema script before running it. **Retention:** the purge is designed and scheduled for **Phase 5** (`plans/multi-db-strategy.md` → "Execution Retention & Purge"): a background task (once at startup, then every 24h) deletes `execution_logs` then `executions` older than **15 days** from `created_at` — configurable via `EXECUTION_LOG_RETENTION_DAYS` (default `15`) — best-effort, never blocking execution. Until it ships, the tables grow with traffic and operators own cleanup.
+
+**Production / Cloud:** set `DATABASE_URL` to the engine you run — `postgres://`, `oracle://`, `mongodb://` or `couchbase://` (+ `CB_BUCKET`). A named engine is never bypassed in favour of SQLite; an unknown scheme refuses to start. **Graceful shutdown:** on `SIGTERM` the server stops accepting connections, lets in-flight requests finish, flushes queued execution records (bounded 10s drain), then closes the database — keep `terminationGracePeriodSeconds` above ~15s (the default 30s fits) and prefer a `preStop` sleep so endpoint removal doesn't cut off traffic.
 
 ---
 
@@ -392,11 +412,12 @@ The server starts on `http://localhost:3000` with a health check at `GET /health
 | `LOG_LEVEL` | `info` | Log level for pino (`trace`, `debug`, `info`, `warn`, `error`, `fatal`) |
 | `API_KEY` | *(unset)* | Bearer token for `/api/*` routes. If unset, all routes are open (warning logged at startup) |
 | `REQUIRE_API_KEY` | `false` | When `true`, server refuses to start if `API_KEY` is missing. Set this in production |
-| `DATABASE_URL` | *(unset → SQLite)* | Selects the database engine by URL scheme. Implemented today: `postgres://` (stub until Phase 3). Phase 3 adds `oracle://`, `mongodb://`, `couchbase://` (+ `CB_BUCKET`), and the explicit `sqlite:` scheme. Unset or empty → SQLite, with a local-development warning logged at startup |
-| `SQLITE_PATH` | `../../data/apiconfy.db` | SQLite database file path when no engine is selected — and, from Phase 3, when the `sqlite:` URL omits a path |
+| `DATABASE_URL` | *(unset → SQLite)* | Selects the database engine by URL scheme: `postgres://`, `oracle://`, `mongodb://`, `couchbase://` (+ `CB_BUCKET`) or the explicit `sqlite:` scheme. Unset or empty → SQLite, with a local-development warning logged at startup; an unknown scheme refuses to start |
+| `SQLITE_PATH` | `../../data/apiconfy.db` | SQLite database file path when no engine is selected — or when the `sqlite:` URL omits a path |
 | `CB_BUCKET` | *(unset)* | Couchbase bucket name — required whenever `DATABASE_URL` uses `couchbase://` |
 | `CB_USER` | `Administrator` | Couchbase username, used when the `couchbase://` URL carries none |
 | `CB_PASS` | *(unset)* | Couchbase password, used when the `couchbase://` URL carries none — required in that case, or the adapter refuses to start |
+| `ENABLE_DB_TRANSACTION_LOGS` | `false` | When `true`, writes the optional `execution_logs` audit rows (the table must exist — uncomment its block in the engine's schema script before running it). Off by default; no automatic retention/purge yet (Phase 5) |
 
 **Security note:** If `API_KEY` is not set, a warning is logged at startup and all `/api/*` routes are accessible without authentication. For production deployments, always set `API_KEY` and `REQUIRE_API_KEY=true`.
 
@@ -444,6 +465,9 @@ show the same `validation` block in their own config sections.
   and `{}` count as present. Failures return `400 VALIDATION_FAILED` with a Zod-style
   `details` array of `{ path, message }`, zero upstream requests and `attempts: 0`; a
   custom `message` per field overrides the generated one.
+- Caller payloads never contain runtime fields: `output` is reserved (`400`), validation paths are
+  payload-relative, and the internal `{$context.*}` wrapping is shared with workflow execution.
+  Missing template references resolve to `null` instead of placeholder text.
 - `GET /api/v1/executions/:executionId` retrieves sanitized service execution state,
   including failed transformed output and actual dispatch attempts (zero before dispatch).
   Recording is queued off the response path (best-effort, not durable workflow recovery),
@@ -457,25 +481,28 @@ show the same `validation` block in their own config sections.
   audit rows and logs, including upstream echoes. Stored references and existing
   retrieval masking behavior are preserved.
 
-**Deployment caution:** outbound SSRF protection, body-size limits and audit retention
-are not part of Phase 2. Restrict registration access and outbound network connectivity.
+**Deployment caution:** outbound SSRF protection, body-size limits and audit
+retention/purge remain future work (retention is planned with Phase 5). Restrict
+registration access and outbound network connectivity.
 
 ---
 
 ## Project Status
 
-🚧 **Early Development — Phase 2 Complete**
+🚧 **Early Development — Phase 3 Complete**
 
 - ✅ Phase 0 (Foundation): monorepo scaffolded, Hono API server running, SQLite DB adapter operational, PostgreSQL adapter seam, CI pipeline active.
 - ✅ Phase 1 (Component Registry): register, list, get, and delete component definitions via REST API.
 - ✅ Phase 2: REST invocation, shared expressions/response pipeline, retry/timeout,
   and execution lookup. Verified with real HTTP integration and
   executable Postman scenarios, alongside the Phase 1 regression suite.
+- ✅ Phase 3 (Multi-DB): PostgreSQL, Oracle, MongoDB and Couchbase adapters pass the
+  shared parity suite alongside SQLite.
 
 See the [Implementation Roadmap](plans/roadmap.md) for phase-by-phase details.
 
-**Next milestone:** Phase 3 — outbound request safety and
-the separately gated database-adapter work.
+**Next milestone:** Phase 4 — auth & connection handling (`plans/auth-proxy.md`), then
+Phase 5 workflows.
 
 ---
 

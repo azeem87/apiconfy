@@ -26,13 +26,19 @@ describe('resolveTemplate', () => {
   });
 
   it.each([
-    '{$context.missing}', '{$output.missing}', 'a-{$context.missing}-b', '{$env.NAME}',
+    ['{$context.missing}', null], ['{$output.missing}', null], ['{$env.NAME}', null],
+    ['a-{$context.missing}-b', 'a-null-b'], ['{$context.id}/{$context.missing}', '12345/null'],
+  ])('resolves missing path %s to its null equivalent', (source, expected) => {
+    expect(resolveTemplate(source, scope)).toEqual(expected);
+  });
+
+  it.each([
     '{$..name}', '{$[*]}', '{$context.items[*]}', '{$context.items[1:3]}',
     '{$context.items[?(@.sku)]}', '{$context.items[0]sku}', '{$context.}', '{$context..id}',
     '{$context.items[0', 'v={$context.items[*]}', 'v={$context.items[0',
     'v={$context.items["sku"]}', 'v={$context.items[0].}',
     '{$context.id]}', 'v={$context.items[0]]}',
-  ])('preserves unresolved or malformed template %s', (source) => {
+  ])('preserves malformed template %s', (source) => {
     expect(resolveTemplate(source, scope)).toBe(source);
   });
 
@@ -42,7 +48,6 @@ describe('resolveTemplate', () => {
     expect(resolveTemplate('v={$context.obj}', scope)).toBe('v={"a":1}');
     expect(resolveTemplate('v={$context.items}', scope)).toBe('v=[{"sku":"A-1"}]');
     expect(resolveTemplate('v={$context.none},{$context.flag}', scope)).toBe('v=null,false');
-    expect(resolveTemplate('{$context.id}/{$context.missing}', scope)).toBe('12345/{$context.missing}');
   });
 
   it('recurses without mutating the template or scope', () => {
