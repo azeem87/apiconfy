@@ -102,7 +102,7 @@ describe('Phase 2 invocation API', () => {
     expect(JSON.parse(log.responseData!)).toEqual({ id: 'I-1' });
   });
 
-  it.each([{}, null, { context: [] }, { context: {}, config: {} }, { context: { output: {} } }, '{broken'])(
+  it.each([{}, null, { context: [] }, { context: {}, config: {} }, '{broken'])(
     'returns complete 400 envelope for bad invocation %#', async body => {
       const res = await invoke(body);
       expect(res.status).toBe(400);
@@ -323,7 +323,6 @@ describe('Phase 2 invocation API', () => {
       handlers: createCoreHandlerRegistry().register({
         componentType: 'acme', displayName: 'Acme',
         async execute(params) {
-          expect(params.context.context.output).toEqual({});
           return { data: { id: params.context.context.id } };
         },
       }),
@@ -480,5 +479,178 @@ describe('Phase 2 invocation API', () => {
     } });
     const result = await (await invoke()).json();
     expect(result.data).toEqual({ out: { id: 'I-1', absent: null, label: 'v-null' } });
+  });
+});
+
+describe('Phase 3.5 script component', () => {
+  let db: DBAdapter;
+  let app: Hono;
+  let drainExecutionQueue: () => Promise<void>;
+  let calls: Array<{ uri: string; init?: RequestInit }>;
+  let upstream: (input: string, init?: RequestInit) => Promise<Response>;
+
+  const build = () => {
+    const created = createApp({ ...appConfig }, db, {
+      fetch: (async (input, init) => {
+        calls.push({ uri: String(input), init });
+        return upstream(String(input), init);
+      }) as typeof fetch,
+    });
+    app = created.app;
+    drainExecutionQueue = created.drainExecutionQueue;
+  };
+
+  const post = (url: string, body: unknown) => app.request(url, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+
+  const registerScript = async (
+    action: string, config: Record<string, unknown>, condition?: string
+  ) => {
+    const created = await post('/api/v1/services', {
+      service: 'scripts', action, componentType: 'script', config, condition,
+    });
+    expect(created.status).toBe(201);
+    return created.json();
+  };
+
+  const invokeScript = (action: string, context: Record<string, unknown> = {}) =>
+    post(`/api/v1/services/scripts/${action}/invoke`, { context });
+
+  const recordOf = async (result: any) => {
+    await drainExecutionQueue();
+    const res = await app.request(`/api/v1/executions/${result.meta.executionId}`);
+    expect(res.status).toBe(200);
+    return (await res.json()).data;
+  };
+
+  beforeEach(async () => {
+    db = createSqliteAdapter(':memory:');
+    await db.connect();
+    calls = [];
+    upstream = async () => json({ unused: true });
+    build();
+  });
+  afterEach(async () => { await db.disconnect(); });
+
+  it('invokes a script — the contribution delta is the response, the return value is ignored', async () => {
+    await registerScript('add', { expression: 'function ($c) { $c.sum = $c.a + $c.b; return 42; }' });
+    const res = await invokeScript('add', { a: 2, b: 3 });
+
+    expect(res.status).toBe(200);
+    const result = await res.json();
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ sum: 5 });
+    expect(calls).toHaveLength(0);
+
+    const record = await recordOf(result);
+    expect(record.status).toBe('COMPLETED');
+    expect(record.result).toEqual({ sum: 5 });
+    expect(record.attempts).toBe(1);
+  });
+
+  it('returns modified existing variables in the delta', async () => {
+    await registerScript('verify', {
+      expression: 'function ($c) { $c.customer = { ...$c.customer, verified: true }; }',
+    });
+    const result = await (await invokeScript('verify', { customer: { id: 'C-1' } })).json();
+
+    expect(result.data).toEqual({ customer: { id: 'C-1', verified: true } });
+  });
+
+  it('skips without spawning a worker when the condition is false', async () => {
+    await registerScript(
+      'skippy', { expression: 'function ($c) { while (true) {} }' }, '{$context.run} == true'
+    );
+    const result = await (await invokeScript('skippy', { run: false })).json();
+
+    expect(result).toMatchObject({ success: true, data: null, skippedExecution: true });
+    expect((await recordOf(result)).attempts).toBe(0);
+  });
+
+  it('maps a thrown expression to 500 SCRIPT_ERROR without leaking the message', async () => {
+    await registerScript('boom', { expression: 'function ($c) { throw new Error("secret-do-not-leak"); }' });
+    const res = await invokeScript('boom');
+
+    expect(res.status).toBe(500);
+    const result = await res.json();
+    expect(result.error.code).toBe('SCRIPT_ERROR');
+    expect(result.error.details).toEqual({ reason: 'threw' });
+    expect(JSON.stringify(result)).not.toContain('secret-do-not-leak');
+    expect((await recordOf(result)).status).toBe('FAILED');
+  });
+
+  it('maps a non-serializable contribution to SCRIPT_ERROR', async () => {
+    await registerScript('big', { expression: 'function ($c) { $c.big = 10n; }' });
+    const res = await invokeScript('big');
+
+    expect(res.status).toBe(500);
+    expect((await res.json()).error.details).toEqual({ reason: 'not-serializable' });
+  });
+
+  it('kills an infinite loop at timeout.response with 504 and one attempt', async () => {
+    await registerScript('spin', {
+      expression: 'function ($c) { while (true) {} }',
+      timeout: { response: 25 },
+    });
+    const res = await invokeScript('spin');
+
+    expect(res.status).toBe(504);
+    const result = await res.json();
+    expect(result.error.code).toBe('TIMEOUT');
+    expect((await recordOf(result)).attempts).toBe(1);
+  });
+
+  it('calls another service through the bridge — implicit $context, nested execution row', async () => {
+    upstream = async () => json({ id: 'I-1' });
+    await post('/api/v1/services', {
+      service: 'items', action: 'create', componentType: 'rest',
+      config: { request: { uri: 'https://example.test/items/{$context.origin}', method: 'POST' } },
+    });
+    await registerScript('nested', {
+      expression: 'async function ($c) { const r = await apiconfy.invoke("items", "create"); '
+        + '$c.nested = { ok: r.success, id: r.data?.id, executionId: r.meta?.executionId }; }',
+    });
+
+    const result = await (await invokeScript('nested', { origin: 'C-1' })).json();
+    expect(result.data).toEqual({ nested: { ok: true, id: 'I-1', executionId: expect.any(String) } });
+
+    // The nested invoke received the script's live $context implicitly.
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ origin: 'C-1' });
+    // Two rows: the outer script and the nested service execution.
+    const nestedId = (result.data as { nested: { executionId: string } }).nested.executionId;
+    await drainExecutionQueue();
+    const nested = await (await app.request(`/api/v1/executions/${nestedId}`)).json();
+    expect(nested.data.service).toBe('items');
+    expect(nested.data.status).toBe('COMPLETED');
+  });
+
+  it('returns the NOT_IMPLEMENTED envelope for executeWorkflow', async () => {
+    await registerScript('wf', {
+      expression: 'async function ($c) { $c.wf = await apiconfy.executeWorkflow("onboarding"); }',
+    });
+    const result = await (await invokeScript('wf')).json();
+
+    expect(result.success).toBe(true);
+    expect(result.data.wf.success).toBe(false);
+    expect(result.data.wf.error.code).toBe('NOT_IMPLEMENTED');
+  });
+
+  it('rejects output, $env. references and REST-only keys at registration', async () => {
+    const cases: Array<Record<string, unknown>> = [
+      { expression: 'function ($c) {}', output: { key: 'x' } },
+      { expression: 'function ($c) {}', output: { transformation: { x: '{$output}' } } },
+      { expression: 'function ($c) { return "{$env.SECRET}"; }' },
+      { expression: 'function ($c) {}', uri: 'https://x.test' },
+      { expression: 'function ($c) {}', resilience: { retryCount: 1 } },
+      { expression: 'function ($c) {}', timeout: { connect: 1000 } },
+    ];
+    for (const config of cases) {
+      const res = await post('/api/v1/services', {
+        service: 'scripts', action: 'bad', componentType: 'script', config,
+      });
+      expect(res.status, JSON.stringify(config)).toBe(400);
+      expect((await res.json()).error.code).toBe('VALIDATION_FAILED');
+    }
   });
 });

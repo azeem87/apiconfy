@@ -55,7 +55,7 @@ export class DefaultRuntimeExecutor implements RuntimeExecutor {
     const { service, action, context, executionId, startedAtMs } = params;
     const record = await this.options.lookup.findByKey(service, action);
     if (!record) throw new NotFoundError(`Service not found: ${service}/${action}`);
-    const bag: ExecutionContext = { context: { ...context, output: {} }, env: {}, output: null };
+    const bag: ExecutionContext = { context: { ...context }, env: {}, output: null };
     let config = record.config;
     let attempts = 0;
     const secrets = collectSensitiveValues(context);

@@ -114,3 +114,10 @@ export class UnsupportedOperationError extends AppError {
     super(message, 'UNSUPPORTED_OPERATION', 501, details);
   }
 }
+
+/** Phase 3.5 — a local script that could not be evaluated or whose result cannot be carried. */
+export class ScriptError extends AppError {
+  constructor(reason: string) {
+    super(`Script evaluation failed (${reason})`, 'SCRIPT_ERROR', 500, { reason });
+  }
+}

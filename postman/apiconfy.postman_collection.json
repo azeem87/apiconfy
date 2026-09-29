@@ -263,10 +263,6 @@
                   "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-simple/health/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "VALIDATION_FAILED before execution. Do not expect a persisted invocation for an invalid request body." }
                 },
                 {
-                  "name": "400 — reserved context.output",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-simple/health/invoke", "body": { "mode": "raw", "raw": "{ \"context\": { \"output\": {} } }" }, "description": "VALIDATION_FAILED: output is reserved even when empty." }
-                },
-                {
                   "name": "Register validation failure",
                   "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services", "body": { "mode": "raw", "raw": "{ \"service\": \"phase2-errors\", \"action\": \"validation\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{base_url}}/health\", \"method\": \"GET\" }, \"output\": { \"validation\": { \"rules\": [{ \"expression\": \"false\", \"message\": \"Intentional demo validation failure\" }] }, \"transformation\": { \"validationFailureResponse\": { \"upstream\": \"{$output}\" } } } } }" }, "description": "Expected 201/200. Valid predicate intentionally fails after local health response." }
                 },
@@ -750,26 +746,38 @@
     },
     {
       "name": "Script",
-      "description": "Future Phase 11 design examples, preserved for reference. Script is not a registered handler in Phase 2: current registration returns 400 UNKNOWN_COMPONENT_TYPE, not script field-validation errors.",
+      "description": "Phase 3.5 script component — mutation contract: the script writes `$context` and the changed variables become the response data; `return` values are ignored. Simple and Complex examples run in order against deterministic local upstreams; Error Cases lead with the expected status in the name.",
       "item": [
         {
           "name": "Simple Examples",
           "item": [
             {
-              "name": "Register — simple script component",
+              "name": "Register simple script",
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"calculate_total\",\n  \"componentType\": \"script\",\n  \"description\": \"Calculate order total with tax\",\n  \"config\": {\n    \"expression\": \"(function($context){ return { total: $context.subtotal * 1.1 }; })()\",\n    \"output\": {\n      \"transformation\": {\n        \"calculateTotalResponse\": {\n          \"total\": \"{$output.total}\"\n        }\n      }\n    }\n  }\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/v1/services",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "v1", "services"]
-                },
-                "description": "Future Phase 11 script design with calculateTotalResponse. Not runnable in Phase 2; current registration returns UNKNOWN_COMPONENT_TYPE."
+                "body": { "mode": "raw", "raw": "{ \"service\": \"calc-service\", \"action\": \"add_numbers\", \"componentType\": \"script\", \"config\": { \"expression\": \"function ($context) { $context.sum = $context.a + $context.b; }\" } }" },
+                "url": { "raw": "{{base_url}}/api/v1/services", "host": ["{{base_url}}"], "path": ["api", "v1", "services"] },
+                "description": "Minimal script config — expression only. Expected 201."
+              }
+            },
+            {
+              "name": "Invoke simple script",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{ \"context\": { \"a\": 2, \"b\": 3 } }" },
+                "url": { "raw": "{{base_url}}/api/v1/services/calc-service/add_numbers/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "add_numbers", "invoke"] },
+                "description": "Expected 200 with data.sum = 5 — the contribution delta is the response."
+              }
+            },
+            {
+              "name": "Get script execution",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": { "raw": "{{base_url}}/api/v1/executions/{{execution_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "executions", "{{execution_id}}"] },
+                "description": "Expected 200, COMPLETED, attempts=1."
               }
             }
           ]
@@ -778,20 +786,52 @@
           "name": "Complex Examples",
           "item": [
             {
-              "name": "Register — script with condition and validation",
+              "name": "Register nested-call target (REST echo)",
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"calculate_discount\",\n  \"componentType\": \"script\",\n  \"description\": \"Calculate discount based on customer tier\",\n  \"config\": {\n    \"expression\": \"(function($context){ const discount = $context.tier === 'gold' ? 0.2 : 0.1; return { discount: $context.subtotal * discount, tier: $context.tier }; })()\",\n    \"condition\": \"{$context.subtotal} != null && {$context.tier} != null\", \"validation\": { \"fields\": [ { \"path\": \"subtotal\", \"required\": true, \"type\": \"number\" }, { \"path\": \"tier\", \"required\": true, \"type\": \"string\" } ] },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          { \"expression\": \"{$output.discount} >= 0\", \"message\": \"Invalid discount calculated\" }\n        ]\n      },\n      \"transformation\": {\n        \"calculateDiscountResponse\": {\n          \"discount\": \"{$output.discount}\",\n          \"tier\": \"{$output.tier}\"\n        }\n      }\n    }\n  }\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/v1/services",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "v1", "services"]
-                },
-                "description": "Future Phase 11 script condition/validation design with calculateDiscountResponse. Current registration returns UNKNOWN_COMPONENT_TYPE."
+                "body": { "mode": "raw", "raw": "{ \"service\": \"echo-service\", \"action\": \"echo\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{upstream_url}}/echo\", \"method\": \"POST\" } } }" },
+                "url": { "raw": "{{base_url}}/api/v1/services", "host": ["{{base_url}}"], "path": ["api", "v1", "services"] },
+                "description": "Plain REST target for the script's bridge call. Expected 201."
+              }
+            },
+            {
+              "name": "Register complex script",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"calculate_total\",\n  \"componentType\": \"script\",\n  \"description\": \"Marks an audit variable, calls echo with the implicit $context, then computes the total\",\n  \"condition\": \"{$context.skip} != true\",\n  \"metaData\": { \"owner\": \"platform-team\" },\n  \"config\": {\n    \"expression\": \"async function ($context) { $context.auditMarker = { touchedBy: 'calc-script' }; const echoed = await apiconfy.invoke('echo-service', 'echo'); $context.calculateTotalResponse = { total: $context.subtotal * 1.1, label: `Order for ${$context?.customer?.name ?? 'anonymous'}`, echoOk: echoed?.success === true, echoExecution: echoed?.meta?.executionId }; $context.customer = { ...$context.customer, verified: true }; }\"\n  }\n}" },
+                "url": { "raw": "{{base_url}}/api/v1/services", "host": ["{{base_url}}"], "path": ["api", "v1", "services"] },
+                "description": "Every supported option: description, metaData, condition, async/await + bridge call + template literals + optional chaining + add + modify. Expected 201."
+              }
+            },
+            {
+              "name": "Invoke complex script",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{ \"context\": { \"subtotal\": 100, \"customer\": { \"id\": \"C-1\", \"name\": \"Ada\" } } }" },
+                "url": { "raw": "{{base_url}}/api/v1/services/calc-service/calculate_total/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "calculate_total", "invoke"] },
+                "description": "Expected 200: total 110, label \"Order for Ada\", echoOk true, customer.verified true, auditMarker present; the nested echo call is a separate execution row."
+              }
+            },
+            {
+              "name": "Invoke complex script — condition false",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{ \"context\": { \"skip\": true } }" },
+                "url": { "raw": "{{base_url}}/api/v1/services/calc-service/calculate_total/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "calculate_total", "invoke"] },
+                "description": "Expected 200, skippedExecution: true, data null, attempts=0."
+              }
+            },
+            {
+              "name": "Get complex execution",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": { "raw": "{{base_url}}/api/v1/executions/{{execution_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "executions", "{{execution_id}}"] },
+                "description": "Expected 200 — the latest invoke's record (condition-false skip)."
               }
             }
           ]
@@ -800,20 +840,113 @@
           "name": "Error Cases",
           "item": [
             {
-              "name": "Validation error — missing expression",
+              "name": "400 — expression syntax invalid",
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"bad_script\",\n  \"componentType\": \"script\",\n  \"config\": {\n    \"condition\": \"{$context.id} != null\"\n  }\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/v1/services",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "v1", "services"]
-                },
-                "description": "Future Phase 11 missing-expression case. Phase 2 returns 400 UNKNOWN_COMPONENT_TYPE before script field validation."
+                "body": { "mode": "raw", "raw": "{ \"service\": \"calc-service\", \"action\": \"bad_syntax\", \"componentType\": \"script\", \"config\": { \"expression\": \"function ($context) { return ;;\" } } }" },
+                "url": { "raw": "{{base_url}}/api/v1/services", "host": ["{{base_url}}"], "path": ["api", "v1", "services"] },
+                "description": "VALIDATION_FAILED, path expression — syntax is compile-checked at registration."
+              }
+            },
+            {
+              "name": "400 — $env. reference in expression",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{ \"service\": \"calc-service\", \"action\": \"bad_env\", \"componentType\": \"script\", \"config\": { \"expression\": \"function ($context) { return '{$env.SECRET}'; }\" } }" },
+                "url": { "raw": "{{base_url}}/api/v1/services", "host": ["{{base_url}}"], "path": ["api", "v1", "services"] },
+                "description": "VALIDATION_FAILED: $env. references are banned inside a script expression."
+              }
+            },
+            {
+              "name": "400 — output block rejected for scripts",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{ \"service\": \"calc-service\", \"action\": \"bad_output\", \"componentType\": \"script\", \"config\": { \"expression\": \"function ($context) { }\", \"output\": { \"key\": \"x\" } } }" },
+                "url": { "raw": "{{base_url}}/api/v1/services", "host": ["{{base_url}}"], "path": ["api", "v1", "services"] },
+                "description": "VALIDATION_FAILED: scripts have no output block — validate and reshape in code."
+              }
+            },
+            {
+              "name": "Register non-function script",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{ \"service\": \"calc-service\", \"action\": \"non_function\", \"componentType\": \"script\", \"config\": { \"expression\": \"42\" } }" },
+                "url": { "raw": "{{base_url}}/api/v1/services", "host": ["{{base_url}}"], "path": ["api", "v1", "services"] },
+                "description": "Expected 201 — `42` compiles; the function check happens in the worker at invoke time."
+              }
+            },
+            {
+              "name": "500 — expression is not a function",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                "url": { "raw": "{{base_url}}/api/v1/services/calc-service/non_function/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "non_function", "invoke"] },
+                "description": "SCRIPT_ERROR with details.reason = \"not-a-function\"."
+              }
+            },
+            {
+              "name": "Register throwing script",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{ \"service\": \"calc-service\", \"action\": \"throwing\", \"componentType\": \"script\", \"config\": { \"expression\": \"function ($context) { throw new Error('demo throw'); }\" } }" },
+                "url": { "raw": "{{base_url}}/api/v1/services", "host": ["{{base_url}}"], "path": ["api", "v1", "services"] },
+                "description": "Expected 201."
+              }
+            },
+            {
+              "name": "500 — expression threw",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                "url": { "raw": "{{base_url}}/api/v1/services/calc-service/throwing/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "throwing", "invoke"] },
+                "description": "SCRIPT_ERROR with details.reason = \"threw\"; the message never reaches the wire."
+              }
+            },
+            {
+              "name": "Register non-serializable script",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{ \"service\": \"calc-service\", \"action\": \"big_int\", \"componentType\": \"script\", \"config\": { \"expression\": \"function ($context) { $context.big = 10n; }\" } }" },
+                "url": { "raw": "{{base_url}}/api/v1/services", "host": ["{{base_url}}"], "path": ["api", "v1", "services"] },
+                "description": "Expected 201."
+              }
+            },
+            {
+              "name": "500 — contribution not serializable",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                "url": { "raw": "{{base_url}}/api/v1/services/calc-service/big_int/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "big_int", "invoke"] },
+                "description": "SCRIPT_ERROR with details.reason = \"not-serializable\"."
+              }
+            },
+            {
+              "name": "Register looping script",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{ \"service\": \"calc-service\", \"action\": \"looping\", \"componentType\": \"script\", \"config\": { \"expression\": \"function ($context) { while (true) {} }\", \"timeout\": { \"response\": 25 } } }" },
+                "url": { "raw": "{{base_url}}/api/v1/services", "host": ["{{base_url}}"], "path": ["api", "v1", "services"] },
+                "description": "Expected 201 — timeout.response is the hard deadline."
+              }
+            },
+            {
+              "name": "504 — infinite loop",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                "url": { "raw": "{{base_url}}/api/v1/services/calc-service/looping/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "looping", "invoke"] },
+                "description": "TIMEOUT: the worker is terminated at ~timeout.response; attempts=1."
               }
             }
           ]

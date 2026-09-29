@@ -146,7 +146,7 @@ describe('ComponentRegistryService', () => {
       expect(err.statusCode).toBe(400);
       expect(err.code).toBe('UNKNOWN_COMPONENT_TYPE');
       const details = err.details as Record<string, unknown>;
-      expect(details.supported).toEqual(['rest']);
+      expect(details.supported).toEqual(['rest', 'script']);
     });
 
     it('rejects a config that fails the type-specific schema', async () => {
