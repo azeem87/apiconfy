@@ -92,3 +92,37 @@ describe('REST TLS (real handshakes)', () => {
     });
   });
 });
+
+describe('ssl config is read at invoke time', () => {
+  it('a config change takes effect on the next invocation without a restart', async () => {
+    const { createApp } = await import('@/app.js');
+    const { createSqliteAdapter } = await import('@/core/db/adapters/sqlite-adapter.js');
+    const db = createSqliteAdapter(':memory:');
+    await db.connect();
+    const { app } = createApp({ port: 0, logLevel: 'silent' }, db);
+    const api = (path: string, method: string, body?: unknown) => app.request(`/api/v1/services${path}`, {
+      method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const config = (ssl: unknown) => ({ request: { uri: url(plain), method: 'GET', ssl } });
+    try {
+      const created = await (await api('', 'POST', {
+        service: 'tls', action: 'get', componentType: 'rest', config: config({ ca: [F.CA_CERT] }),
+      })).json();
+      let version = created.data.version as number;
+      const invoke = async () => (await api('/tls/get/invoke', 'POST', { context: {} })).status;
+      const update = async (ssl: unknown) => {
+        const res = await api('/tls/actions/get', 'PUT', { componentType: 'rest', config: config(ssl), version });
+        expect(res.status).toBe(200);
+        version = (await res.json()).data.version;
+      };
+
+      expect(await invoke()).toBe(200);
+      await update({ ca: [F.SELF_SIGNED_CERT] });
+      expect(await invoke()).toBe(502);
+      await update({ ca: [F.CA_CERT] });
+      expect(await invoke()).toBe(200);
+    } finally {
+      await db.disconnect();
+    }
+  });
+});
