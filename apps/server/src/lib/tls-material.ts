@@ -3,6 +3,7 @@ import { X509Certificate } from 'node:crypto';
 const PEM_CERT = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/;
 const PEM_KEY = /-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----/;
 const PEM_CERT_GLOBAL = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g;
+const LONG_BASE64_LINE = /^[A-Za-z0-9+/]{100,}={0,2}$/;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
 function clean(text: string): string {
@@ -18,11 +19,19 @@ function derToPem(base64: string): string | null {
   return `-----BEGIN CERTIFICATE-----\n${lines.join('\n')}\n-----END CERTIFICATE-----\n`;
 }
 
-/** PEM passthrough or base64 DER (.cer) re-wrapped as PEM. Returns null when neither. */
+/**
+ * PEM blocks pass through; base64 DER (.cer) is re-wrapped as PEM. A string may hold several PEM
+ * blocks plus single-line base64 DER certificates (one per line). Returns null when neither.
+ */
 export function tryNormalizeCertificate(text: string): string | null {
   const value = clean(text);
-  if (PEM_CERT.test(value)) return `${value}\n`;
-  return derToPem(value);
+  const blocks = value.match(PEM_CERT_GLOBAL) ?? [];
+  if (blocks.length === 0) return derToPem(value);
+  const derLines = value.replace(PEM_CERT_GLOBAL, '\n').split('\n').map(line => line.trim())
+    .filter(line => LONG_BASE64_LINE.test(line));
+  const converted = derLines.map(derToPem);
+  if (converted.includes(null)) return null;
+  return [...blocks, ...converted as string[]].map(block => block.trim()).join('\n') + '\n';
 }
 
 export function normalizeCertificate(text: string): string {

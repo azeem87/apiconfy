@@ -42,6 +42,8 @@ describe('REST TLS (real handshakes)', () => {
     expect((await call(url(plain), { ssl: { ca: F.CA_CERT } })).data).toMatchObject({ ok: true });
     expect((await call(url(plain), { ssl: { ca: F.CA_CERT_DER_BASE64 } })).data).toMatchObject({ ok: true });
     expect((await call(url(selfSigned), { ssl: { ca: F.SELF_SIGNED_CERT } })).data).toMatchObject({ ok: true });
+    const mixed = `${F.SERVER_CERT}\n${F.CA_CERT_DER_BASE64}\n`;
+    expect((await call(url(plain), { ssl: { ca: mixed } })).data).toMatchObject({ ok: true });
   });
 
   it('accepts a self-signed server with disableSSL', async () => {

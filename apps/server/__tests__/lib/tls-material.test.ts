@@ -37,4 +37,17 @@ describe('tls-material', () => {
     expect(hasSelfSignedRoot(SERVER_CERT)).toBe(false);
     expect(hasSelfSignedRoot('-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----')).toBe(false);
   });
+
+  it('accepts PEM blocks mixed with single-line base64 DER certs, and normalizes all to PEM', () => {
+    const mixed = `${SERVER_CERT}\n${CA_CERT_DER_BASE64}\n`;
+    const pem = normalizeCertificate(mixed);
+    expect(pem.match(/BEGIN CERTIFICATE/g)).toHaveLength(2);
+    expect(pem).toContain(CA_CERT.trim());
+    expect(hasSelfSignedRoot(mixed)).toBe(true);
+  });
+
+  it('ignores non-certificate text around PEM blocks but rejects an undecodable DER-looking line', () => {
+    expect(normalizeCertificate(`Bag Attributes\n  friendlyName: x\n${CA_CERT}`)).toBe(CA_CERT.trim() + '\n');
+    expect(isCertificateMaterial(`${CA_CERT}\n${'A'.repeat(120)}`)).toBe(false);
+  });
 });

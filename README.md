@@ -484,7 +484,7 @@ show the same `validation` block in their own config sections.
   verbatim like any other credential in config. `request.disableSSL: true` skips verification in
   every environment (no production guard) and is mutually exclusive with `ssl`. Unlike Java's
   `keytool`, a CA-signed leaf or intermediate alone is **not** accepted as a trust anchor: `ca` must include
-  the chain up to the self-signed root (one string may hold several PEM/DER-as-base64 blocks,
+  the chain up to the self-signed root (one string may hold several PEM blocks and single-line base64 DER certs, one per line,
   e.g. leaf + issuing CA + root), otherwise registration fails with `400`. TLS failures
   return `502 CONNECTION_ERROR`; material is never echoed. File paths and PFX are unsupported.
 - Resolved `{$env.NAME}` values are scrubbed from successful/error responses, details,
