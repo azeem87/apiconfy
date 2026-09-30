@@ -148,7 +148,7 @@ export interface OutputConfig {
 }
 
 export interface SSLConfig {
-  ca?: string;
+  ca?: string | string[];
   cert?: string;
   key?: string;
   passphrase?: string;

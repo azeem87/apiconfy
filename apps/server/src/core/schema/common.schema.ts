@@ -151,7 +151,7 @@ export const RequestValidationSchema = z.object({
 });
 
 export const SSLConfigSchema = z.object({
-  ca: z.string().min(1).optional(),
+  ca: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]).optional(),
   cert: z.string().min(1).optional(),
   key: z.string().min(1).optional(),
   passphrase: z.string().optional(),

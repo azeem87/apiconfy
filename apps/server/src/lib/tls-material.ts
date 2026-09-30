@@ -23,7 +23,7 @@ function derToPem(base64: string): string | null {
  * PEM blocks pass through; base64 DER (.cer) is re-wrapped as PEM. A string may hold several PEM
  * blocks plus single-line base64 DER certificates (one per line). Returns null when neither.
  */
-export function tryNormalizeCertificate(text: string): string | null {
+function normalizeOne(text: string): string | null {
   const value = clean(text);
   const blocks = value.match(PEM_CERT_GLOBAL) ?? [];
   if (blocks.length === 0) return derToPem(value);
@@ -34,13 +34,19 @@ export function tryNormalizeCertificate(text: string): string | null {
   return [...blocks, ...converted as string[]].map(block => block.trim()).join('\n') + '\n';
 }
 
-export function normalizeCertificate(text: string): string {
+/** Accepts one string or a list (one entry per certificate file); each entry is normalized on its own. */
+export function tryNormalizeCertificate(input: string | string[]): string | null {
+  const parts = (Array.isArray(input) ? input : [input]).map(normalizeOne);
+  return parts.includes(null) ? null : (parts as string[]).join('');
+}
+
+export function normalizeCertificate(text: string | string[]): string {
   const pem = tryNormalizeCertificate(text);
   if (pem === null) throw new Error('certificate must be PEM or base64-encoded DER');
   return pem;
 }
 
-export function isCertificateMaterial(text: string): boolean {
+export function isCertificateMaterial(text: string | string[]): boolean {
   return tryNormalizeCertificate(text) !== null;
 }
 
@@ -59,7 +65,7 @@ export function normalizePrivateKey(text: string): string {
  * trust a chain that ends in a root present in `ca`; unlike a Java keystore, a lone leaf or
  * intermediate is never accepted as a trust anchor.
  */
-export function hasSelfSignedRoot(text: string): boolean {
+export function hasSelfSignedRoot(text: string | string[]): boolean {
   const pem = tryNormalizeCertificate(text);
   if (pem === null) return false;
   try {

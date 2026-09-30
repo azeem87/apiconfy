@@ -477,17 +477,18 @@ show the same `validation` block in their own config sections.
   upstream side effects unless that upstream provides idempotency.
 - Auth, circuit breakers, connect/socket/idle timeouts and unsupported request content types
   return `501 NOT_IMPLEMENTED` at invocation.
-- **TLS certificates (REST):** `request.ssl` takes inline text — `ca` (server trust; **replaces**
-  the default CA list for that request), `cert` + `key` (mTLS client identity) and optional
-  `passphrase`. `ca`/`cert` accept PEM or base64 DER (`.cer`); `key` must be PEM (PKCS#8/PKCS#1/EC).
-  Everything is inline in the component config (no env refs, no file paths); PEM is stored
-  verbatim like any other credential in config. `request.disableSSL: true` skips verification in
-  every environment (no production guard) and is mutually exclusive with `ssl`. Unlike Java's
-  `keytool`, a CA-signed leaf or intermediate alone is **not** accepted as a trust anchor: `ca` must include
-  the chain up to the self-signed root (one string may hold several PEM blocks and single-line base64 DER certs, one per line,
-  e.g. leaf + issuing CA + root), otherwise registration fails with `400`. The root alone is enough when the
-  server sends its intermediates in the handshake; add the issuing CA(s) when it sends only its leaf. TLS failures
-  return `502 CONNECTION_ERROR`; material is never echoed. File paths and PFX are unsupported.
+- **TLS certificates (REST):** trust an HTTPS API's private CA with `request.ssl.ca` — inline, no env
+  refs or file paths. Give one list entry per certificate file:
+  `"ssl": { "ca": ["<root>", "<issuing CA>"] }` (a single string also works). Each entry is either
+  the **text of a PEM file** (starts with `-----BEGIN CERTIFICATE-----`; `.crt`/`.cer`/`.txt`,
+  newlines written `\n`) or, for a **binary DER file** (`head -1` shows garbage), its base64:
+  `base64 -w0 file.cer`. A multi-cert PEM bundle is one entry. `ca` **replaces** the default CA list
+  for that request and must include the self-signed **root**; the root alone is enough when the
+  server sends its intermediates, otherwise add the issuing CA(s). A lone leaf/intermediate is not a
+  trust anchor (unlike Java's `keytool`) — registration fails with `400`. For mTLS add `cert` + `key`
+  (PEM only) and optional `passphrase`. `request.disableSSL: true` skips verification in every
+  environment (no production guard) and is mutually exclusive with `ssl`. TLS failures return
+  `502 CONNECTION_ERROR`; material is never echoed. File paths and PFX are unsupported.
 - Resolved `{$env.NAME}` values are scrubbed from successful/error responses, details,
   audit rows and logs, including upstream echoes. Stored references and existing
   retrieval masking behavior are preserved.

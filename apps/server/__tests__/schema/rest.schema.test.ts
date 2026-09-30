@@ -407,6 +407,13 @@ describe('RestConfigSchema request.ssl', () => {
     expect(ssl({ ca: '{$env.CA}' }).success).toBe(false);
   });
 
+  it('accepts ca as a list, one entry per certificate file (PEM or base64 DER)', () => {
+    expect(ssl({ ca: [SERVER_CERT, CA_CERT_DER_BASE64] }).success).toBe(true);
+    expect(ssl({ ca: [SERVER_CERT] }).success).toBe(false);
+    expect(ssl({ ca: [] }).success).toBe(false);
+    expect(ssl({ ca: [CA_CERT, 'garbage'] }).success).toBe(false);
+  });
+
   it('rejects a ca without a self-signed root (lone leaf) with guidance', () => {
     const result = ssl({ ca: SERVER_CERT });
     expect(result.success).toBe(false);
