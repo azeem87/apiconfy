@@ -388,11 +388,10 @@ describe('RestConfigSchema request.ssl', () => {
   const cert = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----';
   const key = '-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----';
 
-  it('accepts ca alone, cert+key, DER literal and env refs', () => {
+  it('accepts ca alone, cert+key and DER literal', () => {
     expect(ssl({ ca: cert }).success).toBe(true);
     expect(ssl({ cert, key, passphrase: 'x' }).success).toBe(true);
     expect(ssl({ ca: 'MIIBAAAA' }).success).toBe(true);
-    expect(ssl({ ca: '{$env.CA}', cert: '{$env.C}', key: '{$env.K}' }).success).toBe(true);
   });
 
   it('rejects empty ssl, half identities and orphan passphrase', () => {
@@ -400,6 +399,10 @@ describe('RestConfigSchema request.ssl', () => {
     expect(ssl({ cert }).success).toBe(false);
     expect(ssl({ key }).success).toBe(false);
     expect(ssl({ ca: cert, passphrase: 'x' }).success).toBe(false);
+  });
+
+  it('rejects env refs — ssl material is inline only', () => {
+    expect(ssl({ ca: '{$env.CA}' }).success).toBe(false);
   });
 
   it('rejects malformed literals with guidance', () => {

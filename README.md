@@ -479,8 +479,8 @@ show the same `validation` block in their own config sections.
 - **TLS certificates (REST):** `request.ssl` takes inline text — `ca` (server trust; **replaces**
   the default CA list for that request), `cert` + `key` (mTLS client identity) and optional
   `passphrase`. `ca`/`cert` accept PEM or base64 DER (`.cer`); `key` must be PEM (PKCS#8/PKCS#1/EC).
-  Use `{$env.NAME}` refs for keys to keep them out of the DB (escaped `\n` in env values is
-  accepted); literal PEM is stored verbatim. `request.disableSSL: true` skips verification in
+  Everything is inline in the component config (no env refs, no file paths); PEM is stored
+  verbatim like any other credential in config. `request.disableSSL: true` skips verification in
   every environment (no production guard) and is mutually exclusive with `ssl`. TLS failures
   return `502 CONNECTION_ERROR`; material is never echoed. File paths and PFX are unsupported.
 - Resolved `{$env.NAME}` values are scrubbed from successful/error responses, details,

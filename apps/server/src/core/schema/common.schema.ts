@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { assertValidExpression, assertValidPath } from '@/core/transform/index.js';
 import { collectTemplateIssues } from '@/core/transform/template-validation.js';
 import { parseFieldPath } from '@/core/runtime/request-validation.js';
-import { isEnvRef } from '@/core/env-ref/parse.js';
 import { isCertificateMaterial, isPrivateKeyPem } from '@/lib/tls-material.js';
 
 export const TimeoutConfigSchema = z.object({
@@ -169,9 +168,9 @@ export const SSLConfigSchema = z.object({
   const certMessage = 'expected PEM (-----BEGIN CERTIFICATE-----) or base64-encoded DER (.cer)';
   for (const field of ['ca', 'cert'] as const) {
     const value = ssl[field];
-    if (value !== undefined && !isEnvRef(value) && !isCertificateMaterial(value)) issue(field, certMessage);
+    if (value !== undefined && !isCertificateMaterial(value)) issue(field, certMessage);
   }
-  if (hasIdentity && ssl.key !== undefined && !isEnvRef(ssl.key) && !isPrivateKeyPem(ssl.key)) {
+  if (hasIdentity && ssl.key !== undefined && !isPrivateKeyPem(ssl.key)) {
     issue('key', 'expected PEM private key (PKCS#8/PKCS#1/EC); convert with `openssl pkcs8 -topk8 -nocrypt -in key.der -inform DER`');
   }
 });

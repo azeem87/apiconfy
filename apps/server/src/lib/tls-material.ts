@@ -2,9 +2,8 @@ const PEM_CERT = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/;
 const PEM_KEY = /-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----/;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
-// Env values often carry PEM with escaped "\n" instead of real newlines.
 function clean(text: string): string {
-  return text.replace(/^\uFEFF/, '').replace(/\\n/g, '\n').trim();
+  return text.replace(/^\uFEFF/, '').trim();
 }
 
 function derToPem(base64: string): string | null {

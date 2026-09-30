@@ -14,11 +14,6 @@ describe('tls-material', () => {
     expect(normalizeCertificate(`\uFEFF ${CA_CERT_DER_BASE64.replace(/(.{64})/g, '$1\n')} `)).toBe(CA_CERT.trim() + '\n');
   });
 
-  it('accepts escaped \\n PEM as supplied by env vars', () => {
-    expect(normalizeCertificate(CA_CERT.trim().replace(/\n/g, '\\n'))).toBe(CA_CERT.trim() + '\n');
-    expect(normalizePrivateKey(SERVER_KEY.trim().replace(/\n/g, '\\n'))).toBe(SERVER_KEY.trim() + '\n');
-  });
-
   it('rejects garbage', () => {
     for (const bad of ['', 'hello', 'AAAA', '!!!!', Buffer.from('nope').toString('base64')]) {
       expect(() => normalizeCertificate(bad)).toThrow();
