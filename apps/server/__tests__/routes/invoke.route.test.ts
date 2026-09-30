@@ -190,7 +190,7 @@ describe('Phase 2 invocation API', () => {
     await register({
       request: {
         ...request, auth: { basic: { username: 'user', password: '{$env.MISSING}' } },
-        ssl: { cert: '{$env.CERT}', key: '{$env.KEY}' }, contentType: 'multipart/form-data',
+        contentType: 'multipart/form-data',
       },
       timeout: { connect: 1, socket: 1, idle: 1 },
       resilience: {
@@ -201,7 +201,7 @@ describe('Phase 2 invocation API', () => {
       const res = await invoke();
       const result = await res.json();
       expect(res.status).toBe(501);
-      expect(result.error.details.unsupported).toHaveLength(7);
+      expect(result.error.details.unsupported).toHaveLength(6);
       expect((await recorded(result)).attempts).toBe(0);
     }
     expect(calls).toHaveLength(0);

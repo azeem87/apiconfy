@@ -3,6 +3,7 @@ import type {
 } from '@/core/components/base.js';
 import type { RequestConfig, ValidationField } from '@/core/types.js';
 import { resolveTemplate } from '@/core/transform/index.js';
+import { normalizeCertificate, normalizePrivateKey } from '@/lib/tls-material.js';
 import { mediaType, parseResponseBody } from '@/lib/http.js';
 import {
   AppError, ConnectionError, ExternalServiceError, NotImplementedError, TimeoutError, TransformationError,
@@ -21,10 +22,7 @@ export class RestComponent implements ComponentHandler {
     const timeout = (config.timeout ?? {}) as Record<string, unknown>;
     const resilience = (config.resilience ?? {}) as Record<string, unknown>;
     const unsupported: Array<{ field: string; phase: string }> = [];
-    for (const field of ['auth', 'ssl'] as const) {
-      if (request[field] !== undefined) unsupported.push({ field: `config.request.${field}`, phase: 'Phase 4' });
-    }
-    if (request.disableSSL === true) unsupported.push({ field: 'config.request.disableSSL', phase: 'Phase 4' });
+    if (request.auth !== undefined) unsupported.push({ field: 'config.request.auth', phase: 'Phase 4' });
     if (resilience.circuitBreaker !== undefined) {
       unsupported.push({ field: 'config.resilience.circuitBreaker', phase: 'post-v1' });
     }
@@ -40,6 +38,22 @@ export class RestComponent implements ComponentHandler {
         { unsupported }
       );
     }
+  }
+
+  private buildTls(request: RequestConfig): Record<string, unknown> | undefined {
+    const { ssl } = request;
+    const tls: Record<string, unknown> = {};
+    try {
+      if (ssl?.ca !== undefined) tls.ca = normalizeCertificate(ssl.ca);
+      if (ssl?.cert !== undefined) tls.cert = normalizeCertificate(ssl.cert);
+      if (ssl?.key !== undefined) tls.key = normalizePrivateKey(ssl.key);
+    } catch (error) {
+      const field = ssl?.ca !== undefined && !('ca' in tls) ? 'ssl.ca' : ssl?.cert !== undefined && !('cert' in tls) ? 'ssl.cert' : 'ssl.key';
+      throw new ConnectionError(`${field} is not valid ${field === 'ssl.key' ? 'PEM private key' : 'PEM or base64-encoded DER certificate'} material`);
+    }
+    if (ssl?.passphrase !== undefined) tls.passphrase = ssl.passphrase;
+    if (request.disableSSL === true) tls.rejectUnauthorized = false;
+    return Object.keys(tls).length ? tls : undefined;
   }
 
   validationFields(config: Record<string, unknown>): ValidationField[] {
@@ -94,10 +108,11 @@ export class RestComponent implements ComponentHandler {
     }
     const summary: ComponentRequestSummary = { uri, method: request.method, ...(body !== undefined ? { body: payload } : {}) };
     params.onRequest?.(summary);
+    const tls = this.buildTls(request);
     try {
       const response = await this.httpRequest(uri, {
-        method: request.method, headers, body, signal: params.signal,
-      });
+        method: request.method, headers, body, signal: params.signal, ...(tls ? { tls } : {}),
+      } as RequestInit);
       let data: unknown;
       try {
         data = await parseResponseBody(response);

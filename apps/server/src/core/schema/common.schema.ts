@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { assertValidExpression, assertValidPath } from '@/core/transform/index.js';
 import { collectTemplateIssues } from '@/core/transform/template-validation.js';
 import { parseFieldPath } from '@/core/runtime/request-validation.js';
+import { isEnvRef } from '@/core/env-ref/parse.js';
+import { isCertificateMaterial, isPrivateKeyPem } from '@/lib/tls-material.js';
 
 export const TimeoutConfigSchema = z.object({
   connect: z.number().int().positive().optional(),
@@ -150,11 +152,29 @@ export const RequestValidationSchema = z.object({
 });
 
 export const SSLConfigSchema = z.object({
-  cert: z.string().min(1),
-  key: z.string().min(1),
-  ca: z.string().optional(),
+  ca: z.string().min(1).optional(),
+  cert: z.string().min(1).optional(),
+  key: z.string().min(1).optional(),
   passphrase: z.string().optional(),
-}).strict();
+}).strict().superRefine((ssl, ctx) => {
+  const issue = (path: string, message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+  const hasIdentity = ssl.cert !== undefined && ssl.key !== undefined;
+  if (ssl.ca === undefined && ssl.cert === undefined && ssl.key === undefined) {
+    issue('ca', 'ssl needs `ca` (server trust) or `cert`+`key` (client identity)');
+  }
+  if ((ssl.cert === undefined) !== (ssl.key === undefined)) {
+    issue(ssl.cert === undefined ? 'cert' : 'key', 'cert and key go together (mTLS)');
+  }
+  if (ssl.passphrase !== undefined && ssl.key === undefined) issue('passphrase', 'passphrase requires key');
+  const certMessage = 'expected PEM (-----BEGIN CERTIFICATE-----) or base64-encoded DER (.cer)';
+  for (const field of ['ca', 'cert'] as const) {
+    const value = ssl[field];
+    if (value !== undefined && !isEnvRef(value) && !isCertificateMaterial(value)) issue(field, certMessage);
+  }
+  if (hasIdentity && ssl.key !== undefined && !isEnvRef(ssl.key) && !isPrivateKeyPem(ssl.key)) {
+    issue('key', 'expected PEM private key (PKCS#8/PKCS#1/EC); convert with `openssl pkcs8 -topk8 -nocrypt -in key.der -inform DER`');
+  }
+});
 
 export const BasicAuthSchema = z.object({
   username: z.string().min(1),

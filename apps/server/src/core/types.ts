@@ -148,9 +148,9 @@ export interface OutputConfig {
 }
 
 export interface SSLConfig {
-  cert: string;
-  key: string;
   ca?: string;
+  cert?: string;
+  key?: string;
   passphrase?: string;
 }
 

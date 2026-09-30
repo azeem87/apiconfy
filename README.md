@@ -474,8 +474,15 @@ show the same `validation` block in their own config sections.
 - `timeout.response` defaults to 30 seconds **per attempt**, including response-body reads.
   Retries use fixed/exponential backoff; never retry 4xx. Retrying writes may duplicate
   upstream side effects unless that upstream provides idempotency.
-- Auth, custom SSL, `disableSSL: true`, circuit breakers, connect/socket/idle timeouts and
-  unsupported request content types return `501 NOT_IMPLEMENTED` at invocation.
+- Auth, circuit breakers, connect/socket/idle timeouts and unsupported request content types
+  return `501 NOT_IMPLEMENTED` at invocation.
+- **TLS certificates (REST):** `request.ssl` takes inline text — `ca` (server trust; **replaces**
+  the default CA list for that request), `cert` + `key` (mTLS client identity) and optional
+  `passphrase`. `ca`/`cert` accept PEM or base64 DER (`.cer`); `key` must be PEM (PKCS#8/PKCS#1/EC).
+  Use `{$env.NAME}` refs for keys to keep them out of the DB (escaped `\n` in env values is
+  accepted); literal PEM is stored verbatim. `request.disableSSL: true` skips verification in
+  every environment (no production guard) and is mutually exclusive with `ssl`. TLS failures
+  return `502 CONNECTION_ERROR`; material is never echoed. File paths and PFX are unsupported.
 - Resolved `{$env.NAME}` values are scrubbed from successful/error responses, details,
   audit rows and logs, including upstream echoes. Stored references and existing
   retrieval masking behavior are preserved.

@@ -31,7 +31,7 @@ describe('RestConfigSchema', () => {
       request: {
         ...minimal.request,
         disableSSL: true,
-        ssl: { cert: 'PEM', key: 'PEM' },
+        ssl: { ca: '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----' },
       },
     });
     expect(result.success).toBe(false);
@@ -380,5 +380,32 @@ describe('payload validation fields (request.validation)', () => {
     expect(RestConfigSchema.safeParse(withValidation([{ path: 'text', type: 'string', minItems: 1 }])).success).toBe(false);
     expect(RestConfigSchema.safeParse(withValidation([{ path: 'text', minLength: 1 }])).success).toBe(false);
     expect(RestConfigSchema.safeParse(withValidation([{ path: 'text', type: 'number', minLength: 1 }])).success).toBe(false);
+  });
+});
+
+describe('RestConfigSchema request.ssl', () => {
+  const ssl = (value: unknown) => RestConfigSchema.safeParse({ request: { ...minimal.request, ssl: value } });
+  const cert = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----';
+  const key = '-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----';
+
+  it('accepts ca alone, cert+key, DER literal and env refs', () => {
+    expect(ssl({ ca: cert }).success).toBe(true);
+    expect(ssl({ cert, key, passphrase: 'x' }).success).toBe(true);
+    expect(ssl({ ca: 'MIIBAAAA' }).success).toBe(true);
+    expect(ssl({ ca: '{$env.CA}', cert: '{$env.C}', key: '{$env.K}' }).success).toBe(true);
+  });
+
+  it('rejects empty ssl, half identities and orphan passphrase', () => {
+    expect(ssl({}).success).toBe(false);
+    expect(ssl({ cert }).success).toBe(false);
+    expect(ssl({ key }).success).toBe(false);
+    expect(ssl({ ca: cert, passphrase: 'x' }).success).toBe(false);
+  });
+
+  it('rejects malformed literals with guidance', () => {
+    expect(ssl({ ca: 'not a cert' }).success).toBe(false);
+    const result = ssl({ cert, key: 'not a key' });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain('PEM private key');
   });
 });
