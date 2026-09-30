@@ -152,6 +152,7 @@ export interface SSLConfig {
   cert?: string;
   key?: string;
   passphrase?: string;
+  disableSSL?: boolean;
 }
 
 export type ValidationFieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object';

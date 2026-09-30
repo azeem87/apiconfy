@@ -414,6 +414,15 @@ describe('RestConfigSchema request.ssl', () => {
     expect(ssl({ ca: [CA_CERT, 'garbage'] }).success).toBe(false);
   });
 
+  it('supports ssl.disableSSL, alone or with a client identity, but not with ca', () => {
+    expect(ssl({ disableSSL: true }).success).toBe(true);
+    expect(ssl({ disableSSL: true, cert, key }).success).toBe(true);
+    expect(ssl({ disableSSL: false, ca: CA_CERT }).success).toBe(true);
+    expect(ssl({ disableSSL: false }).success).toBe(false);
+    expect(ssl({ disableSSL: true, ca: CA_CERT }).success).toBe(false);
+    expect(ssl({ disableSSL: 'yes' }).success).toBe(false);
+  });
+
   it('rejects a ca without a self-signed root (lone leaf) with guidance', () => {
     const result = ssl({ ca: SERVER_CERT });
     expect(result.success).toBe(false);

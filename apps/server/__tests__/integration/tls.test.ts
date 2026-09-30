@@ -51,6 +51,13 @@ describe('REST TLS (real handshakes)', () => {
     expect((await call(url(selfSigned), { disableSSL: true })).data).toMatchObject({ ok: true });
   });
 
+  it('ssl.disableSSL accepts a self-signed server, alone or with a client identity', async () => {
+    expect((await call(url(selfSigned), { ssl: { disableSSL: true } })).data).toMatchObject({ ok: true });
+    const identity = { cert: F.CLIENT_A_CERT, key: F.CLIENT_A_KEY };
+    expect((await call(url(mtls), { ssl: { disableSSL: true, ...identity } })).data).toMatchObject({ ok: true });
+    await expect(call(url(selfSigned), { ssl: { disableSSL: false } })).rejects.toBeDefined();
+  });
+
   it('mTLS: 200 with a client identity, 502 without', async () => {
     const ssl: Ssl = { ca: F.CA_CERT, cert: F.CLIENT_A_CERT, key: F.CLIENT_A_KEY };
     expect((await call(url(mtls), { ssl })).data).toMatchObject({ ok: true });
@@ -86,6 +93,10 @@ describe('REST TLS (real handshakes)', () => {
     expect(seen).toBeUndefined();
     await run({ disableSSL: true });
     expect(seen).toEqual({ rejectUnauthorized: false });
+    await run({ ssl: { disableSSL: true } });
+    expect(seen).toEqual({ rejectUnauthorized: false });
+    await run({ ssl: { disableSSL: false, ca: F.CA_CERT } });
+    expect(seen).toEqual({ ca: F.CA_CERT.trim() + '\n' });
     await run({ ssl: { ca: F.CA_CERT_DER_BASE64, cert: F.CLIENT_A_CERT, key: F.CLIENT_A_KEY, passphrase: 'p' } });
     expect(seen).toEqual({
       ca: F.CA_CERT.trim() + '\n', cert: F.CLIENT_A_CERT.trim() + '\n', key: F.CLIENT_A_KEY.trim() + '\n', passphrase: 'p',

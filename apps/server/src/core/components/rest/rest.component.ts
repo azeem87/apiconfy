@@ -52,7 +52,7 @@ export class RestComponent implements ComponentHandler {
       throw new ConnectionError(`${field} is not valid ${field === 'ssl.key' ? 'PEM private key' : 'PEM or base64-encoded DER certificate'} material`);
     }
     if (ssl?.passphrase !== undefined) tls.passphrase = ssl.passphrase;
-    if (request.disableSSL === true) tls.rejectUnauthorized = false;
+    if (request.disableSSL === true || ssl?.disableSSL === true) tls.rejectUnauthorized = false;
     return Object.keys(tls).length ? tls : undefined;
   }
 
