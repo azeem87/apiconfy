@@ -70,6 +70,10 @@ it('runs every ordered REST and Script Postman example against deterministic loc
     }
     expect(restCount).toBe(25);
 
+    const tls = folders.find(item => item.name === 'REST')?.item?.find(item => item.name === 'TLS Certificates');
+    expect(tls?.item).toHaveLength(13);
+    for (const item of tls!.item!) await executeItem(item);
+
     let scriptCount = 0;
     for (const group of script!.item ?? []) {
       for (const item of group.item ?? []) {
