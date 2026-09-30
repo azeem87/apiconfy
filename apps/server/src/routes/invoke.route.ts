@@ -29,8 +29,7 @@ export function invokeRoute(executor: RuntimeExecutor): Hono {
       const downstreamStatus = failure.error.code === 'EXTERNAL_ERROR'
         ? (failure.error.details as { downstream?: { status?: number } } | undefined)?.downstream?.status
         : undefined;
-      const error = caught instanceof AppError ? caught : new AppError('Internal server error', 'INTERNAL_ERROR');
-      const statusCode = downstreamStatus ?? error.statusCode;
+      const statusCode = downstreamStatus ?? (caught instanceof AppError ? caught.statusCode : 500);
       return c.json(failure, statusCode as ContentfulStatusCode);
     }
   });
