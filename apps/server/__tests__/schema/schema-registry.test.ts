@@ -49,8 +49,8 @@ describe('SchemaRegistry', () => {
     expect(registry.get('acme-crm')!.safeParse({ tenant: 't1' }).success).toBe(true);
   });
 
-  it('createCoreSchemaRegistry ships rest and nothing else in Phase 1', () => {
-    expect(createCoreSchemaRegistry().registeredTypes()).toEqual(['rest']);
+  it('createCoreSchemaRegistry ships rest and script', () => {
+    expect(createCoreSchemaRegistry().registeredTypes()).toEqual(['rest', 'script']);
   });
 
   it('returns an independent registry per call, so tests cannot leak into each other', () => {

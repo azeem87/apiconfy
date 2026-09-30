@@ -15,7 +15,8 @@ import { createCoreSchemaRegistry, type SchemaRegistry } from '@/core/schema/ind
 import { createCoreHandlerRegistry } from '@/core/components/index.js';
 import {
   type ComponentHandlerRegistry, DefaultResilienceExecutor,
-  DefaultRuntimeExecutor, QueuedExecutionRecorder,
+  DefaultRuntimeExecutor, QueuedExecutionRecorder, type RuntimeExecutor,
+  createScriptHostBridge,
 } from '@/core/runtime/index.js';
 import { DbComponentRepository } from '@/core/db/repositories/component.repository.js';
 import { DbExecutionRepository } from '@/core/db/repositories/execution.repository.js';
@@ -77,19 +78,38 @@ export function createApp(config: AppConfig, db: DBAdapter, deps: AppDependencie
   const components = new DbComponentRepository(db);
   const executions = new DbExecutionRepository(db);
   const recorder = new QueuedExecutionRecorder(executions, logger);
+
+  // The script bridge calls back into the runtime executor, which is constructed around the handler
+  // registry that hosts the bridge — resolved with a late-bound thunk (script-component.md §4.6).
+  let runtime: RuntimeExecutor | undefined;
+  const scriptBridge = createScriptHostBridge({
+    runtime: () => {
+      if (!runtime) throw new Error('runtime executor used before initialization');
+      return runtime;
+    },
+    logger,
+  });
   const executor = new DefaultRuntimeExecutor({
     lookup: components,
-    handlers: deps.handlers ?? createCoreHandlerRegistry(deps.fetch),
+    handlers: deps.handlers ?? createCoreHandlerRegistry(deps.fetch, scriptBridge),
     resilience: new DefaultResilienceExecutor(),
     recorder,
     logger,
     env: deps.env,
   });
+  runtime = executor;
   app.route('/api', servicesRoute(new ComponentRegistryService(
     components, deps.schemas ?? createCoreSchemaRegistry()
   )));
   app.route('/api', invokeRoute(executor));
   app.route('/api', executionsRoute(executions));
+
+  if (!config.apiKey) {
+    logger.warn(
+      'Script component is registered and API_KEY is unset — anyone who can reach the service '
+      + 'registry can execute JS. Set API_KEY before exposing this service (script-component.md §4.6).'
+    );
+  }
 
   return { app, logger, drainExecutionQueue: (timeoutMs?: number) => recorder.drain(timeoutMs) };
 }

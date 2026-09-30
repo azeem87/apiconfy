@@ -189,3 +189,13 @@ export interface RestConfig {
   resilience?: ResilienceConfig;
   output?: OutputConfig;
 }
+
+/**
+ * Phase 3.5 — a local context transformer. `expression` is a function value called with the
+ * execution context; contribution is by mutating it (changed variables become the result —
+ * `return` values are ignored). `output`, `resilience` and every REST-only field are refused.
+ */
+export interface ScriptConfig {
+  expression: string;
+  timeout?: Pick<TimeoutConfig, 'response'>;
+}

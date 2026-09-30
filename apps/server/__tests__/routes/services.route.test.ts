@@ -153,7 +153,7 @@ describe('services routes', () => {
 
       const json = await res.json();
       expect(json.error.code).toBe('UNKNOWN_COMPONENT_TYPE');
-      expect(json.error.details.supported).toEqual(['rest']);
+      expect(json.error.details.supported).toEqual(['rest', 'script']);
     });
   });
 

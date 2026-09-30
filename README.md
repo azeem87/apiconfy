@@ -211,9 +211,9 @@ Content-Type: application/json
     }
   ],
   "responseTransformation": {
-    "customerId": "{$context.output.createCustomerResponse.customerId}",
-    "messageId": "{$context.output.publishEventResponse.messageId}",
-    "status": "{$context.output.sendEmailResponse.status}"
+    "customerId": "{$context.createCustomerResponse.customerId}",
+    "messageId": "{$context.publishEventResponse.messageId}",
+    "status": "{$context.sendEmailResponse.status}"
   }
 }
 ```
@@ -433,29 +433,29 @@ A [Postman collection](postman/apiconfy.postman_collection.json) is included for
 3. If `API_KEY` is configured, set the `api_key` collection variable for Bearer auth
 4. Start the server (`pnpm dev`) and run the requests
 
-The collection is organized **by component type**. REST → Invoke contains ordered
-Simple Examples, Complex Examples, Payload Validation and Error Cases: register each
-example before invoking it. Invoke scripts save `meta.executionId` as `execution_id`
-for execution lookup. The simple scenario calls the local health endpoint. Complex
-scenarios use `upstream_url` (default `https://httpbin.org`); send only dummy data or
-point it at your own compatible server.
+The collection is organized **by component type**. REST → Invoke and **Script** contain ordered
+Simple Examples, Complex Examples and Error Cases: register each example before invoking it.
+Invoke scripts save `meta.executionId` as `execution_id` for execution lookup. The simple
+scenario calls the local health endpoint; the Script complex example calls a registered REST
+echo through the script bridge. Complex scenarios use `upstream_url` (default
+`https://httpbin.org`); send only dummy data or point it at your own compatible server.
 
 Existing auth/TLS/circuit-breaker complex examples are **registration-only** until their
-execution capabilities arrive. Runnable Phase 2 complex examples include every supported
+execution capabilities arrive. Runnable complex examples include every supported
 section (request, timeout, retry, condition, request-payload validation, response
 validation, transformation and metadata) and intentionally omit unsupported
-auth/TLS/circuit-breaker fields. Future component folders (Mapper, Database, Script, SQS)
+auth/TLS/circuit-breaker fields. Future component folders (Mapper, Database, SQS)
 show the same `validation` block in their own config sections.
 
 ### Phase 2 invocation behavior
 
 - `POST /api/v1/services/:service/:action/invoke` requires `{ "context": { ... } }`.
-  `context.output` is reserved. False conditions return a successful skip without resolving
-  environment references or calling upstream.
+  False conditions return a successful skip without resolving environment references or
+  calling upstream.
 - Request fields live under `config.request`. JSON and form-urlencoded bodies are supported.
   Validation reads `{$output.*}`; default applies only to an empty/null body after rules pass.
   Transformation still runs on failure. Single-service output is returned directly;
-  accumulation into `{$context.output.<uniqueKey>}` is Phase 5.
+  in workflows the response object merges flat into `{$context.<key>}` (Phase 5).
 - `config.request.validation.fields` validates the invoke payload after `condition` and
   before any upstream call. Each entry is a payload-relative `path` (dotted keys,
   `[n]` indices, `[*]` for every array element, `["quoted key"]` segments for names like
@@ -465,9 +465,8 @@ show the same `validation` block in their own config sections.
   and `{}` count as present. Failures return `400 VALIDATION_FAILED` with a Zod-style
   `details` array of `{ path, message }`, zero upstream requests and `attempts: 0`; a
   custom `message` per field overrides the generated one.
-- Caller payloads never contain runtime fields: `output` is reserved (`400`), validation paths are
-  payload-relative, and the internal `{$context.*}` wrapping is shared with workflow execution.
-  Missing template references resolve to `null` instead of placeholder text.
+- Validation paths are payload-relative and the internal `{$context.*}` wrapping is shared with
+  workflow execution. Missing template references resolve to `null` instead of placeholder text.
 - `GET /api/v1/executions/:executionId` retrieves sanitized service execution state,
   including failed transformed output and actual dispatch attempts (zero before dispatch).
   Recording is queued off the response path (best-effort, not durable workflow recovery),
@@ -485,11 +484,49 @@ show the same `validation` block in their own config sections.
 retention/purge remain future work (retention is planned with Phase 5). Restrict
 registration access and outbound network connectivity.
 
+### Script component (Phase 3.5)
+
+`componentType: "script"` runs an operator-authored JS function locally — one Bun Worker per
+invocation, terminated on every exit path, with `timeout.response` as the hard deadline. The
+script receives the execution context and **contributes by writing to `$context`**: the
+changed/added top-level variables become the response `data` (later workflow steps read them
+as `{$context.<variable>}`). A `return` value is ignored.
+
+```json
+POST /api/v1/services
+{
+  "service": "calc-service",
+  "action": "add_numbers",
+  "componentType": "script",
+  "config": {
+    "expression": "async function ($context) { $context.sum = $context.a + $context.b; }",
+    "timeout": { "response": 15000 }
+  }
+}
+```
+
+- Full modern JS inside the function — async/await, optional chaining, template literals.
+- **Tools:** the frozen `apiconfy` factory parameter exposes `invoke(service, action, context?)`,
+  `executeWorkflow(name, context?)` (returns `NOT_IMPLEMENTED` until Phase 5), `generate(name)`
+  (returns `NOT_IMPLEMENTED` until the `$gen.*` registry ships) and `executionId` — all awaited.
+  `context` defaults to the live `$context` snapshot at call time. Each nested invoke is a
+  first-class execution with its own audit row, and never throws — branch on `r.success`.
+- Config is `expression` plus optional `timeout.response` (default 30 s, max 120 s) only; every
+  REST-only field — including the whole `output` block — and `$env.` inside the expression are
+  rejected with `400`.
+- Failures: `SCRIPT_ERROR` `500` (`not-a-function`, `threw`, `not-serializable`,
+  `evaluation-failed`) and `TIMEOUT` `504`. The Worker's shadowed scope is accident-prevention,
+  **not a sandbox** — registration access (`API_KEY`) is the boundary.
+
+**Deployment caution (script):** a script can invoke other registered services in-process
+(recursion/fan-out are uncapped by decision) and is operator code — never expose the registry
+without `API_KEY`.
+
 ---
 
 ## Project Status
 
-🚧 **Early Development — Phase 3 Complete**
+🚧 **Early Development — Phase 3 complete; Phase 3.5 implemented on a feature branch**
 
 - ✅ Phase 0 (Foundation): monorepo scaffolded, Hono API server running, SQLite DB adapter operational, PostgreSQL adapter seam, CI pipeline active.
 - ✅ Phase 1 (Component Registry): register, list, get, and delete component definitions via REST API.
@@ -498,11 +535,15 @@ registration access and outbound network connectivity.
   executable Postman scenarios, alongside the Phase 1 regression suite.
 - ✅ Phase 3 (Multi-DB): PostgreSQL, Oracle, MongoDB and Couchbase adapters pass the
   shared parity suite alongside SQLite.
+- 🟡 Phase 3.5 (Local Script Component): `componentType: "script"` — mutation-only contract,
+  `apiconfy` bridge tools with fully audited nested invokes, Worker-per-invocation with a hard
+  deadline. Implemented on `feature/phase3.5-script-component`, pending merge.
 
 See the [Implementation Roadmap](plans/roadmap.md) for phase-by-phase details.
 
-**Next milestone:** Phase 4 — auth & connection handling (`plans/auth-proxy.md`), then
-Phase 5 workflows.
+**Next milestone:** merge Phase 3.5, then Phase 3.6 — REST TLS certificates
+(`plans/tls-certificates.md`), then Phase 4 — auth & connection handling (`plans/auth-proxy.md`),
+then Phase 5 workflows.
 
 ---
 
