@@ -5,7 +5,8 @@
     "rootDir": ".",
     "sourceMap": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@fixtures/*": ["./__tests__/fixtures/*"]
     }
   },
   "include": ["src", "__tests__"]

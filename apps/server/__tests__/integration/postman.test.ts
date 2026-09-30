@@ -1,6 +1,7 @@
 import { expect, it } from 'bun:test';
 import { createApp } from '@/app.js';
 import { createSqliteAdapter } from '@/core/db/adapters/sqlite-adapter.js';
+import * as TLS_FIXTURES from '@fixtures/tls.js';
 
 interface CollectionItem {
   name: string;
@@ -69,6 +70,12 @@ it('runs every ordered REST and Script Postman example against deterministic loc
       }
     }
     expect(restCount).toBe(25);
+
+    const tls = folders.find(item => item.name === 'REST')?.item?.find(item => item.name === 'TLS Certificates');
+    expect(tls?.item).toHaveLength(14);
+    const firstTlsBody = JSON.parse(tls!.item![0].request!.body!.raw!);
+    expect(firstTlsBody.config.request.ssl.ca).toEqual([TLS_FIXTURES.CA_CERT]);
+    for (const item of tls!.item!) await executeItem(item);
 
     let scriptCount = 0;
     for (const group of script!.item ?? []) {

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'bun:test';
+import { CA_CERT, CA_CERT_DER_BASE64, CLIENT_A_CERT, CLIENT_A_KEY, SERVER_CERT } from '@fixtures/tls.js';
 import {
   CreateServiceRequestSchema, RestConfigSchema,
 } from '@/core/schema/index.js';
@@ -31,7 +32,7 @@ describe('RestConfigSchema', () => {
       request: {
         ...minimal.request,
         disableSSL: true,
-        ssl: { cert: 'PEM', key: 'PEM' },
+        ssl: { ca: CA_CERT },
       },
     });
     expect(result.success).toBe(false);
@@ -380,5 +381,77 @@ describe('payload validation fields (request.validation)', () => {
     expect(RestConfigSchema.safeParse(withValidation([{ path: 'text', type: 'string', minItems: 1 }])).success).toBe(false);
     expect(RestConfigSchema.safeParse(withValidation([{ path: 'text', minLength: 1 }])).success).toBe(false);
     expect(RestConfigSchema.safeParse(withValidation([{ path: 'text', type: 'number', minLength: 1 }])).success).toBe(false);
+  });
+});
+
+describe('RestConfigSchema request.ssl', () => {
+  const ssl = (value: unknown) => RestConfigSchema.safeParse({ request: { ...minimal.request, ssl: value } });
+  const cert = CLIENT_A_CERT;
+  const key = CLIENT_A_KEY;
+
+  it('accepts ca alone, cert+key and DER literal', () => {
+    expect(ssl({ ca: CA_CERT }).success).toBe(true);
+    expect(ssl({ cert, key, passphrase: 'x' }).success).toBe(true);
+    expect(ssl({ ca: CA_CERT_DER_BASE64 }).success).toBe(true);
+    expect(ssl({ ca: `${SERVER_CERT}${CA_CERT}` }).success).toBe(true);
+  });
+
+  it('rejects empty ssl, half identities and orphan passphrase', () => {
+    expect(ssl({}).success).toBe(false);
+    expect(ssl({ cert }).success).toBe(false);
+    expect(ssl({ key }).success).toBe(false);
+    expect(ssl({ ca: CA_CERT, passphrase: 'x' }).success).toBe(false);
+  });
+
+  it('accepts {$env.NAME} for ca, cert, key and passphrase, alone or next to inline material', () => {
+    expect(ssl({ ca: '{$env.CA}' }).success).toBe(true);
+    expect(ssl({ ca: ['{$env.CA}'] }).success).toBe(true);
+    expect(ssl({ ca: [SERVER_CERT, '{$env.ROOT_CA}'] }).success).toBe(true);
+    expect(ssl({ ca: CA_CERT, cert: '{$env.CERT}', key: '{$env.KEY}', passphrase: '{$env.PASS}' }).success).toBe(true);
+    expect(ssl({ cert, key, passphrase: '{$env.PASS}' }).success).toBe(true);
+  });
+
+  it('still validates inline entries next to env refs and rejects malformed refs', () => {
+    expect(ssl({ ca: ['garbage', '{$env.CA}'] }).success).toBe(false);
+    expect(ssl({ ca: '{$env.}' }).success).toBe(false);
+    expect(ssl({ cert: '{$env.CERT}', key: 'not a key' }).success).toBe(false);
+    expect(ssl({ disableSSL: true, ca: '{$env.CA}' }).success).toBe(false);
+    expect(ssl({ ca: '{$env.CA}', passphrase: '{$env.PASS}' }).success).toBe(false);
+  });
+
+  it('rejects a private key supplied as a certificate', () => {
+    const keyDerBase64 = CLIENT_A_KEY.replace(/-----[A-Z ]+-----/g, '').replace(/\s+/g, '');
+    expect(ssl({ cert: keyDerBase64, key }).success).toBe(false);
+    expect(ssl({ ca: keyDerBase64 }).success).toBe(false);
+  });
+
+  it('accepts ca as a list, one entry per certificate file (PEM or base64 DER)', () => {
+    expect(ssl({ ca: [SERVER_CERT, CA_CERT_DER_BASE64] }).success).toBe(true);
+    expect(ssl({ ca: [SERVER_CERT] }).success).toBe(false);
+    expect(ssl({ ca: [] }).success).toBe(false);
+    expect(ssl({ ca: [CA_CERT, 'garbage'] }).success).toBe(false);
+  });
+
+  it('supports ssl.disableSSL alone, but never with ca, cert or key', () => {
+    expect(ssl({ disableSSL: true }).success).toBe(true);
+    expect(ssl({ disableSSL: false, ca: CA_CERT }).success).toBe(true);
+    expect(ssl({ disableSSL: false }).success).toBe(false);
+    expect(ssl({ disableSSL: true, ca: CA_CERT }).success).toBe(false);
+    expect(ssl({ disableSSL: true, cert, key }).success).toBe(false);
+    expect(ssl({ disableSSL: true, key }).success).toBe(false);
+    expect(ssl({ disableSSL: 'yes' }).success).toBe(false);
+  });
+
+  it('rejects a ca without a self-signed root (lone leaf) with guidance', () => {
+    const result = ssl({ ca: SERVER_CERT });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain('root CA certificate');
+  });
+
+  it('rejects malformed literals with guidance', () => {
+    expect(ssl({ ca: 'not a cert' }).success).toBe(false);
+    const result = ssl({ cert, key: 'not a key' });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain('PEM private key');
   });
 });

@@ -24,3 +24,14 @@ export function authPostureProblem(config: AppConfig): string | null {
   return 'REQUIRE_API_KEY is set but API_KEY is missing — refusing to start with every /api/* '
     + 'route open (security-review-phase2.md A1).';
 }
+
+/**
+ * Outbound TLS verification must never be disabled process-wide (it would silently defeat
+ * `request.ssl`). Removes a `NODE_TLS_REJECT_UNAUTHORIZED=0` inherited from the shell and reports
+ * whether it was present; per-component opt-out is `request.disableSSL`.
+ */
+export function enforceTlsVerification(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.NODE_TLS_REJECT_UNAUTHORIZED !== '0') return false;
+  delete env.NODE_TLS_REJECT_UNAUTHORIZED;
+  return true;
+}

@@ -526,6 +526,407 @@
           ]
         },
         {
+          "name": "TLS Certificates",
+          "description": "Trust a private CA for an HTTPS API with `request.ssl.ca` (inline text or `{$env.NAME}`; no file paths). Give one entry per certificate file: PEM text (starts with `-----BEGIN CERTIFICATE-----`) or, for a binary DER `.cer`, its base64 (`base64 -w0 file.cer`). `ca` must include the self-signed root; the root alone is enough when the server sends its intermediates, otherwise add the issuing CA(s). `ca` replaces the default CA list for that request. mTLS: add `cert` + `key` (PEM only) and optional `passphrase` next to `ca`. `ca`, `cert`, `key` and `passphrase` may each be `\"{$env.NAME}\"` (resolved at invocation; the variable can hold real newlines or literal `\\n`). `ssl.disableSSL: true` skips verification and can only be used on its own. The certificates below are throwaway examples — replace them with your own.",
+          "item": [
+            {
+              "name": "Register — trust a private CA (ssl.ca list)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"tls-demo\",\n  \"action\": \"get_status\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/status/{$context.id}\",\n      \"method\": \"GET\",\n      \"ssl\": {\n        \"ca\": [\n          \"-----BEGIN CERTIFICATE-----\\nMIIDBzCCAe+gAwIBAgIUWTVnqn4qpBWfaHOnVMs+QQTDayIwDQYJKoZIhvcNAQEL\\nBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkw\\nNjAzMTMzNVowEjEQMA4GA1UEAwwHVGVzdCBDQTCCASIwDQYJKoZIhvcNAQEBBQAD\\nggEPADCCAQoCggEBAMAjHs8e4Jh6V19FL3SKi/vIsOv4f6xhAarApKihKU3zcdQh\\nfQ+BsO8qDARy9jjQmU7b7wWYC1sAEhpvbmZAu13zVpHj9h7TWymrxayOhO7t6QAq\\nnvXf307xjpaCeC1CDKuJ2qM34PcsTwUgh/KZoviishZ1QuBY+SAnUy3f4Ei/Q5Kj\\noELmCcYvl0tzB0fnAJEFR0eBXR3dE/oIeWvIiyvwGker0/dBE+C9hxLxLLIqkbMc\\nPSDDHwsrB7Doq+D7fM7Kzxmf2kDITJXAeG3foGICzXayP8lDH+Bfa9/EeqnrqOiQ\\n0OE/hLJhD/3iSxN09yloPCmMJEE/8Hdv+mRXC3MCAwEAAaNTMFEwHQYDVR0OBBYE\\nFBEuSuqqyu+cxJa/7dCzfaDb4tVCMB8GA1UdIwQYMBaAFBEuSuqqyu+cxJa/7dCz\\nfaDb4tVCMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHB5u9e6\\ngN8CFFP23q/FosL0FTI3zvNjN6gQvnHJGhPQpscgMhxPyn5pgJO2QuNPZXIjtTEd\\njc85bUEwQVeyA5kCOTQISClgaNhFQLOFe5P6LSUF7wZlVKf4g86hijalGrK09KSn\\nPpZqbkZ6GYX8+q90omFn95Z06u+uwyA5ffV+/6Opgja3s1ZGqwFUuMO+WXMm7HeX\\nw15TxrEfMHWSWjaRlnB9qImlNwW3VxlZHj3cTXTv6td22SNOsAWh3wlV2KSYP7CD\\njgcMZrauvwKZTgphc0E64Y2CeHoXyq3PfTNu5XbPBLQpuB4yj4UDloOW8sVwVK5h\\n5o9EgqdBr8FiisM=\\n-----END CERTIFICATE-----\\n\"\n        ]\n      }\n    },\n    \"output\": {\n      \"transformation\": {\n        \"partnerStatusResponse\": {\n          \"status\": \"{$output.status}\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "Simple: one certificate file per list entry. Returns 201."
+              }
+            },
+            {
+              "name": "Register — ssl.ca with PEM text and base64 DER",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"tls-demo\",\n  \"action\": \"get_status_mixed\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/status/{$context.id}\",\n      \"method\": \"GET\",\n      \"ssl\": {\n        \"ca\": [\n          \"-----BEGIN CERTIFICATE-----\\nMIIC1DCCAbygAwIBAgIUOtwLtfTPoFXgfhpf+Gp6mKhRq34wDQYJKoZIhvcNAQEL\\nBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkw\\nNjAzMTMzNVowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF\\nAAOCAQ8AMIIBCgKCAQEAqt2bKPd95q6vInszo8YKCLH6DKb8nO+DxAjgwuPC8bLa\\nMyiAYQvJ3tb9LriNEPsWVnih+06LCW21evZ5c4aAMvBl9ico2m57b+wwXKaSrOQr\\nj4+MPp+/cFY+nOKbM90ivOS1RwHGEOTXVWE058h1gauoO4Yf5IDmOUmg8sQUw9IR\\nSIiaVDmfUtPxE3FklubmYiKxFVQ6XaHxJWj6n74RxfGWNxvhxxHV786TfNS3v7bb\\n5oNIQfuKcTg8q3VAYFXmEZ4xqiRjhH6UkZA1rKdjplLLyuJ9YI0nu5ulZj6ax+jQ\\nEGaLa62spHB+BCpWbW3xW1vs8hxWX6DaJJOFGwFgPQIDAQABox4wHDAaBgNVHREE\\nEzARgglsb2NhbGhvc3SHBH8AAAEwDQYJKoZIhvcNAQELBQADggEBAIOpmvpk9hDx\\nE/1/BC+xBKTqQ/fGDyjvj2J1C21uWsmT55i5DcPDgtNnwKHJt/TJqgOfoKK82Je3\\nb9A8IcAdvLpWFd9/UCNkRf8umMsD4APIGgM89ImG+FcQZGywpx6Q5sX38pKG2QQj\\noHxQqbiW2U94xS5TO9NsB9gVjrFFqsJDiFhJ4+yMFeeNpdJyPB2q92YRWCA+y3LO\\nrccsfk7KGU/OyavYBeIH1kdw5iPoOTw2EtrEDNrOpl43+niOcuf4CEMDbeXQ9aOd\\nMXRM6ZTp4CQD/G134RzgDtjLaHegw2Xwk5eJDZTkYGsriz5w3LIqt/cBWCwWsKpq\\nLL1XWDVJFZk=\\n-----END CERTIFICATE-----\\n\",\n          \"MIIDBzCCAe+gAwIBAgIUWTVnqn4qpBWfaHOnVMs+QQTDayIwDQYJKoZIhvcNAQELBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkwNjAzMTMzNVowEjEQMA4GA1UEAwwHVGVzdCBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMAjHs8e4Jh6V19FL3SKi/vIsOv4f6xhAarApKihKU3zcdQhfQ+BsO8qDARy9jjQmU7b7wWYC1sAEhpvbmZAu13zVpHj9h7TWymrxayOhO7t6QAqnvXf307xjpaCeC1CDKuJ2qM34PcsTwUgh/KZoviishZ1QuBY+SAnUy3f4Ei/Q5KjoELmCcYvl0tzB0fnAJEFR0eBXR3dE/oIeWvIiyvwGker0/dBE+C9hxLxLLIqkbMcPSDDHwsrB7Doq+D7fM7Kzxmf2kDITJXAeG3foGICzXayP8lDH+Bfa9/EeqnrqOiQ0OE/hLJhD/3iSxN09yloPCmMJEE/8Hdv+mRXC3MCAwEAAaNTMFEwHQYDVR0OBBYEFBEuSuqqyu+cxJa/7dCzfaDb4tVCMB8GA1UdIwQYMBaAFBEuSuqqyu+cxJa/7dCzfaDb4tVCMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHB5u9e6gN8CFFP23q/FosL0FTI3zvNjN6gQvnHJGhPQpscgMhxPyn5pgJO2QuNPZXIjtTEdjc85bUEwQVeyA5kCOTQISClgaNhFQLOFe5P6LSUF7wZlVKf4g86hijalGrK09KSnPpZqbkZ6GYX8+q90omFn95Z06u+uwyA5ffV+/6Opgja3s1ZGqwFUuMO+WXMm7HeXw15TxrEfMHWSWjaRlnB9qImlNwW3VxlZHj3cTXTv6td22SNOsAWh3wlV2KSYP7CDjgcMZrauvwKZTgphc0E64Y2CeHoXyq3PfTNu5XbPBLQpuB4yj4UDloOW8sVwVK5h5o9EgqdBr8FiisM=\"\n        ]\n      }\n    },\n    \"output\": {\n      \"transformation\": {\n        \"partnerStatusResponse\": {\n          \"status\": \"{$output.status}\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "Complex: a PEM leaf plus the base64 of a binary DER root (`base64 -w0 root.cer`). The `ssl` block is read from the stored component on every invocation. Returns 201."
+              }
+            },
+            {
+              "name": "Register — skip server verification (ssl.disableSSL)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"tls-demo\",\n  \"action\": \"get_status_insecure\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/status/{$context.id}\",\n      \"method\": \"GET\",\n      \"ssl\": {\n        \"disableSSL\": true\n      }\n    },\n    \"output\": {\n      \"transformation\": {\n        \"partnerStatusResponse\": {\n          \"status\": \"{$output.status}\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "Skips certificate verification for this component in every environment (no production guard). Only valid on its own. Returns 201."
+              }
+            },
+            {
+              "name": "Register — complex: private CA chain + mTLS with full config",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"tls-orders\",\n  \"action\": \"create_order\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: request headers/payload from `$.context`, `ssl.ca` list (root + issuing CA, one entry per certificate file), client `cert` + `key` for mutual TLS, retry, response validation and a uniquely keyed transformation. Returns 201.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://orders.partner.example.com/v2/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": {\n        \"X-Tenant-Id\": \"{$context.tenantId}\",\n        \"X-Request-Id\": \"{$context.requestId}\"\n      },\n      \"ssl\": {\n        \"ca\": [\n          \"-----BEGIN CERTIFICATE-----\\nMIIDBzCCAe+gAwIBAgIUWTVnqn4qpBWfaHOnVMs+QQTDayIwDQYJKoZIhvcNAQEL\\nBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkw\\nNjAzMTMzNVowEjEQMA4GA1UEAwwHVGVzdCBDQTCCASIwDQYJKoZIhvcNAQEBBQAD\\nggEPADCCAQoCggEBAMAjHs8e4Jh6V19FL3SKi/vIsOv4f6xhAarApKihKU3zcdQh\\nfQ+BsO8qDARy9jjQmU7b7wWYC1sAEhpvbmZAu13zVpHj9h7TWymrxayOhO7t6QAq\\nnvXf307xjpaCeC1CDKuJ2qM34PcsTwUgh/KZoviishZ1QuBY+SAnUy3f4Ei/Q5Kj\\noELmCcYvl0tzB0fnAJEFR0eBXR3dE/oIeWvIiyvwGker0/dBE+C9hxLxLLIqkbMc\\nPSDDHwsrB7Doq+D7fM7Kzxmf2kDITJXAeG3foGICzXayP8lDH+Bfa9/EeqnrqOiQ\\n0OE/hLJhD/3iSxN09yloPCmMJEE/8Hdv+mRXC3MCAwEAAaNTMFEwHQYDVR0OBBYE\\nFBEuSuqqyu+cxJa/7dCzfaDb4tVCMB8GA1UdIwQYMBaAFBEuSuqqyu+cxJa/7dCz\\nfaDb4tVCMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHB5u9e6\\ngN8CFFP23q/FosL0FTI3zvNjN6gQvnHJGhPQpscgMhxPyn5pgJO2QuNPZXIjtTEd\\njc85bUEwQVeyA5kCOTQISClgaNhFQLOFe5P6LSUF7wZlVKf4g86hijalGrK09KSn\\nPpZqbkZ6GYX8+q90omFn95Z06u+uwyA5ffV+/6Opgja3s1ZGqwFUuMO+WXMm7HeX\\nw15TxrEfMHWSWjaRlnB9qImlNwW3VxlZHj3cTXTv6td22SNOsAWh3wlV2KSYP7CD\\njgcMZrauvwKZTgphc0E64Y2CeHoXyq3PfTNu5XbPBLQpuB4yj4UDloOW8sVwVK5h\\n5o9EgqdBr8FiisM=\\n-----END CERTIFICATE-----\\n\",\n          \"-----BEGIN CERTIFICATE-----\\nMIIC1DCCAbygAwIBAgIUOtwLtfTPoFXgfhpf+Gp6mKhRq34wDQYJKoZIhvcNAQEL\\nBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkw\\nNjAzMTMzNVowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF\\nAAOCAQ8AMIIBCgKCAQEAqt2bKPd95q6vInszo8YKCLH6DKb8nO+DxAjgwuPC8bLa\\nMyiAYQvJ3tb9LriNEPsWVnih+06LCW21evZ5c4aAMvBl9ico2m57b+wwXKaSrOQr\\nj4+MPp+/cFY+nOKbM90ivOS1RwHGEOTXVWE058h1gauoO4Yf5IDmOUmg8sQUw9IR\\nSIiaVDmfUtPxE3FklubmYiKxFVQ6XaHxJWj6n74RxfGWNxvhxxHV786TfNS3v7bb\\n5oNIQfuKcTg8q3VAYFXmEZ4xqiRjhH6UkZA1rKdjplLLyuJ9YI0nu5ulZj6ax+jQ\\nEGaLa62spHB+BCpWbW3xW1vs8hxWX6DaJJOFGwFgPQIDAQABox4wHDAaBgNVHREE\\nEzARgglsb2NhbGhvc3SHBH8AAAEwDQYJKoZIhvcNAQELBQADggEBAIOpmvpk9hDx\\nE/1/BC+xBKTqQ/fGDyjvj2J1C21uWsmT55i5DcPDgtNnwKHJt/TJqgOfoKK82Je3\\nb9A8IcAdvLpWFd9/UCNkRf8umMsD4APIGgM89ImG+FcQZGywpx6Q5sX38pKG2QQj\\noHxQqbiW2U94xS5TO9NsB9gVjrFFqsJDiFhJ4+yMFeeNpdJyPB2q92YRWCA+y3LO\\nrccsfk7KGU/OyavYBeIH1kdw5iPoOTw2EtrEDNrOpl43+niOcuf4CEMDbeXQ9aOd\\nMXRM6ZTp4CQD/G134RzgDtjLaHegw2Xwk5eJDZTkYGsriz5w3LIqt/cBWCwWsKpq\\nLL1XWDVJFZk=\\n-----END CERTIFICATE-----\\n\"\n        ],\n        \"cert\": \"-----BEGIN CERTIFICATE-----\\nMIICyjCCAbKgAwIBAgIUOtwLtfTPoFXgfhpf+Gp6mKhRq38wDQYJKoZIhvcNAQEL\\nBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkw\\nNjAzMTMzNVowEjEQMA4GA1UEAwwHY2xpZW50YTCCASIwDQYJKoZIhvcNAQEBBQAD\\nggEPADCCAQoCggEBALm0lfVQAeD9+0/Brn31RskbB1bNfCnzVuP9WyNSL7qZz6wN\\nwT5tr4loUDUv9S86bSN3dK8RT9VAXW/xrUMlrs8JCKe1qaXUjRJtCZBSolQ/kvGl\\nBQWJDDeya37ayasX30hT7pkhLs28/quSt/zQ67Y9azKbq2HGPhSnej2gSgARLjmJ\\nyEjYqXvHeEaPS0nvBXkyBu29UfnrdCxntDssd7XbYb8widj6g27zgaCKIKBfXPQZ\\nrBkyggex+BbM5PO/LZxO/uK4DIxICvchyJff9aK2RDD3iqZwOq3qN4x9cDOjiy4X\\nRYqLuEDHn4qbE+vO5OGQXV2v7spFU3LplWweTa8CAwEAAaMWMBQwEgYDVR0RBAsw\\nCYIHY2xpZW50YTANBgkqhkiG9w0BAQsFAAOCAQEAUBo9vEx/0NHICk6cviGEJabM\\nClcOCEPRlazrD9KOf1MDD3bodjrD7cDXB0oC6TyfRLK8lANrD/INMqVK1X7se+yk\\nQ3diqUGPbmKIB/VAP0jAu11aKAspHRTtvH4qlxMvToWiUEjMMOCBtOqrLxhC2A2J\\nwisCDcFURtB1+DlbUBtnWEzBxgG5qd1SttxDnurNY2SffH86IoGR7by9KPonMn5n\\ncpoL9HnrJKPn/ytnKedOvVNBsUNLK2hTsH0AlPV7VEtohUuFNimIKFlfcv0Pehl+\\nqNYM3ZpvVQ6O4W7Uj1n1WeLwr0jvnn174HoKgKN7K9s/jIrqZSlJA8QTETiDjg==\\n-----END CERTIFICATE-----\\n\",\n        \"key\": \"-----BEGIN PRIVATE KEY-----\\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQC5tJX1UAHg/ftP\\nwa599UbJGwdWzXwp81bj/VsjUi+6mc+sDcE+ba+JaFA1L/UvOm0jd3SvEU/VQF1v\\n8a1DJa7PCQintaml1I0SbQmQUqJUP5LxpQUFiQw3smt+2smrF99IU+6ZIS7NvP6r\\nkrf80Ou2PWsym6thxj4Up3o9oEoAES45ichI2Kl7x3hGj0tJ7wV5MgbtvVH563Qs\\nZ7Q7LHe122G/MInY+oNu84GgiiCgX1z0GawZMoIHsfgWzOTzvy2cTv7iuAyMSAr3\\nIciX3/WitkQw94qmcDqt6jeMfXAzo4suF0WKi7hAx5+KmxPrzuThkF1dr+7KRVNy\\n6ZVsHk2vAgMBAAECggEBAJgSFFatLMy0zy5RuXU1/MBEXO8tGAc2WKocV5yF+cXB\\nnLkVDnDz2zIXdM8JNat2GddYQ/n0oD5OFfXMn4iD/DFYAXlsnr7IXrl/BrzjnkCF\\nSuyMqJ8Oyi118ucPfOOZieOtr45ACRa7NIUFgZsK7mruwrDPnzlS4JWDS+vZLZ/9\\nC2Q7ROXGswu+rpHjhfY8p2fhwp5urB1STIWvgJajV999gnrk6tka6R0gmgTVSFu1\\nxPxDivTdLi/pg4tbHcqd8GfciHIVrJR2cX5D3p9TTDzVAo+LcGafpf2VpK3lnj+a\\nsQNnJRcOZOahQJcRP1E9IBvPKRguKAugk3VnPMZjudECgYEA7KQN2nR5BdGUpMEH\\nK67nGkffpcU2zclB+nVEVKlScuZwCXrckELwuo+mH9ZfUa+SYnI6xYzwtUYAaJha\\nHMWdkvTKRGX/gDE5R+hCqoK9CO2aEPpDOxj4KpCze1IAkLctzr2Muttgp5E94Y+G\\n/ksnxjAYOTzC31QcNiGoNuD9u+kCgYEAyOXLy45IZ5x4qOvf///qtAXzY5XcXy7o\\nzgcphogdtuP42z06Z0LsleJGgyP84pk14WlOgIp46zMGP2nFd5b07T21B5RbQBg0\\nLKu2a0gnVF80Bm3GmsSlKW7Y5T6VfH6sbYHjtTpzIM3PCYFQ8yktZyXACFmxx9RD\\nZwalkzyEddcCgYEAqaoF9LbFfpKBTI7JIVzJfWJCy4vWezzs/THOyBSOdKsbcPCR\\n6yzThC8yIGmG9f43qjXURYeDnbSO3m89TJuzGoY/70JiKfsg4pl4EuChwCD68Wk9\\ngsWoSHxu8uAcX6W2RiBJIj/f0MSl5W8Ojow7/DDHbWJPJegcQgNno9E0muECgYEA\\npIxL6zNkLLFlxv5EH9vOsps5KnVB5hh3COGm6pEsvXNmjrRM1O1k+LM4jAt7A2L4\\nVeO6L+C7f/HwCRqqafSUMolbcJTcVNg+S+RtatvTkvDTnPxnMrckjJZFQyeKq0ja\\nFGvSRctVJyZLkP6BfllY3eZ2rqBA1GsQth8kmT91Q0sCgYAy0Brkac3nuXP8PhNa\\nyLjbj/vQJMuao2Yy1nPlYGR12GEDhPjEVP+AtUY2Ujx1asNs5vp5jwdhuQwqTrPg\\nHyjuFDH8dCqLzefNJfcVW9r1DGc1quiBiW5yHqpQAGJdTAJHf02t4SHMibd/Jgzv\\nEzIyGAyoFWPsU9cQj4roGv2g6w==\\n-----END PRIVATE KEY-----\\n\"\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"{$context.customerId}\",\n        \"items\": \"{$context.items}\",\n        \"totalAmount\": \"{$context.totalAmount}\"\n      },\n      \"validation\": {\n        \"fields\": [\n          {\n            \"path\": \"tenantId\",\n            \"required\": true,\n            \"type\": \"string\"\n          },\n          {\n            \"path\": \"customerId\",\n            \"required\": true,\n            \"type\": \"string\"\n          },\n          {\n            \"path\": \"items\",\n            \"required\": true,\n            \"type\": \"array\",\n            \"minItems\": 1\n          },\n          {\n            \"path\": \"totalAmount\",\n            \"required\": true,\n            \"type\": \"number\"\n          }\n        ]\n      }\n    },\n    \"timeout\": {\n      \"response\": 30000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [\n        502,\n        503,\n        504\n      ]\n    },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          {\n            \"expression\": \"{$output.json.id} != null\",\n            \"message\": \"Order ID is missing\"\n          }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"{$output.json.id}\",\n          \"status\": \"{$output.json.status}\"\n        }\n      }\n    }\n  },\n  \"condition\": \"{$context.customerId} != null\",\n  \"metaData\": {\n    \"owner\": \"platform-team\",\n    \"tls\": \"private-ca\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "Complex: request headers/payload from `$.context`, `ssl.ca` list (root + issuing CA, one entry per certificate file), client `cert` + `key` for mutual TLS, retry, response validation and a uniquely keyed transformation. Returns 201."
+              }
+            },
+            {
+              "name": "Register — complex: mTLS with encrypted key and passphrase",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"tls-orders\",\n  \"action\": \"create_order_encrypted_key\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: an encrypted PKCS#8 private key (`-----BEGIN ENCRYPTED PRIVATE KEY-----`) with its `passphrase`, and a base64-DER root next to a PEM one. The passphrase is masked in logs and API responses. Returns 201.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://orders.partner.example.com/v2/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": {\n        \"X-Tenant-Id\": \"{$context.tenantId}\",\n        \"X-Request-Id\": \"{$context.requestId}\"\n      },\n      \"ssl\": {\n        \"ca\": [\n          \"-----BEGIN CERTIFICATE-----\\nMIIDBzCCAe+gAwIBAgIUWTVnqn4qpBWfaHOnVMs+QQTDayIwDQYJKoZIhvcNAQEL\\nBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkw\\nNjAzMTMzNVowEjEQMA4GA1UEAwwHVGVzdCBDQTCCASIwDQYJKoZIhvcNAQEBBQAD\\nggEPADCCAQoCggEBAMAjHs8e4Jh6V19FL3SKi/vIsOv4f6xhAarApKihKU3zcdQh\\nfQ+BsO8qDARy9jjQmU7b7wWYC1sAEhpvbmZAu13zVpHj9h7TWymrxayOhO7t6QAq\\nnvXf307xjpaCeC1CDKuJ2qM34PcsTwUgh/KZoviishZ1QuBY+SAnUy3f4Ei/Q5Kj\\noELmCcYvl0tzB0fnAJEFR0eBXR3dE/oIeWvIiyvwGker0/dBE+C9hxLxLLIqkbMc\\nPSDDHwsrB7Doq+D7fM7Kzxmf2kDITJXAeG3foGICzXayP8lDH+Bfa9/EeqnrqOiQ\\n0OE/hLJhD/3iSxN09yloPCmMJEE/8Hdv+mRXC3MCAwEAAaNTMFEwHQYDVR0OBBYE\\nFBEuSuqqyu+cxJa/7dCzfaDb4tVCMB8GA1UdIwQYMBaAFBEuSuqqyu+cxJa/7dCz\\nfaDb4tVCMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHB5u9e6\\ngN8CFFP23q/FosL0FTI3zvNjN6gQvnHJGhPQpscgMhxPyn5pgJO2QuNPZXIjtTEd\\njc85bUEwQVeyA5kCOTQISClgaNhFQLOFe5P6LSUF7wZlVKf4g86hijalGrK09KSn\\nPpZqbkZ6GYX8+q90omFn95Z06u+uwyA5ffV+/6Opgja3s1ZGqwFUuMO+WXMm7HeX\\nw15TxrEfMHWSWjaRlnB9qImlNwW3VxlZHj3cTXTv6td22SNOsAWh3wlV2KSYP7CD\\njgcMZrauvwKZTgphc0E64Y2CeHoXyq3PfTNu5XbPBLQpuB4yj4UDloOW8sVwVK5h\\n5o9EgqdBr8FiisM=\\n-----END CERTIFICATE-----\\n\",\n          \"MIIDBzCCAe+gAwIBAgIUWTVnqn4qpBWfaHOnVMs+QQTDayIwDQYJKoZIhvcNAQELBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkwNjAzMTMzNVowEjEQMA4GA1UEAwwHVGVzdCBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMAjHs8e4Jh6V19FL3SKi/vIsOv4f6xhAarApKihKU3zcdQhfQ+BsO8qDARy9jjQmU7b7wWYC1sAEhpvbmZAu13zVpHj9h7TWymrxayOhO7t6QAqnvXf307xjpaCeC1CDKuJ2qM34PcsTwUgh/KZoviishZ1QuBY+SAnUy3f4Ei/Q5KjoELmCcYvl0tzB0fnAJEFR0eBXR3dE/oIeWvIiyvwGker0/dBE+C9hxLxLLIqkbMcPSDDHwsrB7Doq+D7fM7Kzxmf2kDITJXAeG3foGICzXayP8lDH+Bfa9/EeqnrqOiQ0OE/hLJhD/3iSxN09yloPCmMJEE/8Hdv+mRXC3MCAwEAAaNTMFEwHQYDVR0OBBYEFBEuSuqqyu+cxJa/7dCzfaDb4tVCMB8GA1UdIwQYMBaAFBEuSuqqyu+cxJa/7dCzfaDb4tVCMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHB5u9e6gN8CFFP23q/FosL0FTI3zvNjN6gQvnHJGhPQpscgMhxPyn5pgJO2QuNPZXIjtTEdjc85bUEwQVeyA5kCOTQISClgaNhFQLOFe5P6LSUF7wZlVKf4g86hijalGrK09KSnPpZqbkZ6GYX8+q90omFn95Z06u+uwyA5ffV+/6Opgja3s1ZGqwFUuMO+WXMm7HeXw15TxrEfMHWSWjaRlnB9qImlNwW3VxlZHj3cTXTv6td22SNOsAWh3wlV2KSYP7CDjgcMZrauvwKZTgphc0E64Y2CeHoXyq3PfTNu5XbPBLQpuB4yj4UDloOW8sVwVK5h5o9EgqdBr8FiisM=\"\n        ],\n        \"cert\": \"-----BEGIN CERTIFICATE-----\\nMIICyjCCAbKgAwIBAgIUOtwLtfTPoFXgfhpf+Gp6mKhRq38wDQYJKoZIhvcNAQEL\\nBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkw\\nNjAzMTMzNVowEjEQMA4GA1UEAwwHY2xpZW50YTCCASIwDQYJKoZIhvcNAQEBBQAD\\nggEPADCCAQoCggEBALm0lfVQAeD9+0/Brn31RskbB1bNfCnzVuP9WyNSL7qZz6wN\\nwT5tr4loUDUv9S86bSN3dK8RT9VAXW/xrUMlrs8JCKe1qaXUjRJtCZBSolQ/kvGl\\nBQWJDDeya37ayasX30hT7pkhLs28/quSt/zQ67Y9azKbq2HGPhSnej2gSgARLjmJ\\nyEjYqXvHeEaPS0nvBXkyBu29UfnrdCxntDssd7XbYb8widj6g27zgaCKIKBfXPQZ\\nrBkyggex+BbM5PO/LZxO/uK4DIxICvchyJff9aK2RDD3iqZwOq3qN4x9cDOjiy4X\\nRYqLuEDHn4qbE+vO5OGQXV2v7spFU3LplWweTa8CAwEAAaMWMBQwEgYDVR0RBAsw\\nCYIHY2xpZW50YTANBgkqhkiG9w0BAQsFAAOCAQEAUBo9vEx/0NHICk6cviGEJabM\\nClcOCEPRlazrD9KOf1MDD3bodjrD7cDXB0oC6TyfRLK8lANrD/INMqVK1X7se+yk\\nQ3diqUGPbmKIB/VAP0jAu11aKAspHRTtvH4qlxMvToWiUEjMMOCBtOqrLxhC2A2J\\nwisCDcFURtB1+DlbUBtnWEzBxgG5qd1SttxDnurNY2SffH86IoGR7by9KPonMn5n\\ncpoL9HnrJKPn/ytnKedOvVNBsUNLK2hTsH0AlPV7VEtohUuFNimIKFlfcv0Pehl+\\nqNYM3ZpvVQ6O4W7Uj1n1WeLwr0jvnn174HoKgKN7K9s/jIrqZSlJA8QTETiDjg==\\n-----END CERTIFICATE-----\\n\",\n        \"key\": \"-----BEGIN ENCRYPTED PRIVATE KEY-----\\nMIIFLTBXBgkqhkiG9w0BBQ0wSjApBgkqhkiG9w0BBQwwHAQIOqiDHZTIpP8CAggA\\nMAwGCCqGSIb3DQIJBQAwHQYJYIZIAWUDBAEqBBChtjs1m2i61PWeeqEP+oPOBIIE\\n0F1OTaHoQ2flRvQNzdaEyB4QbGJ/TR3syHs6/o+/UUovqKo/eZVhoZ8NVGoidKRD\\nJbRQZDsdXZfUELXVI3eL9XcL37nYaQkXKpMWoSGVH6X4tWwIyyDomdWPDV1I4xtr\\nyq518hhj1I8IR1TGVOeSnKC7q+h0dfERP7CGSmZBHG9af7O557fNcurfwOqoa1TK\\n3JgcC5F+L7/idV+MsZsD++oDtrlBkOVjVQHkOcnOE9jmCsAUun/I9HV3pd1LfnM9\\nMAxNZB8KhLYCTUmNNRd707eyl7J2xOXUxgFp9wx10+St36s5jB8OYHPG0lRA4nFL\\nAhyhgInTcGq2S600YKdRFkbt1S2gp3JEZVWCgZZKhwBa6BwmYldevMtCCgBHWBmf\\nwaYTZGY0TMZy+cp5M+4l6kqStOo6RTJIFOmx6CBX/V0yKT/OnZkZdIdFxXXuvdh0\\nA5vuNEr3REqObWA+r35SDYItVGrQDxEsyZyo9UrJwrdMS/vOvKnpHDq3jdKnP9Pb\\nHUhJ5wDiPEfGPoGo7i+nFXD1I0wMTCwp6SCZMks5XumKPWSTw5WhXJu4iwvL8Ksl\\nXZrmFB3+JQTAUEpltp1LkLB0dBPEjrAhEEa3NzGIuL0zjww6/P54KvOrnsvU+l6q\\nvRl7FjGmTyaaS7XMx1fiKCFKvZjvu+jZuFusjoOOq3N9GcFWj9i1VuzTcr5xrTdQ\\n7Xb2zUn1oslLHxsAqqqeHbpFAp869iWhn4cFZ0Kchb7vurKhsibVUgtSp66nnWV8\\nwE1YYYb85CphC6ZD6Sls/h4gfj2Cvb718SnWe7EEKVhyyuMTOM3ew9DdebSoVeu5\\nZ16kjR7F+yEIkgvFuCR4xplQQ2M5T+gw3y53ZuJgN81Rmx1+7kHIPZy94YBltIJA\\nFfL7EOaPTqYYcNOO6c0bux84qu+TNfqY5wb1k68P9RO9fWMOvRz0ZzSuJvRO66ez\\nXE3/wv3cyKK7hBmGXQVhGXcVjnCJn4EKQXmo2peXJ6dWFm3DfFnGXd1d8QyK/7TH\\ngSi7GsU+o4Cf2opQxQJjwg8SHi1pj80PQ6VsdrNuD6Dt033Bq5X9BdxQejQnP2Q+\\naOlR8jRcmPF1lB6ZIRMR9q8bmks75bY3zL+hMnc2m9TJSJXg9Q+dWpCUzQL6vYKP\\ns1RH4hVv75Drw3vhzPnUxNmQipgAPbmrmJ9hYi0y7hhj50dxygTdhYpV4ZZ09Xyx\\nrwTFP33PE18uPQ/t1riy0M3NuD03RdcmeUzIEJoxfCoaV9pHlR/Yf6FgXIiz36ln\\nrw85mdB/MyPYFkMTG8YTZGBKzFxq+ichfTx0D7EwhOsBskir4trzXEdP4xNhaN08\\nMZmRBEn8ELc7kKhXIPRDDxzF6/CiYOO99IRM+zdpoyxXBSjGZOJy2KZ4nPzHnli+\\nFXJViHrYVe8n3/wqqpiJUSl616CM7J8D38VGNKYoVTt6nznS+5+W4HCd0+2o0CP5\\nP7WdOaxpgkwo5XWZaMqdC9BGKsLFZjddIZX3h6pTEyT+pC6VoMmtnxQX3W88jspl\\ntHkzbPZJLtKZMId7EYJ/UsHLN8g2AWaxd+tnkjfSlAFJUbRLvM/2rChBuYX+f5ts\\nA6fuorPz7nUKDK05SaXFG8DWaiNLmraZUonmudRnpmah\\n-----END ENCRYPTED PRIVATE KEY-----\\n\",\n        \"passphrase\": \"example-passphrase\"\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"{$context.customerId}\",\n        \"items\": \"{$context.items}\",\n        \"totalAmount\": \"{$context.totalAmount}\"\n      },\n      \"validation\": {\n        \"fields\": [\n          {\n            \"path\": \"tenantId\",\n            \"required\": true,\n            \"type\": \"string\"\n          },\n          {\n            \"path\": \"customerId\",\n            \"required\": true,\n            \"type\": \"string\"\n          },\n          {\n            \"path\": \"items\",\n            \"required\": true,\n            \"type\": \"array\",\n            \"minItems\": 1\n          },\n          {\n            \"path\": \"totalAmount\",\n            \"required\": true,\n            \"type\": \"number\"\n          }\n        ]\n      }\n    },\n    \"timeout\": {\n      \"response\": 30000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [\n        502,\n        503,\n        504\n      ]\n    },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          {\n            \"expression\": \"{$output.json.id} != null\",\n            \"message\": \"Order ID is missing\"\n          }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"{$output.json.id}\",\n          \"status\": \"{$output.json.status}\"\n        }\n      }\n    }\n  },\n  \"condition\": \"{$context.customerId} != null\",\n  \"metaData\": {\n    \"owner\": \"platform-team\",\n    \"tls\": \"private-ca\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "Complex: an encrypted PKCS#8 private key (`-----BEGIN ENCRYPTED PRIVATE KEY-----`) with its `passphrase`, and a base64-DER root next to a PEM one. The passphrase is masked in logs and API responses. Returns 201."
+              }
+            },
+            {
+              "name": "Register — complex: ca, cert, key and passphrase from env",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"tls-demo\",\n  \"action\": \"create_order_env\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/status/{$context.id}\",\n      \"method\": \"GET\",\n      \"ssl\": {\n        \"ca\": [\n          \"{$env.PARTNER_CA}\"\n        ],\n        \"cert\": \"{$env.PARTNER_CLIENT_CERT}\",\n        \"key\": \"{$env.PARTNER_CLIENT_KEY}\",\n        \"passphrase\": \"{$env.PARTNER_CLIENT_KEY_PASSPHRASE}\"\n      }\n    },\n    \"output\": {\n      \"transformation\": {\n        \"partnerStatusResponse\": {\n          \"status\": \"{$output.status}\"\n        }\n      }\n    }\n  },\n  \"description\": \"Complex: every TLS field comes from the environment (set the four variables where the server runs). Variables are read at each invocation and may hold real newlines or a single line with literal `\\\\n`.\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "Complex: all TLS material is supplied through `{$env.NAME}` (choose inline or env per field). Env-supplied values can't be checked at registration: a missing variable gives 500 ENV_REF_UNRESOLVED and invalid or root-less material gives 502 when invoked. Returns 201."
+              }
+            },
+            {
+              "name": "Update — rotate ssl.ca at runtime (next invocation uses it)",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"componentType\": \"rest\",\n  \"description\": \"Same service/action as the first complex example, with a changed `ssl.ca`. TLS material is read from the stored component on every invocation, so no restart is needed: the next invoke trusts only the new CA. Returns 201.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://orders.partner.example.com/v2/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": {\n        \"X-Tenant-Id\": \"{$context.tenantId}\",\n        \"X-Request-Id\": \"{$context.requestId}\"\n      },\n      \"ssl\": {\n        \"ca\": [\n          \"-----BEGIN CERTIFICATE-----\\nMIIDBzCCAe+gAwIBAgIUWTVnqn4qpBWfaHOnVMs+QQTDayIwDQYJKoZIhvcNAQEL\\nBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkw\\nNjAzMTMzNVowEjEQMA4GA1UEAwwHVGVzdCBDQTCCASIwDQYJKoZIhvcNAQEBBQAD\\nggEPADCCAQoCggEBAMAjHs8e4Jh6V19FL3SKi/vIsOv4f6xhAarApKihKU3zcdQh\\nfQ+BsO8qDARy9jjQmU7b7wWYC1sAEhpvbmZAu13zVpHj9h7TWymrxayOhO7t6QAq\\nnvXf307xjpaCeC1CDKuJ2qM34PcsTwUgh/KZoviishZ1QuBY+SAnUy3f4Ei/Q5Kj\\noELmCcYvl0tzB0fnAJEFR0eBXR3dE/oIeWvIiyvwGker0/dBE+C9hxLxLLIqkbMc\\nPSDDHwsrB7Doq+D7fM7Kzxmf2kDITJXAeG3foGICzXayP8lDH+Bfa9/EeqnrqOiQ\\n0OE/hLJhD/3iSxN09yloPCmMJEE/8Hdv+mRXC3MCAwEAAaNTMFEwHQYDVR0OBBYE\\nFBEuSuqqyu+cxJa/7dCzfaDb4tVCMB8GA1UdIwQYMBaAFBEuSuqqyu+cxJa/7dCz\\nfaDb4tVCMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHB5u9e6\\ngN8CFFP23q/FosL0FTI3zvNjN6gQvnHJGhPQpscgMhxPyn5pgJO2QuNPZXIjtTEd\\njc85bUEwQVeyA5kCOTQISClgaNhFQLOFe5P6LSUF7wZlVKf4g86hijalGrK09KSn\\nPpZqbkZ6GYX8+q90omFn95Z06u+uwyA5ffV+/6Opgja3s1ZGqwFUuMO+WXMm7HeX\\nw15TxrEfMHWSWjaRlnB9qImlNwW3VxlZHj3cTXTv6td22SNOsAWh3wlV2KSYP7CD\\njgcMZrauvwKZTgphc0E64Y2CeHoXyq3PfTNu5XbPBLQpuB4yj4UDloOW8sVwVK5h\\n5o9EgqdBr8FiisM=\\n-----END CERTIFICATE-----\\n\"\n        ],\n        \"cert\": \"-----BEGIN CERTIFICATE-----\\nMIICyjCCAbKgAwIBAgIUOtwLtfTPoFXgfhpf+Gp6mKhRq38wDQYJKoZIhvcNAQEL\\nBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkw\\nNjAzMTMzNVowEjEQMA4GA1UEAwwHY2xpZW50YTCCASIwDQYJKoZIhvcNAQEBBQAD\\nggEPADCCAQoCggEBALm0lfVQAeD9+0/Brn31RskbB1bNfCnzVuP9WyNSL7qZz6wN\\nwT5tr4loUDUv9S86bSN3dK8RT9VAXW/xrUMlrs8JCKe1qaXUjRJtCZBSolQ/kvGl\\nBQWJDDeya37ayasX30hT7pkhLs28/quSt/zQ67Y9azKbq2HGPhSnej2gSgARLjmJ\\nyEjYqXvHeEaPS0nvBXkyBu29UfnrdCxntDssd7XbYb8widj6g27zgaCKIKBfXPQZ\\nrBkyggex+BbM5PO/LZxO/uK4DIxICvchyJff9aK2RDD3iqZwOq3qN4x9cDOjiy4X\\nRYqLuEDHn4qbE+vO5OGQXV2v7spFU3LplWweTa8CAwEAAaMWMBQwEgYDVR0RBAsw\\nCYIHY2xpZW50YTANBgkqhkiG9w0BAQsFAAOCAQEAUBo9vEx/0NHICk6cviGEJabM\\nClcOCEPRlazrD9KOf1MDD3bodjrD7cDXB0oC6TyfRLK8lANrD/INMqVK1X7se+yk\\nQ3diqUGPbmKIB/VAP0jAu11aKAspHRTtvH4qlxMvToWiUEjMMOCBtOqrLxhC2A2J\\nwisCDcFURtB1+DlbUBtnWEzBxgG5qd1SttxDnurNY2SffH86IoGR7by9KPonMn5n\\ncpoL9HnrJKPn/ytnKedOvVNBsUNLK2hTsH0AlPV7VEtohUuFNimIKFlfcv0Pehl+\\nqNYM3ZpvVQ6O4W7Uj1n1WeLwr0jvnn174HoKgKN7K9s/jIrqZSlJA8QTETiDjg==\\n-----END CERTIFICATE-----\\n\",\n        \"key\": \"-----BEGIN PRIVATE KEY-----\\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQC5tJX1UAHg/ftP\\nwa599UbJGwdWzXwp81bj/VsjUi+6mc+sDcE+ba+JaFA1L/UvOm0jd3SvEU/VQF1v\\n8a1DJa7PCQintaml1I0SbQmQUqJUP5LxpQUFiQw3smt+2smrF99IU+6ZIS7NvP6r\\nkrf80Ou2PWsym6thxj4Up3o9oEoAES45ichI2Kl7x3hGj0tJ7wV5MgbtvVH563Qs\\nZ7Q7LHe122G/MInY+oNu84GgiiCgX1z0GawZMoIHsfgWzOTzvy2cTv7iuAyMSAr3\\nIciX3/WitkQw94qmcDqt6jeMfXAzo4suF0WKi7hAx5+KmxPrzuThkF1dr+7KRVNy\\n6ZVsHk2vAgMBAAECggEBAJgSFFatLMy0zy5RuXU1/MBEXO8tGAc2WKocV5yF+cXB\\nnLkVDnDz2zIXdM8JNat2GddYQ/n0oD5OFfXMn4iD/DFYAXlsnr7IXrl/BrzjnkCF\\nSuyMqJ8Oyi118ucPfOOZieOtr45ACRa7NIUFgZsK7mruwrDPnzlS4JWDS+vZLZ/9\\nC2Q7ROXGswu+rpHjhfY8p2fhwp5urB1STIWvgJajV999gnrk6tka6R0gmgTVSFu1\\nxPxDivTdLi/pg4tbHcqd8GfciHIVrJR2cX5D3p9TTDzVAo+LcGafpf2VpK3lnj+a\\nsQNnJRcOZOahQJcRP1E9IBvPKRguKAugk3VnPMZjudECgYEA7KQN2nR5BdGUpMEH\\nK67nGkffpcU2zclB+nVEVKlScuZwCXrckELwuo+mH9ZfUa+SYnI6xYzwtUYAaJha\\nHMWdkvTKRGX/gDE5R+hCqoK9CO2aEPpDOxj4KpCze1IAkLctzr2Muttgp5E94Y+G\\n/ksnxjAYOTzC31QcNiGoNuD9u+kCgYEAyOXLy45IZ5x4qOvf///qtAXzY5XcXy7o\\nzgcphogdtuP42z06Z0LsleJGgyP84pk14WlOgIp46zMGP2nFd5b07T21B5RbQBg0\\nLKu2a0gnVF80Bm3GmsSlKW7Y5T6VfH6sbYHjtTpzIM3PCYFQ8yktZyXACFmxx9RD\\nZwalkzyEddcCgYEAqaoF9LbFfpKBTI7JIVzJfWJCy4vWezzs/THOyBSOdKsbcPCR\\n6yzThC8yIGmG9f43qjXURYeDnbSO3m89TJuzGoY/70JiKfsg4pl4EuChwCD68Wk9\\ngsWoSHxu8uAcX6W2RiBJIj/f0MSl5W8Ojow7/DDHbWJPJegcQgNno9E0muECgYEA\\npIxL6zNkLLFlxv5EH9vOsps5KnVB5hh3COGm6pEsvXNmjrRM1O1k+LM4jAt7A2L4\\nVeO6L+C7f/HwCRqqafSUMolbcJTcVNg+S+RtatvTkvDTnPxnMrckjJZFQyeKq0ja\\nFGvSRctVJyZLkP6BfllY3eZ2rqBA1GsQth8kmT91Q0sCgYAy0Brkac3nuXP8PhNa\\nyLjbj/vQJMuao2Yy1nPlYGR12GEDhPjEVP+AtUY2Ujx1asNs5vp5jwdhuQwqTrPg\\nHyjuFDH8dCqLzefNJfcVW9r1DGc1quiBiW5yHqpQAGJdTAJHf02t4SHMibd/Jgzv\\nEzIyGAyoFWPsU9cQj4roGv2g6w==\\n-----END PRIVATE KEY-----\\n\"\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"{$context.customerId}\",\n        \"items\": \"{$context.items}\",\n        \"totalAmount\": \"{$context.totalAmount}\"\n      },\n      \"validation\": {\n        \"fields\": [\n          {\n            \"path\": \"tenantId\",\n            \"required\": true,\n            \"type\": \"string\"\n          },\n          {\n            \"path\": \"customerId\",\n            \"required\": true,\n            \"type\": \"string\"\n          },\n          {\n            \"path\": \"items\",\n            \"required\": true,\n            \"type\": \"array\",\n            \"minItems\": 1\n          },\n          {\n            \"path\": \"totalAmount\",\n            \"required\": true,\n            \"type\": \"number\"\n          }\n        ]\n      }\n    },\n    \"timeout\": {\n      \"response\": 30000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [\n        502,\n        503,\n        504\n      ]\n    },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          {\n            \"expression\": \"{$output.json.id} != null\",\n            \"message\": \"Order ID is missing\"\n          }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"{$output.json.id}\",\n          \"status\": \"{$output.json.status}\"\n        }\n      }\n    }\n  },\n  \"condition\": \"{$context.customerId} != null\",\n  \"metaData\": {\n    \"owner\": \"platform-team\",\n    \"tls\": \"private-ca\"\n  },\n  \"version\": 1\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services/tls-orders/actions/create_order",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services",
+                    "tls-orders",
+                    "actions",
+                    "create_order"
+                  ]
+                },
+                "description": "PUT the first complex example with `version: 1` (optimistic locking) and a changed `ssl.ca`. TLS material is read from the stored component on every invocation, so no restart is needed: the next invoke trusts only the new CA. Returns 200."
+              }
+            },
+            {
+              "name": "Register — complex: disableSSL with retry and transformation",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"tls-orders\",\n  \"action\": \"create_order_insecure\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: skip verification for a test partner endpoint while keeping payload mapping, retry and response transformation. `disableSSL` cannot be combined with `ca`/`cert`/`key`. Returns 201.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://orders.partner.example.com/v2/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": {\n        \"X-Tenant-Id\": \"{$context.tenantId}\",\n        \"X-Request-Id\": \"{$context.requestId}\"\n      },\n      \"ssl\": {\n        \"disableSSL\": true\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"{$context.customerId}\",\n        \"items\": \"{$context.items}\",\n        \"totalAmount\": \"{$context.totalAmount}\"\n      },\n      \"validation\": {\n        \"fields\": [\n          {\n            \"path\": \"tenantId\",\n            \"required\": true,\n            \"type\": \"string\"\n          },\n          {\n            \"path\": \"customerId\",\n            \"required\": true,\n            \"type\": \"string\"\n          },\n          {\n            \"path\": \"items\",\n            \"required\": true,\n            \"type\": \"array\",\n            \"minItems\": 1\n          },\n          {\n            \"path\": \"totalAmount\",\n            \"required\": true,\n            \"type\": \"number\"\n          }\n        ]\n      }\n    },\n    \"timeout\": {\n      \"response\": 30000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [\n        502,\n        503,\n        504\n      ]\n    },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          {\n            \"expression\": \"{$output.json.id} != null\",\n            \"message\": \"Order ID is missing\"\n          }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"{$output.json.id}\",\n          \"status\": \"{$output.json.status}\"\n        }\n      }\n    }\n  },\n  \"condition\": \"{$context.customerId} != null\",\n  \"metaData\": {\n    \"owner\": \"platform-team\",\n    \"tls\": \"private-ca\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "Complex: skip verification for a test partner endpoint while keeping payload mapping, retry and response transformation. `disableSSL` cannot be combined with `ca`/`cert`/`key`. Returns 201."
+              }
+            },
+            {
+              "name": "400 — ca without a self-signed root",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"tls-demo\",\n  \"action\": \"get_status\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/status/{$context.id}\",\n      \"method\": \"GET\",\n      \"ssl\": {\n        \"ca\": [\n          \"-----BEGIN CERTIFICATE-----\\nMIIC1DCCAbygAwIBAgIUOtwLtfTPoFXgfhpf+Gp6mKhRq34wDQYJKoZIhvcNAQEL\\nBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkw\\nNjAzMTMzNVowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF\\nAAOCAQ8AMIIBCgKCAQEAqt2bKPd95q6vInszo8YKCLH6DKb8nO+DxAjgwuPC8bLa\\nMyiAYQvJ3tb9LriNEPsWVnih+06LCW21evZ5c4aAMvBl9ico2m57b+wwXKaSrOQr\\nj4+MPp+/cFY+nOKbM90ivOS1RwHGEOTXVWE058h1gauoO4Yf5IDmOUmg8sQUw9IR\\nSIiaVDmfUtPxE3FklubmYiKxFVQ6XaHxJWj6n74RxfGWNxvhxxHV786TfNS3v7bb\\n5oNIQfuKcTg8q3VAYFXmEZ4xqiRjhH6UkZA1rKdjplLLyuJ9YI0nu5ulZj6ax+jQ\\nEGaLa62spHB+BCpWbW3xW1vs8hxWX6DaJJOFGwFgPQIDAQABox4wHDAaBgNVHREE\\nEzARgglsb2NhbGhvc3SHBH8AAAEwDQYJKoZIhvcNAQELBQADggEBAIOpmvpk9hDx\\nE/1/BC+xBKTqQ/fGDyjvj2J1C21uWsmT55i5DcPDgtNnwKHJt/TJqgOfoKK82Je3\\nb9A8IcAdvLpWFd9/UCNkRf8umMsD4APIGgM89ImG+FcQZGywpx6Q5sX38pKG2QQj\\noHxQqbiW2U94xS5TO9NsB9gVjrFFqsJDiFhJ4+yMFeeNpdJyPB2q92YRWCA+y3LO\\nrccsfk7KGU/OyavYBeIH1kdw5iPoOTw2EtrEDNrOpl43+niOcuf4CEMDbeXQ9aOd\\nMXRM6ZTp4CQD/G134RzgDtjLaHegw2Xwk5eJDZTkYGsriz5w3LIqt/cBWCwWsKpq\\nLL1XWDVJFZk=\\n-----END CERTIFICATE-----\\n\"\n        ]\n      }\n    },\n    \"output\": {\n      \"transformation\": {\n        \"partnerStatusResponse\": {\n          \"status\": \"{$output.status}\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "A lone server/intermediate certificate is not a trust anchor (unlike a Java keystore): include the chain up to the self-signed root. Returns 400."
+              }
+            },
+            {
+              "name": "400 — disableSSL combined with ca",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"tls-demo\",\n  \"action\": \"get_status\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/status/{$context.id}\",\n      \"method\": \"GET\",\n      \"ssl\": {\n        \"disableSSL\": true,\n        \"ca\": [\n          \"-----BEGIN CERTIFICATE-----\\nMIIDBzCCAe+gAwIBAgIUWTVnqn4qpBWfaHOnVMs+QQTDayIwDQYJKoZIhvcNAQEL\\nBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkw\\nNjAzMTMzNVowEjEQMA4GA1UEAwwHVGVzdCBDQTCCASIwDQYJKoZIhvcNAQEBBQAD\\nggEPADCCAQoCggEBAMAjHs8e4Jh6V19FL3SKi/vIsOv4f6xhAarApKihKU3zcdQh\\nfQ+BsO8qDARy9jjQmU7b7wWYC1sAEhpvbmZAu13zVpHj9h7TWymrxayOhO7t6QAq\\nnvXf307xjpaCeC1CDKuJ2qM34PcsTwUgh/KZoviishZ1QuBY+SAnUy3f4Ei/Q5Kj\\noELmCcYvl0tzB0fnAJEFR0eBXR3dE/oIeWvIiyvwGker0/dBE+C9hxLxLLIqkbMc\\nPSDDHwsrB7Doq+D7fM7Kzxmf2kDITJXAeG3foGICzXayP8lDH+Bfa9/EeqnrqOiQ\\n0OE/hLJhD/3iSxN09yloPCmMJEE/8Hdv+mRXC3MCAwEAAaNTMFEwHQYDVR0OBBYE\\nFBEuSuqqyu+cxJa/7dCzfaDb4tVCMB8GA1UdIwQYMBaAFBEuSuqqyu+cxJa/7dCz\\nfaDb4tVCMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHB5u9e6\\ngN8CFFP23q/FosL0FTI3zvNjN6gQvnHJGhPQpscgMhxPyn5pgJO2QuNPZXIjtTEd\\njc85bUEwQVeyA5kCOTQISClgaNhFQLOFe5P6LSUF7wZlVKf4g86hijalGrK09KSn\\nPpZqbkZ6GYX8+q90omFn95Z06u+uwyA5ffV+/6Opgja3s1ZGqwFUuMO+WXMm7HeX\\nw15TxrEfMHWSWjaRlnB9qImlNwW3VxlZHj3cTXTv6td22SNOsAWh3wlV2KSYP7CD\\njgcMZrauvwKZTgphc0E64Y2CeHoXyq3PfTNu5XbPBLQpuB4yj4UDloOW8sVwVK5h\\n5o9EgqdBr8FiisM=\\n-----END CERTIFICATE-----\\n\"\n        ]\n      }\n    },\n    \"output\": {\n      \"transformation\": {\n        \"partnerStatusResponse\": {\n          \"status\": \"{$output.status}\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "`ssl.disableSSL: true` cannot be combined with `ca`, `cert` or `key`. Returns 400."
+              }
+            },
+            {
+              "name": "400 — cert without key",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"tls-demo\",\n  \"action\": \"get_status\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/status/{$context.id}\",\n      \"method\": \"GET\",\n      \"ssl\": {\n        \"cert\": \"-----BEGIN CERTIFICATE-----\\nMIICyjCCAbKgAwIBAgIUOtwLtfTPoFXgfhpf+Gp6mKhRq38wDQYJKoZIhvcNAQEL\\nBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkw\\nNjAzMTMzNVowEjEQMA4GA1UEAwwHY2xpZW50YTCCASIwDQYJKoZIhvcNAQEBBQAD\\nggEPADCCAQoCggEBALm0lfVQAeD9+0/Brn31RskbB1bNfCnzVuP9WyNSL7qZz6wN\\nwT5tr4loUDUv9S86bSN3dK8RT9VAXW/xrUMlrs8JCKe1qaXUjRJtCZBSolQ/kvGl\\nBQWJDDeya37ayasX30hT7pkhLs28/quSt/zQ67Y9azKbq2HGPhSnej2gSgARLjmJ\\nyEjYqXvHeEaPS0nvBXkyBu29UfnrdCxntDssd7XbYb8widj6g27zgaCKIKBfXPQZ\\nrBkyggex+BbM5PO/LZxO/uK4DIxICvchyJff9aK2RDD3iqZwOq3qN4x9cDOjiy4X\\nRYqLuEDHn4qbE+vO5OGQXV2v7spFU3LplWweTa8CAwEAAaMWMBQwEgYDVR0RBAsw\\nCYIHY2xpZW50YTANBgkqhkiG9w0BAQsFAAOCAQEAUBo9vEx/0NHICk6cviGEJabM\\nClcOCEPRlazrD9KOf1MDD3bodjrD7cDXB0oC6TyfRLK8lANrD/INMqVK1X7se+yk\\nQ3diqUGPbmKIB/VAP0jAu11aKAspHRTtvH4qlxMvToWiUEjMMOCBtOqrLxhC2A2J\\nwisCDcFURtB1+DlbUBtnWEzBxgG5qd1SttxDnurNY2SffH86IoGR7by9KPonMn5n\\ncpoL9HnrJKPn/ytnKedOvVNBsUNLK2hTsH0AlPV7VEtohUuFNimIKFlfcv0Pehl+\\nqNYM3ZpvVQ6O4W7Uj1n1WeLwr0jvnn174HoKgKN7K9s/jIrqZSlJA8QTETiDjg==\\n-----END CERTIFICATE-----\\n\"\n      }\n    },\n    \"output\": {\n      \"transformation\": {\n        \"partnerStatusResponse\": {\n          \"status\": \"{$output.status}\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "`cert` and `key` go together (mTLS). Returns 400."
+              }
+            },
+            {
+              "name": "400 — malformed certificate material",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"tls-demo\",\n  \"action\": \"get_status\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/status/{$context.id}\",\n      \"method\": \"GET\",\n      \"ssl\": {\n        \"ca\": [\n          \"not a certificate\"\n        ]\n      }\n    },\n    \"output\": {\n      \"transformation\": {\n        \"partnerStatusResponse\": {\n          \"status\": \"{$output.status}\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "Expected PEM or base64-encoded DER. Returns 400."
+              }
+            },
+            {
+              "name": "400 — malformed env reference in ssl",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"tls-demo\",\n  \"action\": \"get_status\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/status/{$context.id}\",\n      \"method\": \"GET\",\n      \"ssl\": {\n        \"ca\": [\n          \"{$env.}\"\n        ]\n      }\n    },\n    \"output\": {\n      \"transformation\": {\n        \"partnerStatusResponse\": {\n          \"status\": \"{$output.status}\"\n        }\n      }\n    }\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "`{$env.}` is not a valid reference — expected `{$env.NAME}`. Returns 400."
+              }
+            },
+            {
+              "name": "400 — passphrase without key",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"tls-orders\",\n  \"action\": \"create_order_bad_passphrase\",\n  \"componentType\": \"rest\",\n  \"description\": \"`passphrase` only applies together with `key`. Returns 400.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://orders.partner.example.com/v2/orders\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": {\n        \"X-Tenant-Id\": \"{$context.tenantId}\",\n        \"X-Request-Id\": \"{$context.requestId}\"\n      },\n      \"ssl\": {\n        \"ca\": [\n          \"-----BEGIN CERTIFICATE-----\\nMIIDBzCCAe+gAwIBAgIUWTVnqn4qpBWfaHOnVMs+QQTDayIwDQYJKoZIhvcNAQEL\\nBQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjA5MzAwMzEzMzVaGA8yMTI2MDkw\\nNjAzMTMzNVowEjEQMA4GA1UEAwwHVGVzdCBDQTCCASIwDQYJKoZIhvcNAQEBBQAD\\nggEPADCCAQoCggEBAMAjHs8e4Jh6V19FL3SKi/vIsOv4f6xhAarApKihKU3zcdQh\\nfQ+BsO8qDARy9jjQmU7b7wWYC1sAEhpvbmZAu13zVpHj9h7TWymrxayOhO7t6QAq\\nnvXf307xjpaCeC1CDKuJ2qM34PcsTwUgh/KZoviishZ1QuBY+SAnUy3f4Ei/Q5Kj\\noELmCcYvl0tzB0fnAJEFR0eBXR3dE/oIeWvIiyvwGker0/dBE+C9hxLxLLIqkbMc\\nPSDDHwsrB7Doq+D7fM7Kzxmf2kDITJXAeG3foGICzXayP8lDH+Bfa9/EeqnrqOiQ\\n0OE/hLJhD/3iSxN09yloPCmMJEE/8Hdv+mRXC3MCAwEAAaNTMFEwHQYDVR0OBBYE\\nFBEuSuqqyu+cxJa/7dCzfaDb4tVCMB8GA1UdIwQYMBaAFBEuSuqqyu+cxJa/7dCz\\nfaDb4tVCMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHB5u9e6\\ngN8CFFP23q/FosL0FTI3zvNjN6gQvnHJGhPQpscgMhxPyn5pgJO2QuNPZXIjtTEd\\njc85bUEwQVeyA5kCOTQISClgaNhFQLOFe5P6LSUF7wZlVKf4g86hijalGrK09KSn\\nPpZqbkZ6GYX8+q90omFn95Z06u+uwyA5ffV+/6Opgja3s1ZGqwFUuMO+WXMm7HeX\\nw15TxrEfMHWSWjaRlnB9qImlNwW3VxlZHj3cTXTv6td22SNOsAWh3wlV2KSYP7CD\\njgcMZrauvwKZTgphc0E64Y2CeHoXyq3PfTNu5XbPBLQpuB4yj4UDloOW8sVwVK5h\\n5o9EgqdBr8FiisM=\\n-----END CERTIFICATE-----\\n\"\n        ],\n        \"passphrase\": \"example-passphrase\"\n      },\n      \"payloadTemplate\": {\n        \"customerId\": \"{$context.customerId}\",\n        \"items\": \"{$context.items}\",\n        \"totalAmount\": \"{$context.totalAmount}\"\n      },\n      \"validation\": {\n        \"fields\": [\n          {\n            \"path\": \"tenantId\",\n            \"required\": true,\n            \"type\": \"string\"\n          },\n          {\n            \"path\": \"customerId\",\n            \"required\": true,\n            \"type\": \"string\"\n          },\n          {\n            \"path\": \"items\",\n            \"required\": true,\n            \"type\": \"array\",\n            \"minItems\": 1\n          },\n          {\n            \"path\": \"totalAmount\",\n            \"required\": true,\n            \"type\": \"number\"\n          }\n        ]\n      }\n    },\n    \"timeout\": {\n      \"response\": 30000\n    },\n    \"resilience\": {\n      \"retryCount\": 3,\n      \"retryDelay\": 1000,\n      \"backoff\": \"exponential\",\n      \"retryOn\": [\n        502,\n        503,\n        504\n      ]\n    },\n    \"output\": {\n      \"validation\": {\n        \"rules\": [\n          {\n            \"expression\": \"{$output.json.id} != null\",\n            \"message\": \"Order ID is missing\"\n          }\n        ]\n      },\n      \"transformation\": {\n        \"createOrderResponse\": {\n          \"orderId\": \"{$output.json.id}\",\n          \"status\": \"{$output.json.status}\"\n        }\n      }\n    }\n  },\n  \"condition\": \"{$context.customerId} != null\",\n  \"metaData\": {\n    \"owner\": \"platform-team\",\n    \"tls\": \"private-ca\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "`passphrase` only applies together with `key`. Returns 400."
+              }
+            }
+          ]
+        },
+        {
           "name": "Error Cases",
           "item": [
             {

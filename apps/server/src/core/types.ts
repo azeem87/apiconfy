@@ -148,10 +148,11 @@ export interface OutputConfig {
 }
 
 export interface SSLConfig {
-  cert: string;
-  key: string;
-  ca?: string;
+  ca?: string | string[];
+  cert?: string;
+  key?: string;
   passphrase?: string;
+  disableSSL?: boolean;
 }
 
 export type ValidationFieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object';

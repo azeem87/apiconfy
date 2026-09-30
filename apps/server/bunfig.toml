@@ -1,4 +1,5 @@
 [test]
+preload = ["./__tests__/setup.ts"]
 coverage = true
 coverageReporter = ["text", "lcov"]
 coverageDir = "coverage"

@@ -6,6 +6,7 @@ import type { Hono } from 'hono';
 import { z } from 'zod';
 import { createCoreSchemaRegistry } from '@/core/schema/index.js';
 import { createCoreHandlerRegistry } from '@/core/components/index.js';
+import { CA_CERT } from '@fixtures/tls.js';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { 'content-type': 'application/json' },
@@ -190,7 +191,7 @@ describe('Phase 2 invocation API', () => {
     await register({
       request: {
         ...request, auth: { basic: { username: 'user', password: '{$env.MISSING}' } },
-        ssl: { cert: '{$env.CERT}', key: '{$env.KEY}' }, contentType: 'multipart/form-data',
+        ssl: { ca: CA_CERT }, contentType: 'multipart/form-data',
       },
       timeout: { connect: 1, socket: 1, idle: 1 },
       resilience: {
@@ -201,7 +202,10 @@ describe('Phase 2 invocation API', () => {
       const res = await invoke();
       const result = await res.json();
       expect(res.status).toBe(501);
-      expect(result.error.details.unsupported).toHaveLength(7);
+      expect((result.error.details.unsupported as Array<{ field: string }>).map(item => item.field)).toEqual([
+        'config.request.auth', 'config.resilience.circuitBreaker', 'config.timeout.connect',
+        'config.timeout.socket', 'config.timeout.idle', 'config.request.contentType',
+      ]);
       expect((await recorded(result)).attempts).toBe(0);
     }
     expect(calls).toHaveLength(0);
