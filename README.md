@@ -441,12 +441,13 @@ scenario calls the local health endpoint; the Script complex example calls a reg
 echo through the script bridge. Complex scenarios use `upstream_url` (default
 `https://httpbin.org`); send only dummy data or point it at your own compatible server.
 
-Existing auth/TLS/circuit-breaker complex examples are **registration-only** until their
+Existing auth/circuit-breaker complex examples are **registration-only** until their
 execution capabilities arrive. Runnable complex examples include every supported
 section (request, timeout, retry, condition, request-payload validation, response
 validation, transformation and metadata) and intentionally omit unsupported
-auth/TLS/circuit-breaker fields. Future component folders (Mapper, Database, SQS)
-show the same `validation` block in their own config sections.
+auth/circuit-breaker fields. The REST → TLS Certificates group is registration-only
+(its upstream is not HTTPS); real handshakes are covered by the integration tests. Future
+component folders (Mapper, Database, SQS) show the same `validation` block in their own config sections.
 
 ### Phase 2 invocation behavior
 
@@ -477,22 +478,30 @@ show the same `validation` block in their own config sections.
   upstream side effects unless that upstream provides idempotency.
 - Auth, circuit breakers, connect/socket/idle timeouts and unsupported request content types
   return `501 NOT_IMPLEMENTED` at invocation.
-- **TLS certificates (REST):** trust an HTTPS API's private CA with `request.ssl.ca` — inline, no env
-  refs or file paths. Give one list entry per certificate file:
-  `"ssl": { "ca": ["<root>", "<issuing CA>"] }` (a single string also works). Each entry is either
-  the **text of a PEM file** (starts with `-----BEGIN CERTIFICATE-----`; `.crt`/`.cer`/`.txt`,
-  newlines written `\n`) or, for a **binary DER file** (`head -1` shows garbage), its base64:
-  `base64 -w0 file.cer`. A multi-cert PEM bundle is one entry. `ca` **replaces** the default CA list
-  for that request and must include the self-signed **root**; the root alone is enough when the
-  server sends its intermediates, otherwise add the issuing CA(s). A lone leaf/intermediate is not a
-  trust anchor (unlike Java's `keytool`) — registration fails with `400`. For mTLS add `cert` + `key`
-  (PEM only) and optional `passphrase`. To skip server verification set `ssl.disableSSL: true`
-  (optional; only on its own — never together with `ca`, `cert` or `key`) or the
-  older top-level `request.disableSSL: true` (mutually exclusive with `ssl`); both apply in every
-  environment (no production guard). TLS failures return
-  `502 CONNECTION_ERROR`; material is never echoed. File paths and PFX are unsupported.
-  `ssl` is read from the stored component on every invocation (nothing is cached or loaded at
-  startup), so an update via `PUT` applies to the next call.
+- **TLS certificates (REST):** trust an HTTPS API's private CA with `request.ssl.ca`. Give one list
+  entry per certificate file: `"ssl": { "ca": ["<root>", "<issuing CA>"] }` (a single string also
+  works). Each entry is either the **text of a PEM file** (starts with `-----BEGIN CERTIFICATE-----`;
+  `.crt`/`.cer`/`.txt`, newlines written `\n`; `TRUSTED CERTIFICATE` blocks are accepted too) or, for
+  a **binary DER file** (`head -1` shows garbage), its base64: `base64 -w0 file.cer`. A multi-cert PEM
+  bundle is one entry. Every certificate is parsed at registration, so a private key or a truncated
+  blob is rejected with `400` rather than ignored. `ca` **replaces** the default CA list for that
+  request and must include the self-signed **root**; the root alone is enough when the server sends
+  its intermediates, otherwise add the issuing CA(s). A lone leaf/intermediate is not a trust anchor
+  (unlike Java's `keytool`) — registration fails with `400`. For mTLS add `cert` + `key` (PEM only)
+  and optional `passphrase`. **Inline or from the environment, your choice:** any of `ca` (or a
+  `ca` list entry), `cert`, `key` and `passphrase` can be `"{$env.NAME}"`; the variable is read at
+  each invocation and may hold real newlines or a single line with literal `\n`. Env-supplied
+  material can't be checked at registration, so a missing variable returns `500 ENV_REF_UNRESOLVED`
+  and invalid or root-less material returns `502 CONNECTION_ERROR` when invoked. To skip server
+  verification set `ssl.disableSSL: true` (optional; only on its own — never together with `ca`,
+  `cert` or `key`) or the older top-level `request.disableSSL: true` (mutually exclusive with `ssl`);
+  both apply in every environment (no production guard). TLS failures return `502 CONNECTION_ERROR`
+  and never echo the material. Read APIs return inline `ca`/`cert` verbatim (public certificates)
+  and mask `key`, `passphrase` and env references. File paths and PFX are unsupported. `ssl` is read
+  from the stored component on every invocation (nothing is cached or loaded at startup), so an
+  update via `PUT` applies to the next call. Operators can trust extra CAs process-wide for
+  components **without** `ssl.ca` by starting the server with the standard `NODE_EXTRA_CA_CERTS=/path/to/extra-ca.pem`
+  (optional, not read by Apiconfy itself); a component with `ssl.ca` ignores it.
 - Resolved `{$env.NAME}` values are scrubbed from successful/error responses, details,
   audit rows and logs, including upstream echoes. Stored references and existing
   retrieval masking behavior are preserved.

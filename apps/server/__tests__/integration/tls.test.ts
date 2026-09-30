@@ -62,6 +62,17 @@ describe('REST TLS (real handshakes)', () => {
     await expect(call(url(mtls), { ssl: { ca: F.CA_CERT } })).rejects.toMatchObject({ statusCode: 502 });
   });
 
+  it('mTLS: the client identity actually presented is the one verified (untrusted identity is refused)', async () => {
+    const rogue: Ssl = { ca: F.CA_CERT, cert: F.ROGUE_CLIENT_CERT, key: F.ROGUE_CLIENT_KEY };
+    await expect(call(url(mtls), { ssl: rogue })).rejects.toMatchObject({ statusCode: 502 });
+  });
+
+  it('mTLS: an encrypted key works with its passphrase and fails with a wrong one', async () => {
+    const ssl: Ssl = { ca: F.CA_CERT, cert: F.CLIENT_A_CERT, key: F.CLIENT_A_KEY_ENCRYPTED, passphrase: F.CLIENT_A_KEY_PASSPHRASE };
+    expect((await call(url(mtls), { ssl })).data).toMatchObject({ ok: true });
+    await expect(call(url(mtls), { ssl: { ...ssl, passphrase: 'wrong' } })).rejects.toMatchObject({ statusCode: 502 });
+  });
+
   it('two different client identities work sequentially', async () => {
     for (const [cert, key] of [[F.CLIENT_A_CERT, F.CLIENT_A_KEY], [F.CLIENT_B_CERT, F.CLIENT_B_KEY], [F.CLIENT_A_CERT, F.CLIENT_A_KEY]]) {
       expect((await call(url(mtls), { ssl: { ca: F.CA_CERT, cert, key } })).data).toMatchObject({ ok: true });
@@ -132,6 +143,88 @@ describe('ssl config is read at invoke time', () => {
       expect(await invoke()).toBe(200);
     } finally {
       await db.disconnect();
+    }
+  });
+});
+
+describe('ssl material supplied through {$env.NAME}', () => {
+  const setup = async (env: Record<string, string>) => {
+    const { createApp } = await import('@/app.js');
+    const { createSqliteAdapter } = await import('@/core/db/adapters/sqlite-adapter.js');
+    const db = createSqliteAdapter(':memory:');
+    await db.connect();
+    const { app } = createApp({ port: 0, logLevel: 'silent' }, db, { env });
+    const api = (path: string, body: unknown) => app.request(`/api/v1/services${path}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    return { db, api };
+  };
+  const register = async (api: (path: string, body: unknown) => Response | Promise<Response>, uri: string, ssl: unknown) => api('', {
+    service: 'tls-env', action: 'get', componentType: 'rest', config: { request: { uri, method: 'GET', ssl } },
+  });
+
+  it('resolves ca, cert, key and passphrase from env at invocation (real newlines or escaped \\n)', async () => {
+    for (const escape of [false, true]) {
+      const value = (text: string) => (escape ? text.trim().replace(/\n/g, '\\n') : text);
+      const { db, api } = await setup({
+        TLS_CA: value(F.CA_CERT), TLS_CERT: value(F.CLIENT_A_CERT),
+        TLS_KEY: value(F.CLIENT_A_KEY_ENCRYPTED), TLS_PASS: F.CLIENT_A_KEY_PASSPHRASE,
+      });
+      try {
+        const created = await register(api, url(mtls), {
+          ca: ['{$env.TLS_CA}'], cert: '{$env.TLS_CERT}', key: '{$env.TLS_KEY}', passphrase: '{$env.TLS_PASS}',
+        });
+        expect(created.status).toBe(201);
+        expect((await api('/tls-env/get/invoke', { context: {} })).status).toBe(200);
+      } finally {
+        await db.disconnect();
+      }
+    }
+  });
+
+  it('read APIs mask key and passphrase and env refs, and echo inline public certificates', async () => {
+    const { db, api } = await setup({});
+    try {
+      const inline = await (await register(api, url(plain), {
+        ca: F.CA_CERT, cert: F.CLIENT_A_CERT, key: F.CLIENT_A_KEY, passphrase: 'inline-pass',
+      })).json();
+      expect(inline.data.config.request.ssl).toEqual({ ca: F.CA_CERT, cert: F.CLIENT_A_CERT, key: '***', passphrase: '***' });
+      const refs = await (await api('', {
+        service: 'tls-env', action: 'refs', componentType: 'rest',
+        config: { request: { uri: url(plain), method: 'GET', ssl: { ca: '{$env.A}', cert: '{$env.B}', key: '{$env.C}', passphrase: '{$env.D}' } } },
+      })).json();
+      expect(JSON.stringify(refs.data.config.request.ssl)).not.toContain('$env');
+    } finally {
+      await db.disconnect();
+    }
+  });
+
+  it('mixes an inline entry with an env entry in ca', async () => {
+    const { db, api } = await setup({ TLS_ROOT: F.CA_CERT });
+    try {
+      expect((await register(api, url(plain), { ca: [F.SERVER_CERT, '{$env.TLS_ROOT}'] })).status).toBe(201);
+      expect((await api('/tls-env/get/invoke', { context: {} })).status).toBe(200);
+    } finally {
+      await db.disconnect();
+    }
+  });
+
+  it('a missing variable is a 500 ENV_REF_UNRESOLVED and env material without a root is a 502', async () => {
+    const missing = await setup({});
+    try {
+      await register(missing.api, url(plain), { ca: '{$env.TLS_CA}' });
+      const res = await missing.api('/tls-env/get/invoke', { context: {} });
+      expect(res.status).toBe(500);
+      expect((await res.json()).error.code).toBe('ENV_REF_UNRESOLVED');
+    } finally {
+      await missing.db.disconnect();
+    }
+    const leafOnly = await setup({ TLS_CA: F.SERVER_CERT });
+    try {
+      await register(leafOnly.api, url(plain), { ca: '{$env.TLS_CA}' });
+      expect((await leafOnly.api('/tls-env/get/invoke', { context: {} })).status).toBe(502);
+    } finally {
+      await leafOnly.db.disconnect();
     }
   });
 });

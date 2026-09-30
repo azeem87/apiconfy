@@ -527,7 +527,7 @@
         },
         {
           "name": "TLS Certificates",
-          "description": "Trust a private CA for an HTTPS API with `request.ssl.ca` (inline text, no env refs or file paths). Give one entry per certificate file: PEM text (starts with `-----BEGIN CERTIFICATE-----`) or, for a binary DER `.cer`, its base64 (`base64 -w0 file.cer`). `ca` must include the self-signed root; the root alone is enough when the server sends its intermediates, otherwise add the issuing CA(s). `ca` replaces the default CA list for that request. mTLS: add `cert` + `key` (PEM only) and optional `passphrase` next to `ca`. `ssl.disableSSL: true` skips verification and can only be used on its own. The certificates below are throwaway examples — replace them with your own.",
+          "description": "Trust a private CA for an HTTPS API with `request.ssl.ca` (inline text or `{$env.NAME}`; no file paths). Give one entry per certificate file: PEM text (starts with `-----BEGIN CERTIFICATE-----`) or, for a binary DER `.cer`, its base64 (`base64 -w0 file.cer`). `ca` must include the self-signed root; the root alone is enough when the server sends its intermediates, otherwise add the issuing CA(s). `ca` replaces the default CA list for that request. mTLS: add `cert` + `key` (PEM only) and optional `passphrase` next to `ca`. `ca`, `cert`, `key` and `passphrase` may each be `\"{$env.NAME}\"` (resolved at invocation; the variable can hold real newlines or literal `\\n`). `ssl.disableSSL: true` skips verification and can only be used on its own. The certificates below are throwaway examples — replace them with your own.",
           "item": [
             {
               "name": "Register — trust a private CA (ssl.ca list)",
@@ -667,6 +667,34 @@
                   ]
                 },
                 "description": "Complex: an encrypted PKCS#8 private key (`-----BEGIN ENCRYPTED PRIVATE KEY-----`) with its `passphrase`, and a base64-DER root next to a PEM one. The passphrase is masked in logs and API responses. Returns 201."
+              }
+            },
+            {
+              "name": "Register — complex: ca, cert, key and passphrase from env",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"service\": \"tls-demo\",\n  \"action\": \"create_order_env\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/status/{$context.id}\",\n      \"method\": \"GET\",\n      \"ssl\": {\n        \"ca\": [\n          \"{$env.PARTNER_CA}\"\n        ],\n        \"cert\": \"{$env.PARTNER_CLIENT_CERT}\",\n        \"key\": \"{$env.PARTNER_CLIENT_KEY}\",\n        \"passphrase\": \"{$env.PARTNER_CLIENT_KEY_PASSPHRASE}\"\n      }\n    },\n    \"output\": {\n      \"transformation\": {\n        \"partnerStatusResponse\": {\n          \"status\": \"{$output.status}\"\n        }\n      }\n    }\n  },\n  \"description\": \"Complex: every TLS field comes from the environment (set the four variables where the server runs). Variables are read at each invocation and may hold real newlines or a single line with literal `\\\\n`.\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "Complex: all TLS material is supplied through `{$env.NAME}` (choose inline or env per field). Env-supplied values can't be checked at registration: a missing variable gives 500 ENV_REF_UNRESOLVED and invalid or root-less material gives 502 when invoked. Returns 201."
               }
             },
             {
@@ -841,7 +869,7 @@
               }
             },
             {
-              "name": "400 — env reference not allowed in ssl",
+              "name": "400 — malformed env reference in ssl",
               "request": {
                 "method": "POST",
                 "header": [
@@ -852,7 +880,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"service\": \"tls-demo\",\n  \"action\": \"get_status\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/status/{$context.id}\",\n      \"method\": \"GET\",\n      \"ssl\": {\n        \"ca\": [\n          \"{$env.PARTNER_CA}\"\n        ]\n      }\n    },\n    \"output\": {\n      \"transformation\": {\n        \"partnerStatusResponse\": {\n          \"status\": \"{$output.status}\"\n        }\n      }\n    }\n  }\n}"
+                  "raw": "{\n  \"service\": \"tls-demo\",\n  \"action\": \"get_status\",\n  \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/status/{$context.id}\",\n      \"method\": \"GET\",\n      \"ssl\": {\n        \"ca\": [\n          \"{$env.}\"\n        ]\n      }\n    },\n    \"output\": {\n      \"transformation\": {\n        \"partnerStatusResponse\": {\n          \"status\": \"{$output.status}\"\n        }\n      }\n    }\n  }\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/services",
@@ -865,7 +893,7 @@
                     "services"
                   ]
                 },
-                "description": "TLS material is inline only; `{$env.*}` values are rejected. Returns 400."
+                "description": "`{$env.}` is not a valid reference — expected `{$env.NAME}`. Returns 400."
               }
             },
             {

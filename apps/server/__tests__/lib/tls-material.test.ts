@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   hasSelfSignedRoot, isCertificateMaterial, isPrivateKeyPem, normalizeCertificate, normalizePrivateKey,
 } from '@/lib/tls-material.js';
-import { CA_CERT, CA_CERT_DER_BASE64, SERVER_CERT, SERVER_KEY } from '../fixtures/tls.js';
+import { CA_CERT, CA_CERT_DER_BASE64, CLIENT_A_KEY, SERVER_CERT, SERVER_KEY } from '../fixtures/tls.js';
 
 describe('tls-material', () => {
   it('passes PEM through', () => {
@@ -49,5 +49,39 @@ describe('tls-material', () => {
   it('ignores non-certificate text around PEM blocks but rejects an undecodable DER-looking line', () => {
     expect(normalizeCertificate(`Bag Attributes\n  friendlyName: x\n${CA_CERT}`)).toBe(CA_CERT.trim() + '\n');
     expect(isCertificateMaterial(`${CA_CERT}\n${'A'.repeat(120)}`)).toBe(false);
+  });
+
+  it('never accepts a private key as a certificate, in PEM or base64 DER', () => {
+    const keyDerBase64 = CLIENT_A_KEY.replace(/-----[A-Z ]+-----/g, '').replace(/\s+/g, '');
+    expect(isCertificateMaterial(keyDerBase64)).toBe(false);
+    expect(isCertificateMaterial(CLIENT_A_KEY)).toBe(false);
+    expect(isCertificateMaterial(`${CA_CERT}\n${keyDerBase64}`)).toBe(false);
+  });
+
+  it('accepts wrapped base64 DER next to PEM instead of silently dropping it', () => {
+    const wrapped = CA_CERT_DER_BASE64.replace(/(.{64})/g, '$1\n');
+    const pem = normalizeCertificate(`${SERVER_CERT}\n${wrapped}`);
+    expect(pem.match(/BEGIN CERTIFICATE/g)).toHaveLength(2);
+    expect(pem).toContain(CA_CERT.trim());
+  });
+
+  it('accepts TRUSTED CERTIFICATE blocks and re-emits them as CERTIFICATE', () => {
+    const trusted = CA_CERT.replace(/CERTIFICATE/g, 'TRUSTED CERTIFICATE');
+    const pem = normalizeCertificate(`${SERVER_CERT}\n${trusted}`);
+    expect(pem.match(/BEGIN CERTIFICATE/g)).toHaveLength(2);
+    expect(pem).not.toContain('TRUSTED');
+    expect(hasSelfSignedRoot(`${SERVER_CERT}\n${trusted}`)).toBe(true);
+  });
+
+  it('rejects a truncated PEM block and an empty list', () => {
+    expect(isCertificateMaterial('-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----')).toBe(false);
+    expect(isCertificateMaterial([])).toBe(false);
+  });
+
+  it('turns literal \\n sequences (typical of env values) into newlines', () => {
+    const escaped = CA_CERT.trim().replace(/\n/g, '\\n');
+    expect(escaped).not.toContain('\n');
+    expect(normalizeCertificate(escaped)).toBe(CA_CERT.trim() + '\n');
+    expect(normalizePrivateKey(SERVER_KEY.trim().replace(/\n/g, '\\n'))).toBe(SERVER_KEY.trim() + '\n');
   });
 });

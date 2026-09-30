@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { CA_CERT, CA_CERT_DER_BASE64, SERVER_CERT } from '../fixtures/tls.js';
+import { CA_CERT, CA_CERT_DER_BASE64, CLIENT_A_CERT, CLIENT_A_KEY, SERVER_CERT } from '../fixtures/tls.js';
 import {
   CreateServiceRequestSchema, RestConfigSchema,
 } from '@/core/schema/index.js';
@@ -386,8 +386,8 @@ describe('payload validation fields (request.validation)', () => {
 
 describe('RestConfigSchema request.ssl', () => {
   const ssl = (value: unknown) => RestConfigSchema.safeParse({ request: { ...minimal.request, ssl: value } });
-  const cert = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----';
-  const key = '-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----';
+  const cert = CLIENT_A_CERT;
+  const key = CLIENT_A_KEY;
 
   it('accepts ca alone, cert+key and DER literal', () => {
     expect(ssl({ ca: CA_CERT }).success).toBe(true);
@@ -403,8 +403,26 @@ describe('RestConfigSchema request.ssl', () => {
     expect(ssl({ ca: CA_CERT, passphrase: 'x' }).success).toBe(false);
   });
 
-  it('rejects env refs — ssl material is inline only', () => {
-    expect(ssl({ ca: '{$env.CA}' }).success).toBe(false);
+  it('accepts {$env.NAME} for ca, cert, key and passphrase, alone or next to inline material', () => {
+    expect(ssl({ ca: '{$env.CA}' }).success).toBe(true);
+    expect(ssl({ ca: ['{$env.CA}'] }).success).toBe(true);
+    expect(ssl({ ca: [SERVER_CERT, '{$env.ROOT_CA}'] }).success).toBe(true);
+    expect(ssl({ ca: CA_CERT, cert: '{$env.CERT}', key: '{$env.KEY}', passphrase: '{$env.PASS}' }).success).toBe(true);
+    expect(ssl({ cert, key, passphrase: '{$env.PASS}' }).success).toBe(true);
+  });
+
+  it('still validates inline entries next to env refs and rejects malformed refs', () => {
+    expect(ssl({ ca: ['garbage', '{$env.CA}'] }).success).toBe(false);
+    expect(ssl({ ca: '{$env.}' }).success).toBe(false);
+    expect(ssl({ cert: '{$env.CERT}', key: 'not a key' }).success).toBe(false);
+    expect(ssl({ disableSSL: true, ca: '{$env.CA}' }).success).toBe(false);
+    expect(ssl({ ca: '{$env.CA}', passphrase: '{$env.PASS}' }).success).toBe(false);
+  });
+
+  it('rejects a private key supplied as a certificate', () => {
+    const keyDerBase64 = CLIENT_A_KEY.replace(/-----[A-Z ]+-----/g, '').replace(/\s+/g, '');
+    expect(ssl({ cert: keyDerBase64, key }).success).toBe(false);
+    expect(ssl({ ca: keyDerBase64 }).success).toBe(false);
   });
 
   it('accepts ca as a list, one entry per certificate file (PEM or base64 DER)', () => {

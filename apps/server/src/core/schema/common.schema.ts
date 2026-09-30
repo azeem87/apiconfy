@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { assertValidExpression, assertValidPath } from '@/core/transform/index.js';
 import { collectTemplateIssues } from '@/core/transform/template-validation.js';
 import { parseFieldPath } from '@/core/runtime/request-validation.js';
+import { isEnvRef } from '@/core/env-ref/index.js';
 import { hasSelfSignedRoot, isCertificateMaterial, isPrivateKeyPem } from '@/lib/tls-material.js';
 
 export const TimeoutConfigSchema = z.object({
@@ -169,16 +170,25 @@ export const SSLConfigSchema = z.object({
     issue(ssl.cert === undefined ? 'cert' : 'key', 'cert and key go together (mTLS)');
   }
   if (ssl.passphrase !== undefined && ssl.key === undefined) issue('passphrase', 'passphrase requires key');
-  const certMessage = 'expected PEM (-----BEGIN CERTIFICATE-----) or base64-encoded DER (.cer)';
+  // `{$env.NAME}` values are resolved at invocation, so only inline material can be checked here.
+  const entriesOf = (value: string | string[]) => (Array.isArray(value) ? value : [value]);
+  const certMessage = 'expected PEM (-----BEGIN CERTIFICATE-----), base64-encoded DER (.cer) or a {$env.NAME} reference';
   for (const field of ['ca', 'cert'] as const) {
     const value = ssl[field];
-    if (value !== undefined && !isCertificateMaterial(value)) issue(field, certMessage);
+    if (value === undefined) continue;
+    const inlineEntries = entriesOf(value).filter(entry => !isEnvRef(entry));
+    if (inlineEntries.length > 0 && !isCertificateMaterial(inlineEntries)) issue(field, certMessage);
   }
-  if (ssl.ca !== undefined && isCertificateMaterial(ssl.ca) && !hasSelfSignedRoot(ssl.ca)) {
-    issue('ca', 'ca must include the root CA certificate (self-signed) of the server chain — a lone server or intermediate certificate is not trusted (unlike a Java keystore). Add the issuing chain up to the root');
+  if (ssl.ca !== undefined) {
+    const allEntries = entriesOf(ssl.ca);
+    const inlineEntries = allEntries.filter(entry => !isEnvRef(entry));
+    const isFullyInline = inlineEntries.length === allEntries.length;
+    if (isFullyInline && isCertificateMaterial(inlineEntries) && !hasSelfSignedRoot(inlineEntries)) {
+      issue('ca', 'ca must include the root CA certificate (self-signed) of the server chain — a lone server or intermediate certificate is not trusted (unlike a Java keystore). Add the issuing chain up to the root');
+    }
   }
-  if (hasIdentity && ssl.key !== undefined && !isPrivateKeyPem(ssl.key)) {
-    issue('key', 'expected PEM private key (PKCS#8/PKCS#1/EC); convert with `openssl pkcs8 -topk8 -nocrypt -in key.der -inform DER`');
+  if (hasIdentity && ssl.key !== undefined && !isEnvRef(ssl.key) && !isPrivateKeyPem(ssl.key)) {
+    issue('key', 'expected PEM private key (PKCS#8/PKCS#1/EC) or a {$env.NAME} reference; convert with `openssl pkcs8 -topk8 -nocrypt -in key.der -inform DER`');
   }
 });
 
