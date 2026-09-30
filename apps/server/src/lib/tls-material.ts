@@ -1,5 +1,8 @@
+import { X509Certificate } from 'node:crypto';
+
 const PEM_CERT = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/;
 const PEM_KEY = /-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----/;
+const PEM_CERT_GLOBAL = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
 function clean(text: string): string {
@@ -40,4 +43,22 @@ export function normalizePrivateKey(text: string): string {
   const value = clean(text);
   if (!PEM_KEY.test(value)) throw new Error('private key must be PEM');
   return `${value}\n`;
+}
+
+/**
+ * True when the material holds at least one self-signed (root) certificate. Bun/OpenSSL only
+ * trust a chain that ends in a root present in `ca`; unlike a Java keystore, a lone leaf or
+ * intermediate is never accepted as a trust anchor.
+ */
+export function hasSelfSignedRoot(text: string): boolean {
+  const pem = tryNormalizeCertificate(text);
+  if (pem === null) return false;
+  try {
+    return (pem.match(PEM_CERT_GLOBAL) ?? []).some(block => {
+      const cert = new X509Certificate(block);
+      return cert.subject === cert.issuer && cert.verify(cert.publicKey);
+    });
+  } catch {
+    return false;
+  }
 }

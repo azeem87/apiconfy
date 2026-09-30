@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { assertValidExpression, assertValidPath } from '@/core/transform/index.js';
 import { collectTemplateIssues } from '@/core/transform/template-validation.js';
 import { parseFieldPath } from '@/core/runtime/request-validation.js';
-import { isCertificateMaterial, isPrivateKeyPem } from '@/lib/tls-material.js';
+import { hasSelfSignedRoot, isCertificateMaterial, isPrivateKeyPem } from '@/lib/tls-material.js';
 
 export const TimeoutConfigSchema = z.object({
   connect: z.number().int().positive().optional(),
@@ -169,6 +169,9 @@ export const SSLConfigSchema = z.object({
   for (const field of ['ca', 'cert'] as const) {
     const value = ssl[field];
     if (value !== undefined && !isCertificateMaterial(value)) issue(field, certMessage);
+  }
+  if (ssl.ca !== undefined && isCertificateMaterial(ssl.ca) && !hasSelfSignedRoot(ssl.ca)) {
+    issue('ca', 'ca must include the root CA certificate (self-signed) of the server chain — a lone server or intermediate certificate is not trusted (unlike a Java keystore). Add the issuing chain up to the root');
   }
   if (hasIdentity && ssl.key !== undefined && !isPrivateKeyPem(ssl.key)) {
     issue('key', 'expected PEM private key (PKCS#8/PKCS#1/EC); convert with `openssl pkcs8 -topk8 -nocrypt -in key.der -inform DER`');

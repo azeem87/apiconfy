@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import {
-  isCertificateMaterial, isPrivateKeyPem, normalizeCertificate, normalizePrivateKey,
+  hasSelfSignedRoot, isCertificateMaterial, isPrivateKeyPem, normalizeCertificate, normalizePrivateKey,
 } from '@/lib/tls-material.js';
-import { CA_CERT, CA_CERT_DER_BASE64, SERVER_KEY } from '../fixtures/tls.js';
+import { CA_CERT, CA_CERT_DER_BASE64, SERVER_CERT, SERVER_KEY } from '../fixtures/tls.js';
 
 describe('tls-material', () => {
   it('passes PEM through', () => {
@@ -28,5 +28,13 @@ describe('tls-material', () => {
     }
     expect(isPrivateKeyPem(CA_CERT)).toBe(false);
     expect(() => normalizePrivateKey('MIIB')).toThrow();
+  });
+
+  it('detects a self-signed root in PEM, DER and bundles; a lone leaf or garbage has none', () => {
+    expect(hasSelfSignedRoot(CA_CERT)).toBe(true);
+    expect(hasSelfSignedRoot(CA_CERT_DER_BASE64)).toBe(true);
+    expect(hasSelfSignedRoot(`${SERVER_CERT}${CA_CERT}`)).toBe(true);
+    expect(hasSelfSignedRoot(SERVER_CERT)).toBe(false);
+    expect(hasSelfSignedRoot('-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----')).toBe(false);
   });
 });

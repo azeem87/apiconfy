@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'bun:test';
+import { CA_CERT, CA_CERT_DER_BASE64, SERVER_CERT } from '../fixtures/tls.js';
 import {
   CreateServiceRequestSchema, RestConfigSchema,
 } from '@/core/schema/index.js';
@@ -31,7 +32,7 @@ describe('RestConfigSchema', () => {
       request: {
         ...minimal.request,
         disableSSL: true,
-        ssl: { ca: '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----' },
+        ssl: { ca: CA_CERT },
       },
     });
     expect(result.success).toBe(false);
@@ -389,20 +390,27 @@ describe('RestConfigSchema request.ssl', () => {
   const key = '-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----';
 
   it('accepts ca alone, cert+key and DER literal', () => {
-    expect(ssl({ ca: cert }).success).toBe(true);
+    expect(ssl({ ca: CA_CERT }).success).toBe(true);
     expect(ssl({ cert, key, passphrase: 'x' }).success).toBe(true);
-    expect(ssl({ ca: 'MIIBAAAA' }).success).toBe(true);
+    expect(ssl({ ca: CA_CERT_DER_BASE64 }).success).toBe(true);
+    expect(ssl({ ca: `${SERVER_CERT}${CA_CERT}` }).success).toBe(true);
   });
 
   it('rejects empty ssl, half identities and orphan passphrase', () => {
     expect(ssl({}).success).toBe(false);
     expect(ssl({ cert }).success).toBe(false);
     expect(ssl({ key }).success).toBe(false);
-    expect(ssl({ ca: cert, passphrase: 'x' }).success).toBe(false);
+    expect(ssl({ ca: CA_CERT, passphrase: 'x' }).success).toBe(false);
   });
 
   it('rejects env refs — ssl material is inline only', () => {
     expect(ssl({ ca: '{$env.CA}' }).success).toBe(false);
+  });
+
+  it('rejects a ca without a self-signed root (lone leaf) with guidance', () => {
+    const result = ssl({ ca: SERVER_CERT });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain('root CA certificate');
   });
 
   it('rejects malformed literals with guidance', () => {
