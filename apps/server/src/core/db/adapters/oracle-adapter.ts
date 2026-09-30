@@ -10,7 +10,6 @@ import {
 } from '@/lib/errors.js';
 import { generateId } from '@/lib/id.js';
 import type {
-  ComponentFilters,
   ComponentRecord,
   DBAdapter,
   ExecutionLogRecord,

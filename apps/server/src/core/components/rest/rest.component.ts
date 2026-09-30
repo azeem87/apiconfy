@@ -47,7 +47,7 @@ export class RestComponent implements ComponentHandler {
       if (ssl?.ca !== undefined) tls.ca = normalizeCertificate(ssl.ca);
       if (ssl?.cert !== undefined) tls.cert = normalizeCertificate(ssl.cert);
       if (ssl?.key !== undefined) tls.key = normalizePrivateKey(ssl.key);
-    } catch (error) {
+    } catch {
       const field = ssl?.ca !== undefined && !('ca' in tls) ? 'ssl.ca' : ssl?.cert !== undefined && !('cert' in tls) ? 'ssl.cert' : 'ssl.key';
       throw new ConnectionError(`${field} is not valid ${field === 'ssl.key' ? 'PEM private key' : 'PEM or base64-encoded DER certificate'} material`);
     }
