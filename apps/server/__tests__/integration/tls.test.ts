@@ -51,10 +51,8 @@ describe('REST TLS (real handshakes)', () => {
     expect((await call(url(selfSigned), { disableSSL: true })).data).toMatchObject({ ok: true });
   });
 
-  it('ssl.disableSSL accepts a self-signed server, alone or with a client identity', async () => {
+  it('ssl.disableSSL accepts a self-signed server', async () => {
     expect((await call(url(selfSigned), { ssl: { disableSSL: true } })).data).toMatchObject({ ok: true });
-    const identity = { cert: F.CLIENT_A_CERT, key: F.CLIENT_A_KEY };
-    expect((await call(url(mtls), { ssl: { disableSSL: true, ...identity } })).data).toMatchObject({ ok: true });
     await expect(call(url(selfSigned), { ssl: { disableSSL: false } })).rejects.toBeDefined();
   });
 

@@ -487,7 +487,7 @@ show the same `validation` block in their own config sections.
   server sends its intermediates, otherwise add the issuing CA(s). A lone leaf/intermediate is not a
   trust anchor (unlike Java's `keytool`) — registration fails with `400`. For mTLS add `cert` + `key`
   (PEM only) and optional `passphrase`. To skip server verification set `ssl.disableSSL: true`
-  (optional; alone, or together with a `cert` + `key` client identity, but not with `ca`) or the
+  (optional; only on its own — never together with `ca`, `cert` or `key`) or the
   older top-level `request.disableSSL: true` (mutually exclusive with `ssl`); both apply in every
   environment (no production guard). TLS failures return
   `502 CONNECTION_ERROR`; material is never echoed. File paths and PFX are unsupported.

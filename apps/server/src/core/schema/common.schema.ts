@@ -159,8 +159,8 @@ export const SSLConfigSchema = z.object({
 }).strict().superRefine((ssl, ctx) => {
   const issue = (path: string, message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
   const hasIdentity = ssl.cert !== undefined && ssl.key !== undefined;
-  if (ssl.disableSSL === true && ssl.ca !== undefined) {
-    issue('disableSSL', 'disableSSL skips server verification, so it cannot be combined with `ca`');
+  if (ssl.disableSSL === true && (ssl.ca !== undefined || ssl.cert !== undefined || ssl.key !== undefined)) {
+    issue('disableSSL', 'disableSSL: true cannot be combined with `ca`, `cert` or `key`');
   }
   if (ssl.ca === undefined && ssl.cert === undefined && ssl.key === undefined && ssl.disableSSL !== true) {
     issue('ca', 'ssl needs `ca` (server trust), `cert`+`key` (client identity) or `disableSSL: true`');

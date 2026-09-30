@@ -414,12 +414,13 @@ describe('RestConfigSchema request.ssl', () => {
     expect(ssl({ ca: [CA_CERT, 'garbage'] }).success).toBe(false);
   });
 
-  it('supports ssl.disableSSL, alone or with a client identity, but not with ca', () => {
+  it('supports ssl.disableSSL alone, but never with ca, cert or key', () => {
     expect(ssl({ disableSSL: true }).success).toBe(true);
-    expect(ssl({ disableSSL: true, cert, key }).success).toBe(true);
     expect(ssl({ disableSSL: false, ca: CA_CERT }).success).toBe(true);
     expect(ssl({ disableSSL: false }).success).toBe(false);
     expect(ssl({ disableSSL: true, ca: CA_CERT }).success).toBe(false);
+    expect(ssl({ disableSSL: true, cert, key }).success).toBe(false);
+    expect(ssl({ disableSSL: true, key }).success).toBe(false);
     expect(ssl({ disableSSL: 'yes' }).success).toBe(false);
   });
 
