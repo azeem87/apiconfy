@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { RestComponent } from '@/core/components/rest/rest.component.js';
-import * as F from '../fixtures/tls.js';
+import * as F from '@fixtures/tls.js';
 
 type Ssl = Record<string, string>;
 let plain: ReturnType<typeof Bun.serve>;
@@ -53,7 +53,7 @@ describe('REST TLS (real handshakes)', () => {
 
   it('ssl.disableSSL accepts a self-signed server', async () => {
     expect((await call(url(selfSigned), { ssl: { disableSSL: true } })).data).toMatchObject({ ok: true });
-    await expect(call(url(selfSigned), { ssl: { disableSSL: false } })).rejects.toBeDefined();
+    await expect(call(url(selfSigned), { ssl: { disableSSL: false, ca: F.CA_CERT } })).rejects.toMatchObject({ statusCode: 502 });
   });
 
   it('mTLS: 200 with a client identity, 502 without', async () => {
@@ -79,9 +79,10 @@ describe('REST TLS (real handshakes)', () => {
     }
   });
 
-  it('invalid material fails with 502 and never echoes it', async () => {
+  it('invalid material fails with 502, names the field and never echoes it', async () => {
     const error = await call(url(plain), { ssl: { ca: 'SECRET-garbage' } }).catch(e => e);
     expect(error.statusCode).toBe(502);
+    expect(error.message).toContain('ssl.ca is not valid');
     expect(error.message).not.toContain('SECRET-garbage');
   });
 
@@ -164,8 +165,8 @@ describe('ssl material supplied through {$env.NAME}', () => {
   });
 
   it('resolves ca, cert, key and passphrase from env at invocation (real newlines or escaped \\n)', async () => {
-    for (const escape of [false, true]) {
-      const value = (text: string) => (escape ? text.trim().replace(/\n/g, '\\n') : text);
+    for (const escaped of [false, true]) {
+      const value = (text: string) => (escaped ? text.trim().replace(/\n/g, '\\n') : text);
       const { db, api } = await setup({
         TLS_CA: value(F.CA_CERT), TLS_CERT: value(F.CLIENT_A_CERT),
         TLS_KEY: value(F.CLIENT_A_KEY_ENCRYPTED), TLS_PASS: F.CLIENT_A_KEY_PASSPHRASE,

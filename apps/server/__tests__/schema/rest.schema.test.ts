@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { CA_CERT, CA_CERT_DER_BASE64, CLIENT_A_CERT, CLIENT_A_KEY, SERVER_CERT } from '../fixtures/tls.js';
+import { CA_CERT, CA_CERT_DER_BASE64, CLIENT_A_CERT, CLIENT_A_KEY, SERVER_CERT } from '@fixtures/tls.js';
 import {
   CreateServiceRequestSchema, RestConfigSchema,
 } from '@/core/schema/index.js';

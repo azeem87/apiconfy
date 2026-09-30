@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   hasSelfSignedRoot, isCertificateMaterial, isPrivateKeyPem, normalizeCertificate, normalizePrivateKey,
 } from '@/lib/tls-material.js';
-import { CA_CERT, CA_CERT_DER_BASE64, CLIENT_A_KEY, SERVER_CERT, SERVER_KEY } from '../fixtures/tls.js';
+import { CA_CERT, CA_CERT_DER_BASE64, CA_CERT_TRUSTED, CLIENT_A_KEY, SERVER_CERT, SERVER_KEY } from '@fixtures/tls.js';
 
 describe('tls-material', () => {
   it('passes PEM through', () => {
@@ -71,6 +71,13 @@ describe('tls-material', () => {
     expect(pem.match(/BEGIN CERTIFICATE/g)).toHaveLength(2);
     expect(pem).not.toContain('TRUSTED');
     expect(hasSelfSignedRoot(`${SERVER_CERT}\n${trusted}`)).toBe(true);
+  });
+
+  it('accepts a real `openssl x509 -trustout` block (cert DER plus aux), not just a renamed header', () => {
+    expect(CA_CERT_TRUSTED).toContain('-----BEGIN TRUSTED CERTIFICATE-----');
+    expect(CA_CERT_TRUSTED.length).toBeGreaterThan(CA_CERT.length);
+    expect(normalizeCertificate(CA_CERT_TRUSTED)).toBe(CA_CERT.trim() + '\n');
+    expect(hasSelfSignedRoot(CA_CERT_TRUSTED)).toBe(true);
   });
 
   it('rejects a truncated PEM block and an empty list', () => {
