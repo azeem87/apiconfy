@@ -7,11 +7,7 @@ let plain: ReturnType<typeof Bun.serve>;
 let selfSigned: ReturnType<typeof Bun.serve>;
 let mtls: ReturnType<typeof Bun.serve>;
 
-const savedReject = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-
 beforeAll(() => {
-  // A global opt-out would mask every verification assertion below.
-  delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
   const handler = (req: Request, server: { requestIP: unknown }) => Response.json({ ok: true, path: new URL(req.url).pathname, server: !!server });
   selfSigned = Bun.serve({
     hostname: '127.0.0.1', port: 0, tls: { cert: F.SELF_SIGNED_CERT, key: F.SELF_SIGNED_KEY },
@@ -27,9 +23,7 @@ beforeAll(() => {
     fetch: req => handler(req, {} as never),
   });
 });
-afterAll(() => {
-  if (savedReject !== undefined) process.env.NODE_TLS_REJECT_UNAUTHORIZED = savedReject;
-  selfSigned.stop(true); plain.stop(true); mtls.stop(true); });
+afterAll(() => { selfSigned.stop(true); plain.stop(true); mtls.stop(true); });
 
 const call = (uri: string, request: Record<string, unknown> = {}) => new RestComponent().execute({
   config: { request: { uri, method: 'GET', ...request } },

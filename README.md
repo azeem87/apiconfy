@@ -418,6 +418,7 @@ The app never creates schema on a named engine: on startup it **probes** for the
 | `CB_USER` | `Administrator` | Couchbase username, used when the `couchbase://` URL carries none |
 | `CB_PASS` | *(unset)* | Couchbase password, used when the `couchbase://` URL carries none — required in that case, or the adapter refuses to start |
 | `ENABLE_DB_TRANSACTION_LOGS` | `false` | When `true`, writes the optional `execution_logs` audit rows (the table must exist — uncomment its block in the engine's schema script before running it). Off by default; no automatic retention/purge yet (Phase 5) |
+| `NODE_TLS_REJECT_UNAUTHORIZED` | *(unset)* | Leave unset. `0` disables TLS verification for the entire process; the server ignores it at startup (warning logged) and `bun test` unsets it, so outbound calls always verify certificates. Skip verification per component with `request.disableSSL` |
 
 **Security note:** If `API_KEY` is not set, a warning is logged at startup and all `/api/*` routes are accessible without authentication. For production deployments, always set `API_KEY` and `REQUIRE_API_KEY=true`.
 

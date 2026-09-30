@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import { Hono } from 'hono';
-import { authPostureProblem, loadConfig, type AppConfig } from '@/config.js';
+import { authPostureProblem, enforceTlsVerification, loadConfig, type AppConfig } from '@/config.js';
 import { securityHeaders } from '@/middleware/security-headers.js';
 
 const ORIGINAL_ENV = { ...process.env };
@@ -81,5 +81,20 @@ describe('security headers', () => {
     expect(response.headers.get('x-frame-options')).toBe('DENY');
     expect(response.headers.get('referrer-policy')).toBe('no-referrer');
     expect(response.headers.get('access-control-allow-origin')).toBeNull();
+  });
+});
+
+describe('enforceTlsVerification', () => {
+  it('removes NODE_TLS_REJECT_UNAUTHORIZED=0 and reports it', () => {
+    const env: NodeJS.ProcessEnv = { NODE_TLS_REJECT_UNAUTHORIZED: '0', OTHER: 'x' };
+    expect(enforceTlsVerification(env)).toBe(true);
+    expect(env).toEqual({ OTHER: 'x' });
+  });
+
+  it('leaves an unset or non-zero value alone', () => {
+    expect(enforceTlsVerification({})).toBe(false);
+    const env: NodeJS.ProcessEnv = { NODE_TLS_REJECT_UNAUTHORIZED: '1' };
+    expect(enforceTlsVerification(env)).toBe(false);
+    expect(env.NODE_TLS_REJECT_UNAUTHORIZED).toBe('1');
   });
 });

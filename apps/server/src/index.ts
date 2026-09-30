@@ -1,5 +1,5 @@
 import { createApp } from '@/app.js';
-import { authPostureProblem, loadConfig } from '@/config.js';
+import { authPostureProblem, enforceTlsVerification, loadConfig } from '@/config.js';
 import { createDBAdapter, type DBAdapter } from '@/core/db/connection.js';
 import { createLogger } from '@/lib/index.js';
 
@@ -7,6 +7,10 @@ async function main() {
   const startTime = performance.now();
   const config = loadConfig();
   const logger = createLogger('server', config.logLevel);
+
+  if (enforceTlsVerification()) {
+    logger.warn('NODE_TLS_REJECT_UNAUTHORIZED=0 was set in the environment and has been ignored — outbound TLS verification stays on. Use request.disableSSL per component.');
+  }
 
   const postureProblem = authPostureProblem(config);
   if (postureProblem) {
