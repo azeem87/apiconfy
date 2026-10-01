@@ -146,6 +146,36 @@ describe('RestConfigSchema', () => {
       expect(RestConfigSchema.safeParse(local('{$env.JWT_PRIVATE_KEY}')).success).toBe(true);
     });
 
+    it('requires a token endpoint for auth.ssl', () => {
+      const ssl = { disableSSL: true };
+      expect(RestConfigSchema.safeParse(withAuth({ ssl })).success).toBe(false);
+      expect(RestConfigSchema.safeParse(withAuth({ ssl, basic: { username: 'u', password: 'p' } })).success).toBe(false);
+      expect(RestConfigSchema.safeParse(withAuth({ ssl, oauth2 })).success).toBe(true);
+      expect(RestConfigSchema.safeParse(withAuth({ ssl, jwt: { external } })).success).toBe(true);
+    });
+
+    it('caps expiresInSeconds at 24 hours', () => {
+      const local = (expiresInSeconds: number) => withAuth({
+        jwt: { local: { algorithm: 'HS256', secretOrPrivateKey: 'x'.repeat(32), expiresInSeconds } },
+      });
+      expect(RestConfigSchema.safeParse(local(86400)).success).toBe(true);
+      expect(RestConfigSchema.safeParse(local(86401)).success).toBe(false);
+    });
+
+    it('requires single-space-delimited scope tokens', () => {
+      const scoped = (scope: string) => withAuth({ oauth2: { ...oauth2, scope } });
+      expect(RestConfigSchema.safeParse(scoped('read write')).success).toBe(true);
+      expect(RestConfigSchema.safeParse(scoped('read  write')).success).toBe(false);
+      expect(RestConfigSchema.safeParse(scoped('read ')).success).toBe(false);
+    });
+
+    it('rejects credential keys in requestBody regardless of case', () => {
+      const body = (requestBody: unknown) => withAuth({ jwt: { external: { ...external, requestBody } } });
+      expect(RestConfigSchema.safeParse(body({ Password: 'z' })).success).toBe(false);
+      expect(RestConfigSchema.safeParse(body({ client_secret: 'z' })).success).toBe(false);
+      expect(RestConfigSchema.safeParse(body({ grant_type: 'password' })).success).toBe(true);
+    });
+
     it('applies the https rule to jwt.external too', () => {
       expect(RestConfigSchema.safeParse(withAuth({
         jwt: { external: { ...external, accessTokenUri: 'http://idp.test/token' } },

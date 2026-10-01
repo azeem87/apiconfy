@@ -214,10 +214,10 @@ const httpsAccessTokenUri = z.string().min(1).superRefine((value, ctx) => {
 //                scope-token = 1*( %x21 / %x23-5B / %x5D-7E ) — no space, quote or backslash.
 const SCOPE_TOKEN_PATTERN = /^[\x21\x23-\x5B\x5D-\x7E]+$/;
 const scopeSchema = z.string().min(1).refine(
-  (value) => value.trim().split(/\s+/).every((token) => SCOPE_TOKEN_PATTERN.test(token)),
+  (value) => value.split(' ').every((token) => SCOPE_TOKEN_PATTERN.test(token)),
   {
     message:
-      'scope must be space-delimited tokens containing no spaces, quotes or backslashes (RFC 6749 §3.3)',
+      'scope must be single-space-delimited tokens containing no quotes, backslashes or other whitespace (RFC 6749 §3.3)',
   }
 );
 
@@ -232,6 +232,8 @@ export const OAuth2ConfigSchema = z.object({
   audience: z.string().min(1).optional(),
 }).strict();
 
+const RESERVED_BODY_KEYS = new Set(['username', 'password', 'client_secret']);
+
 export const JwtExternalConfigSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
@@ -244,11 +246,13 @@ export const JwtExternalConfigSchema = z.object({
   tokenPrefix: z.string().optional(),
 }).strict().superRefine((config, ctx) => {
   // The credentials come from the fields above; a duplicate in requestBody hides which one wins.
-  if (config.requestBody && ('username' in config.requestBody || 'password' in config.requestBody)) {
+  const redefinesCredentials = Object.keys(config.requestBody ?? {})
+    .some((key) => RESERVED_BODY_KEYS.has(key.toLowerCase()));
+  if (redefinesCredentials) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['requestBody'],
-      message: 'requestBody must not redefine username or password — use the block fields',
+      message: 'requestBody must not redefine username, password or client_secret — use the block fields',
     });
   }
   // Header placement sends the credentials as a Basic header.
@@ -259,6 +263,7 @@ export const JwtExternalConfigSchema = z.object({
 
 /** RFC 7518 §3.1 — an HMAC key MUST be at least the hash output size. */
 const MIN_HS_KEY_BYTES = 32;
+const MAX_EXPIRES_IN_SECONDS = 24 * 60 * 60;
 
 export const JwtLocalConfigSchema = z.object({
   algorithm: z.enum(['HS256', 'HS384', 'HS512', 'RS256']),
@@ -269,7 +274,7 @@ export const JwtLocalConfigSchema = z.object({
     audience: z.string().min(1).optional(),
     subject: z.string().min(1).optional(),
   }).strict().optional(),
-  expiresInSeconds: z.number().int().positive().optional(),
+  expiresInSeconds: z.number().int().positive().max(MAX_EXPIRES_IN_SECONDS).optional(),
   requestHeader: z.string().min(1).optional(),
   tokenPrefix: z.string().optional(),
 }).strict().superRefine((config, ctx) => {
@@ -300,4 +305,7 @@ export const AuthConfigSchema = z.object({
 }).strict().refine(
   (auth) => [auth.basic, auth.oauth2, auth.jwt].filter(Boolean).length <= 1,
   { message: 'Only one of basic, oauth2, or jwt may be configured' }
+).refine(
+  (auth) => !auth.ssl || auth.oauth2 || auth.jwt?.external,
+  { path: ['ssl'], message: 'auth.ssl applies to the token endpoint — it needs oauth2 or jwt.external' }
 );
