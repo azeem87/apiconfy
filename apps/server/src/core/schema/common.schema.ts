@@ -263,7 +263,6 @@ export const JwtExternalConfigSchema = z.object({
 
 /** RFC 7518 §3.1 — an HMAC key MUST be at least the hash output size. */
 const MIN_HS_KEY_BYTES = 32;
-const MAX_EXPIRES_IN_SECONDS = 24 * 60 * 60;
 
 export const JwtLocalConfigSchema = z.object({
   algorithm: z.enum(['HS256', 'HS384', 'HS512', 'RS256']),
@@ -274,7 +273,7 @@ export const JwtLocalConfigSchema = z.object({
     audience: z.string().min(1).optional(),
     subject: z.string().min(1).optional(),
   }).strict().optional(),
-  expiresInSeconds: z.number().int().positive().max(MAX_EXPIRES_IN_SECONDS).optional(),
+  expiresInSeconds: z.number().int().positive().optional(),
   requestHeader: z.string().min(1).optional(),
   tokenPrefix: z.string().optional(),
 }).strict().superRefine((config, ctx) => {

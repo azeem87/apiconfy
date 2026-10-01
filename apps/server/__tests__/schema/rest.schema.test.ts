@@ -154,14 +154,6 @@ describe('RestConfigSchema', () => {
       expect(RestConfigSchema.safeParse(withAuth({ ssl, jwt: { external } })).success).toBe(true);
     });
 
-    it('caps expiresInSeconds at 24 hours', () => {
-      const local = (expiresInSeconds: number) => withAuth({
-        jwt: { local: { algorithm: 'HS256', secretOrPrivateKey: 'x'.repeat(32), expiresInSeconds } },
-      });
-      expect(RestConfigSchema.safeParse(local(86400)).success).toBe(true);
-      expect(RestConfigSchema.safeParse(local(86401)).success).toBe(false);
-    });
-
     it('requires single-space-delimited scope tokens', () => {
       const scoped = (scope: string) => withAuth({ oauth2: { ...oauth2, scope } });
       expect(RestConfigSchema.safeParse(scoped('read write')).success).toBe(true);
