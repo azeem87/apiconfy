@@ -4,6 +4,7 @@ const DEFAULT_SENSITIVE_KEYS = [
   'clientSecret', 'client_secret', 'privateKey', 'private_key',
   'accessToken', 'access_token', 'refreshToken', 'refresh_token',
   'authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'passphrase',
+  'secretOrPrivateKey',
 ];
 
 export function redactSensitiveFields<T>(

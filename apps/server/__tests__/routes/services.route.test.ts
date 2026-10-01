@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { CA_CERT } from '@fixtures/tls.js';
 import { createApp } from '@/app.js';
 import { createSqliteAdapter } from '@/core/db/adapters/sqlite-adapter.js';
 import type { DBAdapter } from '@/core/db/adapter.js';
@@ -221,6 +222,40 @@ describe('services routes', () => {
       const json = await (await post(app, withSecrets)).json();
       expect(json.data.config.request.auth.basic.password).toBe('***');
       expect(json.data.config.request.auth.basic.username).toBe('svc-account');
+    });
+
+    it('masks a literal signing key (secretOrPrivateKey is name-matched)', async () => {
+      const json = await (await post(app, body({
+        config: {
+          request: {
+            uri: 'https://api.example.com/customers',
+            method: 'POST',
+            auth: {
+              jwt: { local: { algorithm: 'HS256', secretOrPrivateKey: 'super-secret-signing-key-32bytes' } },
+            },
+          },
+        },
+      }))).json();
+      expect(json.data.config.request.auth.jwt.local.secretOrPrivateKey).toBe('***');
+      expect(json.data.config.request.auth.jwt.local.algorithm).toBe('HS256');
+    });
+
+    it('masks an oauth2 clientSecret and a token-endpoint key, keeping public material verbatim', async () => {
+      const json = await (await post(app, body({
+        config: {
+          request: {
+            uri: 'https://api.example.com/customers',
+            method: 'POST',
+            auth: {
+              ssl: { ca: CA_CERT },
+              oauth2: { clientId: 'svc', clientSecret: 'literal-secret', accessTokenUri: 'https://sso.test/token' },
+            },
+          },
+        },
+      }))).json();
+      expect(json.data.config.request.auth.oauth2.clientSecret).toBe('***');
+      expect(json.data.config.request.auth.oauth2.clientId).toBe('svc');
+      expect(json.data.config.request.auth.ssl.ca).toBe(CA_CERT);
     });
 
     it('masks a {$env.} reference in the PUT response', async () => {

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Apiconfy",
-    "description": "API collection for Apiconfy integration runtime.\n\n## Setup\n1. Start the server with `pnpm dev` (install dependencies with pnpm only).\n2. Set base_url (default http://localhost:3000) and api_key if API_KEY is configured.\n3. REST > Invoke folders run in order: registration, invocation, execution lookup. Invoke scripts save execution_id. Execution recording is queued off the response path, so an execution-lookup request run immediately after invoke can occasionally 404 — rerun it once if that happens (Newman users: add a short delay or a retry-on-404 script).\n4. Complex/error examples use upstream_url (default https://httpbin.org). Use dummy data only, or your own httpbin-compatible upstream.\n\n## Structure — by component type\nHealth and Service Management retain existing requests. REST includes registration plus Phase 2 Invoke > Simple Examples, Complex Examples, Error Cases. Existing full auth/TLS/circuitBreaker registrations are registration-only; invoking them returns 501. Runnable Phase 2 complex examples include every supported section and intentionally omit unsupported capabilities. Payload validation (request.validation.fields) is part of every complex example and has dedicated manual examples under REST > Payload Validation; the future component folders show the same block in their own sections. Mapper, Database, Script and SQS are future Phase 11 designs, not registered handlers in Phase 2; Scheduler is Phase 10.\n\n## Data bag\nInput uses {$context.*}; ephemeral raw upstream response uses {$output.*}. Response transformations wrap output under unique keys. Phase 2 returns transformed output directly and leaves context.output empty; callers must not supply context.output. Transformation still runs on failure: wire data is null, while GET /api/v1/executions/{{execution_id}} exposes the sanitized transformed, error-injected result. Merging into {$context.output.<uniqueKey>} is Phase 5 workflow behavior.\n\n## Limits\nOnly timeout.response is enforced, per attempt through body consumption. Auth, custom TLS/disableSSL=true, connect/socket/idle, circuitBreaker and unsupported content types return 501. Phase 2 implementation verification is pending; this collection is not test-run evidence.",
+    "description": "API collection for Apiconfy integration runtime.\n\n## Setup\n1. Start the server with `pnpm dev` (install dependencies with pnpm only).\n2. Set base_url (default http://localhost:3000) and api_key if API_KEY is configured.\n3. REST > Invoke folders run in order: registration, invocation, execution lookup. Invoke scripts save execution_id. Execution recording is queued off the response path, so an execution-lookup request run immediately after invoke can occasionally 404 — rerun it once if that happens (Newman users: add a short delay or a retry-on-404 script).\n4. Complex/error examples use upstream_url (default https://httpbin.org). Use dummy data only, or your own httpbin-compatible upstream.\n\n## Structure — by component type\nHealth and Service Management retain existing requests. REST includes registration plus Phase 2 Invoke > Simple Examples, Complex Examples, Error Cases. Existing full auth registrations are registration-only; invoking them returns 501. TLS registrations (`request.ssl`, `disableSSL`) are executable since Phase 3.6, and a dedicated REST > Auth folder holds the auth examples — auth payloads must satisfy the Phase 4 schema because registration validates them even while the token runtime is pending. Runnable Phase 2 complex examples include every supported section and intentionally omit unsupported capabilities. Payload validation (request.validation.fields) is part of every complex example and has dedicated manual examples under REST > Payload Validation; the future component folders show the same block in their own sections. Mapper, Database, Script and SQS are future Phase 11 designs, not registered handlers in Phase 2; Scheduler is Phase 10.\n\n## Data bag\nInput uses {$context.*}; ephemeral raw upstream response uses {$output.*}. Response transformations wrap output under unique keys. Phase 2 returns transformed output directly and leaves context.output empty; callers must not supply context.output. Transformation still runs on failure: wire data is null, while GET /api/v1/executions/{{execution_id}} exposes the sanitized transformed, error-injected result. Merging into {$context.output.<uniqueKey>} is Phase 5 workflow behavior.\n\n## Limits\nOnly timeout.response is enforced, per attempt through body consumption. Auth (token runtime; registration-time validation is already live), connect/socket/idle (post-v1 — Bun's fetch exposes no per-request control for them), circuitBreaker and unsupported content types return 501. `request.ssl` and `disableSSL` execute since Phase 3.6, and `auth.ssl` governs the token endpoint. Phase 2 implementation verification is pending; this collection is not test-run evidence.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "version": "1.0.0"
   },
@@ -288,7 +288,7 @@
                 },
                 {
                   "name": "501 — connect timeout guard",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/connect/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_IMPLEMENTED, attempts=0. socket/idle and circuitBreaker/custom SSL are guarded similarly." }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/connect/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_IMPLEMENTED, attempts=0. socket/idle and circuitBreaker are guarded similarly and are all labeled `post-v1` — they need transport-level control that Bun's `fetch` does not expose. Custom SSL is NOT guarded: `request.ssl` and `disableSSL` execute since Phase 3.6 (see REST > TLS Certificates), and token-endpoint TLS lives in `auth.ssl`." }
                 },
                 {
                   "name": "Register upstream status error with retry",
@@ -922,6 +922,131 @@
                   ]
                 },
                 "description": "`passphrase` only applies together with `key`. Returns 400."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Auth",
+          "item": [
+            {
+              "name": "Register — basic auth (simple)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services",
+                "body": { "mode": "raw", "raw": "{ \"service\": \"auth-demo\", \"action\": \"basic_post\", \"componentType\": \"rest\", \"description\": \"Minimal basic auth: username + password. The password is an {$env} reference so it never reaches the database as a literal.\", \"config\": { \"request\": { \"uri\": \"{{upstream_url}}/post\", \"method\": \"POST\", \"auth\": { \"basic\": { \"username\": \"svc-account\", \"password\": \"{$env.DEMO_PASSWORD}\" } } } } }" },
+                "description": "Expected 201. Required keys: `username`, `password`. `username` must not contain `:` (the Basic credential separator, RFC 7617). Registration-only until the Phase 4 runtime — invoking returns 501. Read it back via GET to see the password masked as `***`."
+              }
+            },
+            {
+              "name": "Register — oauth2 client_credentials (simple)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services",
+                "body": { "mode": "raw", "raw": "{ \"service\": \"auth-demo\", \"action\": \"oauth2_post\", \"componentType\": \"rest\", \"description\": \"Minimal OAuth2 client_credentials: no scope, default client authentication (HTTP Basic).\", \"config\": { \"request\": { \"uri\": \"{{upstream_url}}/post\", \"method\": \"POST\", \"auth\": { \"oauth2\": { \"clientId\": \"{$env.ORDER_API_CLIENT_ID}\", \"clientSecret\": \"{$env.ORDER_API_CLIENT_SECRET}\", \"accessTokenUri\": \"https://auth.example.com/oauth/token\" } } } } }" },
+                "description": "Expected 201. Required keys: `clientId`, `clientSecret`, `accessTokenUri`. `accessTokenUri` must be absolute `https://` (or an `{$env.NAME}` reference) — client credentials travel over it and RFC 6749 §2.3.1 requires TLS. `disableSSL` means \"do not verify the certificate\", never \"send it in cleartext\"."
+              }
+            },
+            {
+              "name": "Register — complex: Okta-style client_credentials (Basic auth, scope list, audience)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services",
+                "body": { "mode": "raw", "raw": "{\n  \"service\": \"ek\",\n  \"action\": \"get_eligibility\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: client_credentials with clientAuth basic (Authorization: Basic base64(id:secret)), a space-delimited scope list, an audience parameter and its own token-endpoint TLS via auth.ssl. Registration-only until the Phase 4 runtime.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/olci/v1/eligibility\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Correlation-Id\": \"{$context.correlationId}\" },\n      \"auth\": {\n        \"ssl\": { \"ca\": \"{$env.IDP_CA_PEM}\" },\n        \"oauth2\": {\n          \"clientId\": \"{$env.EMIRATES_CLIENT_ID}\",\n          \"clientSecret\": \"{$env.EMIRATES_CLIENT_SECRET}\",\n          \"accessTokenUri\": \"https://authuat.emirates.dev/oauth2/<authServerId>/v1/token\",\n          \"clientAuth\": \"basic\",\n          \"scope\": \"ek.olci.onlineCheckIn.randomizer.get.eligibility ek.cab.rebooking.eligibility.post ek.ibe.flightPricing.airFares.get\",\n          \"audience\": \"api://skywards\"\n        }\n      },\n      \"payloadTemplate\": { \"pnr\": \"{$context.pnr}\", \"channel\": \"resConnect\" },\n      \"validation\": {\n        \"fields\": [\n          { \"path\": \"pnr\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"channel\", \"required\": true, \"type\": \"string\" }\n        ]\n      }\n    },\n    \"timeout\": { \"response\": 10000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 300, \"backoff\": \"exponential\", \"retryOn\": [502, 503, 504] },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.eligible} != null\", \"message\": \"eligible flag is missing\" }] },\n      \"transformation\": { \"getEligibilityResponse\": { \"eligible\": \"{$output.eligible}\", \"pnr\": \"{$context.pnr}\" } }\n    }\n  },\n  \"condition\": \"{$context.pnr} != null\",\n  \"metaData\": { \"owner\": \"ek-integrations\", \"auth\": \"oauth2-client-credentials\" }\n}" },
+                "description": "Expected 201. `clientAuth: \"basic\"` puts the credentials in `Authorization: Basic …` (RFC 6749 §2.3.1 — the shape the Okta-style endpoint in the estate uses). `scope` is ONE space-delimited string (13 `ek.*` scopes in the real call; shortened here) and is omitted entirely when empty. `audience` is the extra token-request parameter Okta needs when the API's `aud` is not the auth server default — the decoded access token carries `aud: api://skywards`. `auth.ssl` is the TOKEN ENDPOINT's TLS policy (a different host from `request.uri`), not the API call's; `request.ssl` still governs the API call. `ssl.disableSSL` cannot be combined with `ca`/`cert`/`key`."
+              }
+            },
+            {
+              "name": "Register — complex: SiteMinder-style client_credentials (credentials in the body)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services",
+                "body": { "mode": "raw", "raw": "{\n  \"service\": \"resconnect\",\n  \"action\": \"search_offers\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: the second real client-auth shape — clientAuth body sends client_id/client_secret as form fields instead of a Basic header, with no scope at all. Registration-only until the Phase 4 runtime.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/flightOffers/search\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Request-Id\": \"{$context.requestId}\" },\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"resconnectapi_client\",\n          \"clientSecret\": \"{$env.SSO_CLIENT_SECRET}\",\n          \"accessTokenUri\": \"https://ssostg.emirates.dev/as/token.oauth2\",\n          \"clientAuth\": \"body\"\n        }\n      },\n      \"payloadTemplate\": { \"origin\": \"{$context.origin}\", \"destination\": \"{$context.destination}\", \"date\": \"{$context.date}\" },\n      \"validation\": {\n        \"fields\": [\n          { \"path\": \"origin\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"destination\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"date\", \"required\": true, \"type\": \"string\" }\n        ]\n      }\n    },\n    \"timeout\": { \"response\": 15000 },\n    \"resilience\": { \"retryCount\": 2, \"retryDelay\": 500, \"backoff\": \"fixed\", \"retryOn\": [502, 503] },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.offers} != null\", \"message\": \"offers missing\" }] },\n      \"transformation\": { \"searchOffersResponse\": { \"count\": \"{$output.count}\", \"origin\": \"{$context.origin}\" } }\n    }\n  },\n  \"condition\": \"{$context.origin} != null\",\n  \"metaData\": { \"owner\": \"resconnect-integrations\", \"auth\": \"oauth2-client-credentials-body\" }\n}" },
+                "description": "Expected 201. Both client-auth shapes exist in the estate, which is why `clientAuth` exists at all. `clientAuth` defaults to `basic` — if the IdP expects the credentials in the body and returns 401, set `clientAuth: \"body\"` (the error carries that hint). Sending both at once is forbidden by RFC 6749 §2.3.1. This endpoint returns no `scope`, and that is fine — a token response may omit it (§5.1). Chart the flow: cache a token, reuse it across calls, and on a 401 invalidate, re-acquire and replay the request once."
+              }
+            },
+            {
+              "name": "Register — complex: jwt.external legacy token fetch",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services",
+                "body": { "mode": "raw", "raw": "{\n  \"service\": \"erp\",\n  \"action\": \"post_shipment\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: legacy IdP token fetch — POST a body, pull the token out of a nested path, send it under a custom header. Password-grant shaped, which RFC 9700 section 2.4 prohibits (MUST NOT be used); this block exists only for IdPs that offer nothing else. Registration-only until the Phase 4 runtime.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://erp.legacy.local/shipments\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Env\": \"{$context.environment}\" },\n      \"auth\": {\n        \"ssl\": { \"ca\": \"{$env.ERP_CA_PEM}\" },\n        \"jwt\": {\n          \"external\": {\n            \"username\": \"apiconfy-user\",\n            \"password\": \"{$env.ERP_PASSWORD}\",\n            \"accessTokenUri\": \"https://erp.legacy.local/auth/token\",\n            \"credentialPlacement\": \"body\",\n            \"contentType\": \"application/x-www-form-urlencoded\",\n            \"requestBody\": { \"grant_type\": \"password\", \"audience\": \"erp-api\" },\n            \"responsePath\": \"data.accessToken\",\n            \"requestHeader\": \"X-ERP-Token\",\n            \"tokenPrefix\": \"\"\n          }\n        }\n      },\n      \"payloadTemplate\": { \"shipmentId\": \"{$context.shipmentId}\", \"carrier\": \"{$context.carrier}\" },\n      \"validation\": {\n        \"fields\": [\n          { \"path\": \"shipmentId\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"carrier\", \"required\": true, \"type\": \"string\" }\n        ]\n      }\n    },\n    \"timeout\": { \"response\": 15000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 500, \"backoff\": \"fixed\", \"retryOn\": [502, 503] },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.shipmentId} != null\", \"message\": \"shipmentId missing\" }] },\n      \"transformation\": { \"postShipmentResponse\": { \"shipmentId\": \"{$output.shipmentId}\", \"acceptedAt\": \"{$output.acceptedAt}\" } }\n    }\n  },\n  \"condition\": \"{$context.shipmentId} != null\",\n  \"metaData\": { \"owner\": \"logistics-team\", \"auth\": \"legacy-token-endpoint\" }\n}" },
+                "description": "Expected 201. Required keys: `username`, `password`, `accessTokenUri`. Optional with defaults: `credentialPlacement` (`body`), `contentType` (form-urlencoded), `requestBody` (extra params — it must NOT redefine `username`/`password`, which come from the block fields), `responsePath` (`access_token`; a missing path is an error, never an empty token), `requestHeader` (`Authorization`), `tokenPrefix` (`Bearer ` — an empty string is legal, as here, for a bare custom header). The name is misleading: RFC 7523's JWT grant carries a signed `assertion`, which this is not. `disableSSL` is no longer accepted here — it lives in `auth.ssl`."
+              }
+            },
+            {
+              "name": "Register — complex: jwt.local signed JWT with claims",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services",
+                "body": { "mode": "raw", "raw": "{\n  \"service\": \"partner\",\n  \"action\": \"sync_catalog\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: no token endpoint at all — the JWT is signed locally on every call (HS256 here, RS256 also supported) with iss/aud/sub and a 300 s exp. Registration-only until the Phase 4 runtime.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/catalog/sync\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Request-Id\": \"{$context.requestId}\" },\n      \"auth\": {\n        \"jwt\": {\n          \"local\": {\n            \"algorithm\": \"HS256\",\n            \"secretOrPrivateKey\": \"{$env.PARTNER_JWT_SECRET}\",\n            \"claims\": { \"issuer\": \"apiconfy\", \"audience\": \"partner-api\", \"subject\": \"svc-catalog\" },\n            \"expiresInSeconds\": 300,\n            \"requestHeader\": \"Authorization\",\n            \"tokenPrefix\": \"Bearer \"\n          }\n        }\n      },\n      \"payloadTemplate\": { \"catalogId\": \"{$context.catalogId}\", \"full\": true },\n      \"validation\": {\n        \"fields\": [\n          { \"path\": \"catalogId\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"full\", \"required\": true, \"type\": \"boolean\" }\n        ]\n      }\n    },\n    \"timeout\": { \"response\": 8000 },\n    \"resilience\": { \"retryCount\": 2, \"retryDelay\": 300, \"backoff\": \"exponential\", \"retryOn\": [502, 503] },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.synced} != null\", \"message\": \"synced flag missing\" }] },\n      \"transformation\": { \"syncCatalogResponse\": { \"synced\": \"{$output.synced}\", \"catalogId\": \"{$context.catalogId}\" } }\n    }\n  },\n  \"condition\": \"{$context.catalogId} != null\",\n  \"metaData\": { \"owner\": \"partner-integrations\", \"auth\": \"jwt-local\" }\n}" },
+                "description": "Expected 201. Required keys: `algorithm` (`HS256`/`HS384`/`HS512`/`RS256` — `none` is not expressible), `secretOrPrivateKey`. An inline HS* key must be at least 32 bytes (RFC 7518 §3.1); an `{$env.NAME}` reference is length-checked at invoke. `claims` + `expiresInSeconds` (default 300) are what make the JWT acceptable to a real IdP — without them it carries no `exp` and is a non-expiring credential. `secretOrPrivateKey` is name-masked on read: a literal comes back `***`."
+              }
+            },
+            {
+              "name": "400 — http:// accessTokenUri",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services",
+                "body": { "mode": "raw", "raw": "{ \"service\": \"auth-demo\", \"action\": \"bad_uri\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{upstream_url}}/post\", \"method\": \"POST\", \"auth\": { \"oauth2\": { \"clientId\": \"c\", \"clientSecret\": \"s\", \"accessTokenUri\": \"http://idp.test/token\" } } } } }" },
+                "description": "Expected 400. `accessTokenUri` must be absolute `https://` or an `{$env.NAME}` reference. `disableSSL` skips certificate VERIFICATION; it never permits cleartext."
+              }
+            },
+            {
+              "name": "400 — HS signing key under 32 bytes",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services",
+                "body": { "mode": "raw", "raw": "{ \"service\": \"auth-demo\", \"action\": \"short_key\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{upstream_url}}/post\", \"method\": \"POST\", \"auth\": { \"jwt\": { \"local\": { \"algorithm\": \"HS256\", \"secretOrPrivateKey\": \"k\" } } } } } }" },
+                "description": "Expected 400. RFC 7518 §3.1 requires an HMAC key at least the size of the hash output. The message names the 32-byte minimum."
+              }
+            },
+            {
+              "name": "400 — requestBody redefines the credentials",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services",
+                "body": { "mode": "raw", "raw": "{ \"service\": \"auth-demo\", \"action\": \"dup_creds\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{upstream_url}}/post\", \"method\": \"POST\", \"auth\": { \"jwt\": { \"external\": { \"username\": \"u\", \"password\": \"p\", \"accessTokenUri\": \"https://idp.test/token\", \"requestBody\": { \"grant_type\": \"password\", \"password\": \"duplicate\" } } } } } } }" },
+                "description": "Expected 400. Credentials come from the block fields; a duplicate in `requestBody` hides which one wins."
+              }
+            },
+            {
+              "name": "400 — disableSSL inside jwt.external (moved to auth.ssl)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services",
+                "body": { "mode": "raw", "raw": "{ \"service\": \"auth-demo\", \"action\": \"moved_tls\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{upstream_url}}/post\", \"method\": \"POST\", \"auth\": { \"jwt\": { \"external\": { \"username\": \"u\", \"password\": \"p\", \"accessTokenUri\": \"https://idp.test/token\", \"disableSSL\": true } } } } } }" },
+                "description": "Expected 400 (unknown key — the objects are strict). Token-endpoint TLS was hoisted to `auth.ssl`, which already carries `disableSSL`; write `\"auth\": { \"ssl\": { \"disableSSL\": true }, \"jwt\": { … } }` instead. There is exactly one auth block per component, so there is exactly one token endpoint to configure."
+              }
+            },
+            {
+              "name": "400 — two auth strategies at once",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services",
+                "body": { "mode": "raw", "raw": "{ \"service\": \"auth-demo\", \"action\": \"two_strategies\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{upstream_url}}/post\", \"method\": \"POST\", \"auth\": { \"basic\": { \"username\": \"u\", \"password\": \"p\" }, \"oauth2\": { \"clientId\": \"c\", \"clientSecret\": \"s\", \"accessTokenUri\": \"https://idp.test/token\" } } } } }" },
+                "description": "Expected 400. At most one of `basic`, `oauth2` or `jwt`; within `jwt`, exactly one of `external` or `local`."
+              }
+            },
+            {
+              "name": "501 — invoke with auth configured (registration-only)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services/auth-demo/basic_post/invoke",
+                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                "description": "Registration already validates the auth block, but the token runtime is Phase 4, so invoking returns NOT_IMPLEMENTED with attempts=0 and no env resolution — the guard runs before dispatch, deliberately: sending the call without its auth header would be worse than refusing.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 2\n  }\n}\n```"
               }
             }
           ]

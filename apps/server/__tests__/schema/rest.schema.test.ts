@@ -81,7 +81,7 @@ describe('RestConfigSchema', () => {
               password: 'p',
               accessTokenUri: 'https://idp.test/token',
             },
-            local: { algorithm: 'HS256', secretOrPrivateKey: 'k' },
+            local: { algorithm: 'HS256', secretOrPrivateKey: '0123456789abcdef0123456789abcdef' },
           },
         },
       },
@@ -112,6 +112,110 @@ describe('RestConfigSchema', () => {
     expect(result.success).toBe(false);
     expect(JSON.stringify(result.error?.issues))
       .toContain('exactly one of external or local');
+  });
+
+  describe('auth config surface (Phase 4)', () => {
+    const withAuth = (auth: unknown) => ({ request: { ...minimal.request, auth } });
+    const oauth2 = { clientId: 'c', clientSecret: 's', accessTokenUri: 'https://idp.test/token' };
+    const external = { username: 'u', password: 'p', accessTokenUri: 'https://idp.test/token' };
+
+    it('requires an absolute https accessTokenUri, or an {$env} reference', () => {
+      expect(RestConfigSchema.safeParse(withAuth({
+        oauth2: { ...oauth2, accessTokenUri: 'http://idp.test/token' },
+      })).success).toBe(false);
+      expect(RestConfigSchema.safeParse(withAuth({
+        oauth2: { ...oauth2, accessTokenUri: 'idp.test/token' },
+      })).success).toBe(false);
+      expect(RestConfigSchema.safeParse(withAuth({
+        oauth2: { ...oauth2, accessTokenUri: '{$env.IDP_TOKEN_URI}' },
+      })).success).toBe(true);
+      expect(RestConfigSchema.safeParse(withAuth({ oauth2 })).success).toBe(true);
+    });
+
+    it('applies the https rule to jwt.external too', () => {
+      expect(RestConfigSchema.safeParse(withAuth({
+        jwt: { external: { ...external, accessTokenUri: 'http://idp.test/token' } },
+      })).success).toBe(false);
+      expect(RestConfigSchema.safeParse(withAuth({ jwt: { external } })).success).toBe(true);
+    });
+
+    it('rejects a username containing the Basic separator', () => {
+      expect(RestConfigSchema.safeParse(withAuth({ basic: { username: 'a:b', password: 'p' } })).success).toBe(false);
+      expect(RestConfigSchema.safeParse(withAuth({ basic: { username: 'ab', password: 'p' } })).success).toBe(true);
+    });
+
+    it('accepts clientAuth and audience, and rejects an unknown clientAuth', () => {
+      expect(RestConfigSchema.safeParse(withAuth({
+        oauth2: { ...oauth2, clientAuth: 'body', audience: 'api://skywards' },
+      })).success).toBe(true);
+      expect(RestConfigSchema.safeParse(withAuth({
+        oauth2: { ...oauth2, clientAuth: 'none' },
+      })).success).toBe(false);
+    });
+
+    it('rejects scope tokens outside the RFC 6749 grammar', () => {
+      expect(RestConfigSchema.safeParse(withAuth({
+        oauth2: { ...oauth2, scope: 'ek.cab.pricing.get ek.ibe.airFares.get' },
+      })).success).toBe(true);
+      expect(RestConfigSchema.safeParse(withAuth({
+        oauth2: { ...oauth2, scope: '"orders.read"' },
+      })).success).toBe(false);
+      expect(RestConfigSchema.safeParse(withAuth({
+        oauth2: { ...oauth2, scope: 'orders\\read' },
+      })).success).toBe(false);
+    });
+
+    it('requires at least 32 bytes for an inline HS* signing key', () => {
+      const local = (secretOrPrivateKey: string) => withAuth({
+        jwt: { local: { algorithm: 'HS256', secretOrPrivateKey } },
+      });
+      expect(RestConfigSchema.safeParse(local('a'.repeat(31))).success).toBe(false);
+      expect(RestConfigSchema.safeParse(local('a'.repeat(32))).success).toBe(true);
+      expect(RestConfigSchema.safeParse(local('{$env.JWT_KEY}')).success).toBe(true);
+    });
+
+    it('accepts claims and expiresInSeconds, and rejects a non-positive expiry', () => {
+      expect(RestConfigSchema.safeParse(withAuth({
+        jwt: {
+          local: {
+            algorithm: 'HS256',
+            secretOrPrivateKey: 'a'.repeat(32),
+            claims: { issuer: 'apiconfy', audience: 'partner-api', subject: 'svc' },
+            expiresInSeconds: 300,
+          },
+        },
+      })).success).toBe(true);
+      expect(RestConfigSchema.safeParse(withAuth({
+        jwt: { local: { algorithm: 'HS256', secretOrPrivateKey: 'a'.repeat(32), expiresInSeconds: 0 } },
+      })).success).toBe(false);
+    });
+
+    it('carries token-endpoint TLS on the auth block', () => {
+      expect(RestConfigSchema.safeParse(withAuth({ ssl: { disableSSL: true }, oauth2 })).success).toBe(true);
+      expect(RestConfigSchema.safeParse(withAuth({ ssl: { ca: CA_CERT }, oauth2 })).success).toBe(true);
+      // Same exclusivity rule as request.ssl: disableSSL cannot be combined with material.
+      expect(RestConfigSchema.safeParse(withAuth({
+        ssl: { disableSSL: true, ca: CA_CERT }, oauth2,
+      })).success).toBe(false);
+    });
+
+    it('no longer accepts disableSSL inside jwt.external (hoisted to auth.ssl)', () => {
+      expect(RestConfigSchema.safeParse(withAuth({
+        jwt: { external: { ...external, disableSSL: true } },
+      })).success).toBe(false);
+      expect(RestConfigSchema.safeParse(withAuth({
+        ssl: { disableSSL: true }, jwt: { external },
+      })).success).toBe(true);
+    });
+
+    it('rejects a requestBody that redefines the credentials', () => {
+      expect(RestConfigSchema.safeParse(withAuth({
+        jwt: { external: { ...external, requestBody: { grant_type: 'password', password: 'dup' } } },
+      })).success).toBe(false);
+      expect(RestConfigSchema.safeParse(withAuth({
+        jwt: { external: { ...external, requestBody: { grant_type: 'password', audience: 'erp-api' } } },
+      })).success).toBe(true);
+    });
   });
 
   it('accepts a full resilience block', () => {

@@ -193,38 +193,85 @@ export const SSLConfigSchema = z.object({
 });
 
 export const BasicAuthSchema = z.object({
-  username: z.string().min(1),
+  username: z.string().min(1).refine((value) => !value.includes(':'), {
+    message: 'username must not contain ":" — it is the Basic credential separator (RFC 7617)',
+  }),
   password: z.string().min(1),
 }).strict();
+
+// Client credentials travel over `accessTokenUri` and RFC 6749 §2.3.1 requires TLS, so the URI must
+// be https (a {$env.NAME} reference is resolved and re-checked at invoke, like ssl material).
+// `disableSSL` means "do not verify the certificate", never "send it in cleartext".
+const httpsAccessTokenUri = z.string().min(1).superRefine((value, ctx) => {
+  if (isEnvRef(value) || /^https:\/\//i.test(value)) return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: 'accessTokenUri must be an absolute https:// URL or a {$env.NAME} reference',
+  });
+});
+
+// RFC 6749 §3.3: scope = scope-token *( SP scope-token )
+//                scope-token = 1*( %x21 / %x23-5B / %x5D-7E ) — no space, quote or backslash.
+const SCOPE_TOKEN_PATTERN = /^[\x21\x23-\x5B\x5D-\x7E]+$/;
+const scopeSchema = z.string().min(1).refine(
+  (value) => value.trim().split(/\s+/).every((token) => SCOPE_TOKEN_PATTERN.test(token)),
+  {
+    message:
+      'scope must be space-delimited tokens containing no spaces, quotes or backslashes (RFC 6749 §3.3)',
+  }
+);
 
 export const OAuth2ConfigSchema = z.object({
   clientId: z.string().min(1),
   clientSecret: z.string().min(1),
-  accessTokenUri: z.string().min(1),
-  scope: z.string().optional(),
+  accessTokenUri: httpsAccessTokenUri,
+  scope: scopeSchema.optional(),
+  /** How clientId/clientSecret reach the token endpoint. Default 'basic' (RFC 6749 §2.3.1). */
+  clientAuth: z.enum(['basic', 'body']).optional(),
+  /** IdP-specific extra token-request parameter (e.g. Okta's `audience`). */
+  audience: z.string().min(1).optional(),
 }).strict();
 
 export const JwtExternalConfigSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
   credentialPlacement: z.enum(['header', 'body']).optional(),
-  accessTokenUri: z.string().min(1),
-  contentType: z.string().optional(),
+  accessTokenUri: httpsAccessTokenUri,
+  contentType: z.string().min(1).optional(),
   requestBody: z.record(z.unknown()).optional(),
-  disableSSL: z.boolean().optional(),
-  responsePath: z.string().optional(),
-  requestHeader: z.string().optional(),
+  responsePath: z.string().min(1).optional(),
+  requestHeader: z.string().min(1).optional(),
   tokenPrefix: z.string().optional(),
-}).strict();
+}).strict().refine(
+  // The credentials come from the fields above; a duplicate in requestBody hides which one wins.
+  (config) => !config.requestBody
+    || (!('username' in config.requestBody) && !('password' in config.requestBody)),
+  { message: 'requestBody must not redefine username or password — use the block fields' }
+);
+
+/** RFC 7518 §3.1 — an HMAC key MUST be at least the hash output size. */
+const MIN_HS_KEY_BYTES = 32;
 
 export const JwtLocalConfigSchema = z.object({
   algorithm: z.enum(['HS256', 'HS384', 'HS512', 'RS256']),
-  secretOrPrivateKey: z.string().min(1),
-  requestHeader: z.string().optional(),
+  secretOrPrivateKey: z.string().min(1).refine(
+    (value) => isEnvRef(value) || Buffer.byteLength(value, 'utf8') >= MIN_HS_KEY_BYTES,
+    { message: `an HS* signing key must be at least ${MIN_HS_KEY_BYTES} bytes (RFC 7518 §3.1)` }
+  ),
+  /** Without claims and expiresInSeconds the signed JWT carries no `exp`; most IdPs reject that. */
+  claims: z.object({
+    issuer: z.string().min(1).optional(),
+    audience: z.string().min(1).optional(),
+    subject: z.string().min(1).optional(),
+  }).strict().optional(),
+  expiresInSeconds: z.number().int().positive().optional(),
+  requestHeader: z.string().min(1).optional(),
   tokenPrefix: z.string().optional(),
 }).strict();
 
 export const AuthConfigSchema = z.object({
+  /** Token-endpoint TLS — a different host from `request.uri`. Reuses SSLConfigSchema, which already carries `disableSSL`. */
+  ssl: SSLConfigSchema.optional(),
   basic: BasicAuthSchema.optional(),
   oauth2: OAuth2ConfigSchema.optional(),
   jwt: z.object({
