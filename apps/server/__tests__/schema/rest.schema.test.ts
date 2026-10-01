@@ -132,6 +132,20 @@ describe('RestConfigSchema', () => {
       expect(RestConfigSchema.safeParse(withAuth({ oauth2 })).success).toBe(true);
     });
 
+    it('rejects a ":" username for jwt.external header placement only', () => {
+      const colon = { ...external, username: 'a:b' };
+      expect(RestConfigSchema.safeParse(withAuth({ jwt: { external: colon } })).success).toBe(false);
+      expect(RestConfigSchema.safeParse(withAuth({
+        jwt: { external: { ...colon, credentialPlacement: 'body' } },
+      })).success).toBe(true);
+    });
+
+    it('requires a PEM private key for RS256 unless it is an {$env} reference', () => {
+      const local = (secretOrPrivateKey: string) => withAuth({ jwt: { local: { algorithm: 'RS256', secretOrPrivateKey } } });
+      expect(RestConfigSchema.safeParse(local('not-a-pem-key-but-long-enough-for-hmac!!')).success).toBe(false);
+      expect(RestConfigSchema.safeParse(local('{$env.JWT_PRIVATE_KEY}')).success).toBe(true);
+    });
+
     it('applies the https rule to jwt.external too', () => {
       expect(RestConfigSchema.safeParse(withAuth({
         jwt: { external: { ...external, accessTokenUri: 'http://idp.test/token' } },

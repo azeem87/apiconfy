@@ -192,10 +192,10 @@ export const SSLConfigSchema = z.object({
   }
 });
 
+const BASIC_USERNAME_MESSAGE = 'username must not contain ":" — it is the Basic credential separator (RFC 7617)';
+
 export const BasicAuthSchema = z.object({
-  username: z.string().min(1).refine((value) => !value.includes(':'), {
-    message: 'username must not contain ":" — it is the Basic credential separator (RFC 7617)',
-  }),
+  username: z.string().min(1).refine((value) => !value.includes(':'), { message: BASIC_USERNAME_MESSAGE }),
   password: z.string().min(1),
 }).strict();
 
@@ -242,22 +242,27 @@ export const JwtExternalConfigSchema = z.object({
   responsePath: z.string().min(1).optional(),
   requestHeader: z.string().min(1).optional(),
   tokenPrefix: z.string().optional(),
-}).strict().refine(
+}).strict().superRefine((config, ctx) => {
   // The credentials come from the fields above; a duplicate in requestBody hides which one wins.
-  (config) => !config.requestBody
-    || (!('username' in config.requestBody) && !('password' in config.requestBody)),
-  { message: 'requestBody must not redefine username or password — use the block fields' }
-);
+  if (config.requestBody && ('username' in config.requestBody || 'password' in config.requestBody)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['requestBody'],
+      message: 'requestBody must not redefine username or password — use the block fields',
+    });
+  }
+  // Header placement sends the credentials as a Basic header.
+  if (config.credentialPlacement !== 'body' && config.username.includes(':')) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['username'], message: BASIC_USERNAME_MESSAGE });
+  }
+});
 
 /** RFC 7518 §3.1 — an HMAC key MUST be at least the hash output size. */
 const MIN_HS_KEY_BYTES = 32;
 
 export const JwtLocalConfigSchema = z.object({
   algorithm: z.enum(['HS256', 'HS384', 'HS512', 'RS256']),
-  secretOrPrivateKey: z.string().min(1).refine(
-    (value) => isEnvRef(value) || Buffer.byteLength(value, 'utf8') >= MIN_HS_KEY_BYTES,
-    { message: `an HS* signing key must be at least ${MIN_HS_KEY_BYTES} bytes (RFC 7518 §3.1)` }
-  ),
+  secretOrPrivateKey: z.string().min(1),
   /** Without claims and expiresInSeconds the signed JWT carries no `exp`; most IdPs reject that. */
   claims: z.object({
     issuer: z.string().min(1).optional(),
@@ -267,7 +272,18 @@ export const JwtLocalConfigSchema = z.object({
   expiresInSeconds: z.number().int().positive().optional(),
   requestHeader: z.string().min(1).optional(),
   tokenPrefix: z.string().optional(),
-}).strict();
+}).strict().superRefine((config, ctx) => {
+  const key = config.secretOrPrivateKey;
+  if (isEnvRef(key)) return;
+  const issue = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['secretOrPrivateKey'], message });
+  if (config.algorithm.startsWith('HS')) {
+    if (Buffer.byteLength(key, 'utf8') < MIN_HS_KEY_BYTES) {
+      issue(`an HS* signing key must be at least ${MIN_HS_KEY_BYTES} bytes (RFC 7518 §3.1)`);
+    }
+  } else if (!isPrivateKeyPem(key)) {
+    issue('an RS256 signing key must be a PEM private key or a {$env.NAME} reference');
+  }
+});
 
 export const AuthConfigSchema = z.object({
   /** Token-endpoint TLS — a different host from `request.uri`. Reuses SSLConfigSchema, which already carries `disableSSL`. */
