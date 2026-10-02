@@ -5,7 +5,8 @@ import type { RuntimeExecutor } from '@/core/runtime/runtime-executor.js';
 import { AppError, ValidationError, generateId } from '@/lib/index.js';
 import { toInvocationFailure } from '@/lib/envelope.js';
 
-const InvocationRequestSchema = z.object({ context: z.record(z.unknown()) }).strict();
+// The request body is the invocation context itself — the caller sends the API payload as-is.
+const InvocationRequestSchema = z.record(z.unknown());
 
 export function invokeRoute(executor: RuntimeExecutor): Hono {
   const router = new Hono();
@@ -21,7 +22,7 @@ export function invokeRoute(executor: RuntimeExecutor): Hono {
       }
       return c.json(await executor.invoke({
         service: c.req.param('service'), action: c.req.param('action'),
-        context: parsed.data.context, executionId, startedAtMs,
+        context: parsed.data, executionId, startedAtMs,
       }));
     } catch (caught) {
       const failure = toInvocationFailure(caught, executionId, startedAtMs);

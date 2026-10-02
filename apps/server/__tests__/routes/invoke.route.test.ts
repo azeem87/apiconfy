@@ -48,7 +48,7 @@ describe('Phase 2 invocation API', () => {
     expect(updated.status).toBe(200);
     return updated.json();
   };
-  const invoke = (body: unknown = { context: { id: 7 } }, path = '/api/v1/services/items/create/invoke') =>
+  const invoke = (body: unknown = { id: 7 }, path = '/api/v1/services/items/create/invoke') =>
     app.request(path, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: typeof body === 'string' ? body : JSON.stringify(body),
@@ -84,7 +84,7 @@ describe('Phase 2 invocation API', () => {
         payloadTemplate: { input: '{$context.id}', nested: ['{$context.id}'] },
       }, output,
     });
-    const res = await invoke({ context: { id: 7, none: null } });
+    const res = await invoke({ id: 7, none: null });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data).toEqual({ itemResponse: { id: 'I-1', caller: 7 } });
@@ -103,7 +103,7 @@ describe('Phase 2 invocation API', () => {
     expect(JSON.parse(log.responseData!)).toEqual({ id: 'I-1' });
   });
 
-  it.each([{}, null, { context: [] }, { context: {}, config: {} }, '{broken'])(
+  it.each([null, [], 'text', '{broken'])(
     'returns complete 400 envelope for bad invocation %#', async body => {
       const res = await invoke(body);
       expect(res.status).toBe(400);
@@ -232,7 +232,7 @@ describe('Phase 2 invocation API', () => {
     await register({
       request: { ...request, headers: { Authorization: '{$env.CREDENTIAL}', 'X-Short': '{$env.SHORT}' } },
     });
-    const res = await invoke({ context: { id: 7, innocuous: secret, password: 'literal-password' } });
+    const res = await invoke({ id: 7, innocuous: secret, password: 'literal-password' });
     const text = await res.text();
     expect(text).not.toContain('private');
     expect(text).not.toContain('xy');
@@ -281,7 +281,7 @@ describe('Phase 2 invocation API', () => {
 
   it('does not send runtime output in fallback JSON/form payloads and GET has no body', async () => {
     await register({ request: { ...request, contentType: 'application/x-www-form-urlencoded' } });
-    await invoke({ context: { id: 7, a: 1, nested: { b: 2 }, none: null } });
+    await invoke({ id: 7, a: 1, nested: { b: 2 }, none: null });
     expect(calls[0].init?.body).toBe('id=7&a=1&nested=%7B%22b%22%3A2%7D');
     await register({ request });
     await invoke();
@@ -306,7 +306,7 @@ describe('Phase 2 invocation API', () => {
     await db.updateComponent(row!.id, {
       config: { request: { uri: '{$context.missing}', method: 'POST' } },
     });
-    const unresolved = await (await invoke({ context: { id: 7 } })).json();
+    const unresolved = await (await invoke({ id: 7 })).json();
     expect(unresolved.error.code).toBe('TRANSFORMATION_ERROR');
     expect(unresolved.error.message).toBe('Resolved uri is not a string');
     expect((await recorded(unresolved)).attempts).toBe(1);
@@ -356,7 +356,7 @@ describe('Phase 2 invocation API', () => {
     build({ env: { TOKEN: 'a' } });
     upstream = async () => json({ password: 'hunter2' });
     await register({ request: { ...request, headers: { Authorization: '{$env.TOKEN}' } } });
-    const result = await (await invoke({ context: { id: 7, password: 'hunter2' } })).json();
+    const result = await (await invoke({ id: 7, password: 'hunter2' })).json();
     expect(JSON.stringify(result)).not.toContain('hunter2');
     const audit = JSON.stringify([await recorded(result), await db.getExecutionLogs(result.meta.executionId)]);
     expect(audit).not.toContain('hunter2');
@@ -369,7 +369,7 @@ describe('Phase 2 invocation API', () => {
       request: { ...request, headers: { A: '{$env.TOKEN}', B: '{$env.MISSING}' } },
       output: { transformation: { out: { echo: '{$context.echo}' } } },
     });
-    const result = await (await invoke({ context: { echo: 'private-credential' } })).json();
+    const result = await (await invoke({ echo: 'private-credential' })).json();
     expect(result.error.code).toBe('ENV_REF_UNRESOLVED');
     const audit = JSON.stringify([await recorded(result), await db.getExecutionLogs(result.meta.executionId)]);
     expect(audit).not.toContain('private-credential');
@@ -393,7 +393,7 @@ describe('Phase 2 invocation API', () => {
     await register({
       request: { ...request, validation: { fields: [{ path: 'userId', required: true }] } },
     });
-    const res = await invoke({ context: { other: true } });
+    const res = await invoke({ other: true });
     expect(res.status).toBe(400);
     const result = await res.json();
     expect(result).toMatchObject({
@@ -417,19 +417,19 @@ describe('Phase 2 invocation API', () => {
         { path: 'note', type: 'string', minLength: 1 },
       ] } },
     });
-    const nulled = await invoke({ context: { userId: null, items: [{}], note: 'x' } });
+    const nulled = await invoke({ userId: null, items: [{}], note: 'x' });
     expect(nulled.status).toBe(400);
     expect((await nulled.json()).error.message).toBe('userId must be a string');
 
-    const typed = await invoke({ context: { userId: 42, items: [{}], note: 'x' } });
+    const typed = await invoke({ userId: 42, items: [{}], note: 'x' });
     expect(typed.status).toBe(400);
     expect((await typed.json()).error.message).toBe('userId must be a string');
 
-    const empty = await invoke({ context: { userId: 'u-1', items: [], note: 'x' } });
+    const empty = await invoke({ userId: 'u-1', items: [], note: 'x' });
     expect(empty.status).toBe(400);
     expect((await empty.json()).error.message).toBe('items must contain at least 1 entry');
 
-    const blank = await invoke({ context: { userId: 'u-1', items: [{}], note: '' } });
+    const blank = await invoke({ userId: 'u-1', items: [{}], note: '' });
     expect(blank.status).toBe(400);
     expect((await blank.json()).error.message).toBe('note must have at least 1 character');
     expect(calls).toHaveLength(0);
@@ -439,7 +439,7 @@ describe('Phase 2 invocation API', () => {
     await register({
       request: { ...request, validation: { fields: [{ path: 'items[*].sku', required: true, type: 'string' }] } },
     });
-    const res = await invoke({ context: { id: 7, items: [{ sku: 'A-1' }, { qty: 2 }] } });
+    const res = await invoke({ id: 7, items: [{ sku: 'A-1' }, { qty: 2 }] });
     expect(res.status).toBe(400);
     const result = await res.json();
     expect(result.error.details).toEqual([
@@ -452,7 +452,7 @@ describe('Phase 2 invocation API', () => {
     await register({
       request: { ...request, validation: { fields: [{ path: 'userId', required: true }] } },
     }, '{$context.enabled} == true');
-    const result = await (await invoke({ context: {} })).json();
+    const result = await (await invoke({})).json();
     expect(result).toMatchObject({ success: true, data: null, skippedExecution: true });
     expect(calls).toHaveLength(0);
   });
@@ -470,7 +470,7 @@ describe('Phase 2 invocation API', () => {
       .toEqual({ input: 7, extra: null, label: 'id-null' });
 
     await register({ request: { ...request, payloadTemplate: { input: '{$context.note}' } } });
-    const ok = await invoke({ context: { id: 7, note: '{$custom.token}' } });
+    const ok = await invoke({ id: 7, note: '{$custom.token}' });
     expect(ok.status).toBe(200);
     expect(JSON.parse(String(calls[1].init?.body))).toEqual({ input: '{$custom.token}' });
   });
@@ -519,7 +519,7 @@ describe('Phase 3.5 script component', () => {
   };
 
   const invokeScript = (action: string, context: Record<string, unknown> = {}) =>
-    post(`/api/v1/services/scripts/${action}/invoke`, { context });
+    post(`/api/v1/services/scripts/${action}/invoke`, context);
 
   const recordOf = async (result: any) => {
     await drainExecutionQueue();
