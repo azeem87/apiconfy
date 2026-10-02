@@ -112,10 +112,9 @@ export interface ExecutionStep {
 }
 
 export interface TimeoutConfig {
-  connect?: number;
-  socket?: number;
-  response?: number;
-  idle?: number;
+  connectTimeout?: number;
+  readTimeout?: number;
+  requestTimeout?: number;
 }
 
 export interface CircuitBreakerConfig {
@@ -129,7 +128,7 @@ export interface ResilienceConfig {
   retryCount?: number;
   retryDelay?: number;
   backoff?: 'fixed' | 'exponential';
-  maxDelay?: number;
+  maxElapsedTime?: number;
   retryOn?: number[];
   circuitBreaker?: CircuitBreakerConfig;
 }

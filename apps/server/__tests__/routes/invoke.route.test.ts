@@ -173,14 +173,14 @@ describe('Phase 2 invocation API', () => {
     expect(calls.map(call => call.uri)).toEqual(['https://example.test/items/7', 'https://example.test/items/7']);
   });
 
-  it('returns upstream failures as { error: { details: { body } } } without success, data or downstream', async () => {
+  it('returns upstream failures as { error: { details: <upstream body> } } without success, data or downstream', async () => {
     upstream = async () => json({ errorCode: 'E1' }, 500);
     await register({ request, output });
     const res = await invoke();
     expect(res.status).toBe(500);
     const result = await res.json();
     expect(result).toEqual({
-      error: { code: 'EXTERNAL_ERROR', message: 'External API returned 500', details: { body: { errorCode: 'E1' } } },
+      error: { code: 'EXTERNAL_ERROR', message: 'External API returned 500', details: { errorCode: 'E1' } },
     });
     expect(lastExecutionId).toBeString();
   });
@@ -220,7 +220,6 @@ describe('Phase 2 invocation API', () => {
         ...request, auth: { jwt: { local: { algorithm: 'HS256', secretOrPrivateKey: '{$env.MISSING}' } } },
         ssl: { ca: CA_CERT }, contentType: 'multipart/form-data',
       },
-      timeout: { connect: 1, socket: 1, idle: 1 },
       resilience: {
         circuitBreaker: { failureThreshold: 1, windowSize: 1, openDuration: 1, halfOpenMaxAttempts: 1 },
       },
@@ -230,8 +229,8 @@ describe('Phase 2 invocation API', () => {
       const result = await res.json();
       expect(res.status).toBe(501);
       expect((result.error.details.unsupported as Array<{ field: string }>).map(item => item.field)).toEqual([
-        'config.request.auth.jwt', 'config.resilience.circuitBreaker', 'config.timeout.connect',
-        'config.timeout.socket', 'config.timeout.idle', 'config.request.contentType',
+        'config.request.auth.jwt', 'config.resilience.circuitBreaker',
+        'config.request.contentType',
       ]);
       expect((await recorded(result)).attempts).toBe(0);
     }
@@ -274,7 +273,7 @@ describe('Phase 2 invocation API', () => {
   });
 
   it('enforces deadlines through body reads and classifies stream failures', async () => {
-    await register({ request, timeout: { response: 5 } });
+    await register({ request, timeout: { requestTimeout: 5 } });
     upstream = async () => new Response(new ReadableStream({ start() {} }), {
       headers: { 'content-type': 'application/json' },
     });
@@ -635,7 +634,7 @@ describe('Phase 3.5 script component', () => {
     expect((await recordOf(result)).attempts).toBe(1);
   });
 
-  it('calls another service through the bridge — implicit $context, nested execution row', async () => {
+  it('calls another service through the bridge — implicit $context, no meta in the nested result', async () => {
     upstream = async () => json({ id: 'I-1' });
     await post('/api/v1/services', {
       service: 'items', action: 'create', componentType: 'rest',
@@ -643,20 +642,14 @@ describe('Phase 3.5 script component', () => {
     });
     await registerScript('nested', {
       expression: 'async function ($c) { const r = await apiconfy.invoke("items", "create"); '
-        + '$c.nested = { ok: r.success, id: r.data?.id, executionId: r.meta?.executionId }; }',
+        + '$c.nested = { ok: r.success, id: r.data?.id, hasMeta: \"meta\" in r }; }',
     });
 
     const result = await (await invokeScript('nested', { origin: 'C-1' })).json();
-    expect(result.data).toEqual({ nested: { ok: true, id: 'I-1', executionId: expect.any(String) } });
+    expect(result.data).toEqual({ nested: { ok: true, id: 'I-1', hasMeta: false } });
 
     // The nested invoke received the script's live $context implicitly.
     expect(JSON.parse(String(calls[0].init?.body))).toEqual({ origin: 'C-1' });
-    // Two rows: the outer script and the nested service execution.
-    const nestedId = (result.data as { nested: { executionId: string } }).nested.executionId;
-    await drainExecutionQueue();
-    const nested = await (await app.request(`/api/v1/executions/${nestedId}`)).json();
-    expect(nested.data.service).toBe('items');
-    expect(nested.data.status).toBe('COMPLETED');
   });
 
   it('returns the NOT_IMPLEMENTED envelope for executeWorkflow', async () => {
@@ -677,7 +670,7 @@ describe('Phase 3.5 script component', () => {
       { expression: 'function ($c) { return "{$env.SECRET}"; }' },
       { expression: 'function ($c) {}', uri: 'https://x.test' },
       { expression: 'function ($c) {}', resilience: { retryCount: 1 } },
-      { expression: 'function ($c) {}', timeout: { connect: 1000 } },
+      { expression: 'function ($c) {}', timeout: { connectTimeout: 1000 } },
     ];
     for (const config of cases) {
       const res = await post('/api/v1/services', {

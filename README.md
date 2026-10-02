@@ -151,7 +151,7 @@ The body is the context itself — send the API payload as-is. Wrapping it as
 On failure the HTTP status carries the outcome and the body is
 `{ "error": { "code", "message", "details" } }`. The execution id is returned in the
 `Execution-Id` response header (use it with `GET /api/v1/executions/:id`).
-For upstream failures `error.details.body` is the upstream's own response body.
+For upstream failures `error.details` is the upstream's own response body.
 
 The runtime looks up the stored definition, executes it against the external system, applies the response mapping, and returns the transformed result — no custom client code required. This mirrors a register-once, invoke-anywhere model rather than a static config file checked into the repo, since definitions are expected to be created, updated, and queried at runtime (e.g. from an admin UI or another service).
 
@@ -477,10 +477,11 @@ component folders (Mapper, Database, SQS) show the same `validation` block in th
   including failed transformed output and actual dispatch attempts (zero before dispatch).
   Recording is queued off the response path (best-effort, not durable workflow recovery),
   so a lookup immediately after an invoke response can briefly 404 until the write lands.
-- `timeout.response` defaults to 30 seconds **per attempt**, including response-body reads.
+- `timeout.connectTimeout` (default 15 s) bounds the TCP (+TLS) connect (`502 CONNECTION_ERROR`), `timeout.readTimeout` (default 30 s) the idle time waiting for response data, re-armed per chunk (`504 TIMEOUT`), and `timeout.requestTimeout` (default 60 s, max 120 s; `0` = unbounded, leaving `readTimeout` and `maxElapsedTime` as the only bounds) is the hard deadline of one attempt including body reads. connect/read timeouts use a socket-level transport that does not follow redirects.
+- `resilience.maxElapsedTime` (ms, max 300000) budgets all attempts plus backoff; it requires `retryCount > 0` and `>= timeout.requestTimeout`.
   Retries use fixed/exponential backoff; never retry 4xx. Retrying writes may duplicate
   upstream side effects unless that upstream provides idempotency.
-- `auth.jwt`, circuit breakers, connect/socket/idle timeouts and unsupported request content types
+- `auth.jwt`, circuit breakers and unsupported request content types
   return `501 NOT_IMPLEMENTED` at invocation.
 - **Auth (REST):** `auth.basic` sends `Authorization: Basic base64(username:password)`. `auth.oauth2`
   fetches a `client_credentials` token (`clientAuth: basic|body`, `scope`, `audience`, `auth.ssl` for the
@@ -521,7 +522,7 @@ registration access and outbound network connectivity.
 ### Script component (Phase 3.5)
 
 `componentType: "script"` runs an operator-authored JS function locally — one Bun Worker per
-invocation, terminated on every exit path, with `timeout.response` as the hard deadline. The
+invocation, terminated on every exit path, with `timeout` (a number of ms) as the hard deadline. The
 script receives the execution context and **contributes by writing to `$context`**: the
 changed/added top-level variables become the response `data` (later workflow steps read them
 as `{$context.<variable>}`). A `return` value is ignored.

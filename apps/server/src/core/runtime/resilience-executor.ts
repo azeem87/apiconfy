@@ -18,7 +18,9 @@ export interface ResilienceExecutor {
   ): Promise<ResilienceResult<T>>;
 }
 
-export const DEFAULT_TIMEOUT_MS = 30_000;
+export const DEFAULT_TIMEOUT_MS = 60_000;
+export const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
+export const DEFAULT_READ_TIMEOUT_MS = 30_000;
 export const DEFAULT_RETRY_DELAY_MS = 1000;
 export const DEFAULT_MAX_DELAY_MS = 30_000;
 export const DEFAULT_RETRY_ON = [500, 502, 503];
@@ -33,7 +35,7 @@ function isRetryable(error: unknown, retryOn: number[]): boolean {
 function delayFor(attempt: number, policy: ResilienceConfig): number {
   const base = policy.retryDelay ?? DEFAULT_RETRY_DELAY_MS;
   const multiplier = policy.backoff === 'exponential' ? 2 ** (attempt - 1) : 1;
-  return Math.min(base * multiplier, policy.maxDelay ?? DEFAULT_MAX_DELAY_MS);
+  return Math.min(base * multiplier, DEFAULT_MAX_DELAY_MS);
 }
 
 export class DefaultResilienceExecutor implements ResilienceExecutor {
@@ -47,14 +49,20 @@ export class DefaultResilienceExecutor implements ResilienceExecutor {
     policy: ResiliencePolicy
   ): Promise<ResilienceResult<T>> {
     const resilience = policy.resilience ?? {};
+    const startedAt = Date.now();
+    const remainingBudget = (): number => (resilience.maxElapsedTime ?? Infinity) - (Date.now() - startedAt);
     for (let attempt = 1; ; attempt += 1) {
       const controller = new AbortController();
       let timer: ReturnType<typeof setTimeout> | undefined;
+      let lastError: unknown;
+      const requestTimeout = policy.timeout?.requestTimeout ?? DEFAULT_TIMEOUT_MS;
+      const attemptLimit = Math.min(requestTimeout === 0 ? Infinity : requestTimeout, remainingBudget());
       const deadline = new Promise<never>((_resolve, reject) => {
+        if (attemptLimit === Infinity) return;
         timer = setTimeout(() => {
           reject(new TimeoutError());
           controller.abort();
-        }, policy.timeout?.response ?? DEFAULT_TIMEOUT_MS);
+        }, attemptLimit);
       });
 
       try {
@@ -66,10 +74,13 @@ export class DefaultResilienceExecutor implements ResilienceExecutor {
           attempt > (resilience.retryCount ?? 0)
           || !isRetryable(error, resilience.retryOn ?? DEFAULT_RETRY_ON)
         ) throw error;
+        lastError = error;
       } finally {
         clearTimeout(timer);
       }
-      await this.sleep(delayFor(attempt, resilience));
+      const delay = delayFor(attempt, resilience);
+      if (delay >= remainingBudget()) throw lastError;
+      await this.sleep(delay);
     }
   }
 }

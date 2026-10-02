@@ -1,13 +1,13 @@
 import { z } from 'zod';
 import { assertValidScriptExpression } from '@/core/transform/script-expression.js';
 
-/** Deadline in ms — a script has no transport, so there is no connect/socket/idle to configure (§D6). */
+/** Deadline in ms — a script has no transport, so there is no connectTimeout/readTimeout to configure (§D6). */
 const ScriptTimeoutSchema = z.number().int().positive().max(120_000);
 
 /**
  * Phase 3.5 — a local context transformer (plans/script-component.md).
  * `.strict()` is what refuses `uri`, `method`, `headers`, `auth`, `ssl`, `payloadTemplate`,
- * `resilience`, `output` and `timeout.connect|socket|idle` with a clear `400` instead of
+ * `resilience`, `output` and `timeout` objects with a clear `400` instead of
  * accepting them as silent no-ops.
  */
 export const ScriptConfigSchema = z.object({

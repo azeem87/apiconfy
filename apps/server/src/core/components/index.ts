@@ -9,7 +9,7 @@ import { unavailableScriptBridge, type ScriptHostBridge } from '@/core/runtime/s
  * runtime executor); without it the script component's bridge reports NOT_IMPLEMENTED.
  */
 export function createCoreHandlerRegistry(
-  httpRequest: typeof fetch = globalThis.fetch,
+  httpRequest?: typeof fetch,
   scriptBridge?: ScriptHostBridge,
 ): ComponentHandlerRegistry {
   return new ComponentHandlerRegistry()
