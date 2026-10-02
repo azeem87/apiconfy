@@ -52,7 +52,7 @@ it('runs every ordered REST and Script Postman example against deterministic loc
     const expected = /^\d{3}/.exec(item.name)?.[0];
     expect(result.status, item.name).toBe(expected ? Number(expected) : url.endsWith('/services') ? 201 : 200);
     const body = await result.json();
-    if (url.endsWith('/invoke')) executionId = result.headers.get('x-execution-id') ?? executionId;
+    if (url.endsWith('/invoke')) executionId = result.headers.get('execution-id') ?? executionId;
     return body;
   };
 

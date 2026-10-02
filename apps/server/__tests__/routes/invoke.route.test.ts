@@ -54,7 +54,7 @@ describe('Phase 2 invocation API', () => {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: typeof body === 'string' ? body : JSON.stringify(body),
     });
-    lastExecutionId = res.headers.get('x-execution-id') ?? '';
+    lastExecutionId = res.headers.get('execution-id') ?? '';
     return res;
   };
   const recorded = async (result: any) => {
@@ -534,7 +534,7 @@ describe('Phase 3.5 script component', () => {
     const res = await app.request(url, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     });
-    lastExecutionId = res.headers.get('x-execution-id') ?? lastExecutionId;
+    lastExecutionId = res.headers.get('execution-id') ?? lastExecutionId;
     return res;
   };
 

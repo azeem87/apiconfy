@@ -46,7 +46,7 @@ it('executes through two real HTTP servers and returns a queryable redacted exec
     });
     expect(invocation.status).toBe(200);
     const result = await invocation.json();
-    const executionId = invocation.headers.get('x-execution-id')!;
+    const executionId = invocation.headers.get('execution-id')!;
     expect(result).not.toHaveProperty('meta');
     expect(result.data).toEqual({ networkResponse: { id: 'network-1', echo: '***' } });
     expect(requests).toEqual([{ path: '/items/42', executionId: executionId, body: { number: 42 } }]);

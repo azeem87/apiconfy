@@ -150,7 +150,7 @@ The body is the context itself — send the API payload as-is. Wrapping it as
 
 On failure the HTTP status carries the outcome and the body is
 `{ "error": { "code", "message", "details" } }`. The execution id is returned in the
-`X-Execution-Id` response header (use it with `GET /api/v1/executions/:id`).
+`Execution-Id` response header (use it with `GET /api/v1/executions/:id`).
 For upstream failures `error.details.body` is the upstream's own response body.
 
 The runtime looks up the stored definition, executes it against the external system, applies the response mapping, and returns the transformed result — no custom client code required. This mirrors a register-once, invoke-anywhere model rather than a static config file checked into the repo, since definitions are expected to be created, updated, and queried at runtime (e.g. from an admin UI or another service).
@@ -440,7 +440,7 @@ A [Postman collection](postman/apiconfy.postman_collection.json) is included for
 
 The collection is organized **by component type**. REST → Invoke and **Script** contain ordered
 Simple Examples, Complex Examples and Error Cases: register each example before invoking it.
-Invoke scripts save the `X-Execution-Id` response header as `execution_id` for execution lookup. The simple
+Invoke scripts save the `Execution-Id` response header as `execution_id` for execution lookup. The simple
 scenario calls the local health endpoint; the Script complex example calls a registered REST
 echo through the script bridge. Complex scenarios use `upstream_url` (default
 `https://httpbin.org`); send only dummy data or point it at your own compatible server.

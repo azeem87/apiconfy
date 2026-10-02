@@ -65,7 +65,7 @@ it('flushes queued execution records before exiting on SIGTERM', async () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({}),
     });
-    const executionId = invoked.headers.get('x-execution-id')!;
+    const executionId = invoked.headers.get('execution-id')!;
 
     // Terminate right after the response: the record is still queued here. The second signal
     // must be ignored by the shutdown guard instead of starting a second shutdown.

@@ -10,7 +10,7 @@ import { toInvocationFailure } from '@/lib/envelope.js';
 const InvocationRequestSchema = z.record(z.unknown());
 
 // The execution id travels in a header so the body stays just `data` / `error`.
-const EXECUTION_ID_HEADER = 'X-Execution-Id';
+const EXECUTION_ID_HEADER = 'Execution-Id';
 
 function unwrapContext(body: Record<string, unknown>): Record<string, unknown> {
   const keys = Object.keys(body);
