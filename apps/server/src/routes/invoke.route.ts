@@ -9,6 +9,9 @@ import { toInvocationFailure } from '@/lib/envelope.js';
 // A body whose only key is an object-valued `context` is also accepted and unwrapped.
 const InvocationRequestSchema = z.record(z.unknown());
 
+// The execution id travels in a header so the body stays just `data` / `error`.
+const EXECUTION_ID_HEADER = 'X-Execution-Id';
+
 function unwrapContext(body: Record<string, unknown>): Record<string, unknown> {
   const keys = Object.keys(body);
   const wrapped = body.context;
@@ -29,10 +32,11 @@ export function invokeRoute(executor: RuntimeExecutor): Hono {
           path: issue.path, message: issue.message,
         })));
       }
-      const { success: _success, ...result } = await executor.invoke({
+      const { success: _success, meta, ...result } = await executor.invoke({
         service: c.req.param('service'), action: c.req.param('action'),
         context: unwrapContext(parsed.data), executionId, startedAtMs,
       });
+      c.header(EXECUTION_ID_HEADER, meta.executionId);
       return c.json(result);
     } catch (caught) {
       const failure = toInvocationFailure(caught, executionId, startedAtMs);
@@ -42,10 +46,11 @@ export function invokeRoute(executor: RuntimeExecutor): Hono {
         : undefined;
       const error = caught instanceof AppError ? caught : new AppError('Internal server error', 'INTERNAL_ERROR');
       const statusCode = downstreamStatus ?? error.statusCode;
-      const { error: failed, meta } = failure;
+      const { error: failed } = failure;
       const downstream = (failed.details as { downstream?: { body?: unknown } } | undefined)?.downstream;
       const details = failed.code === 'EXTERNAL_ERROR' && downstream ? { body: downstream.body } : failed.details;
-      return c.json({ error: { code: failed.code, message: failed.message, details }, meta },
+      c.header(EXECUTION_ID_HEADER, executionId);
+      return c.json({ error: { code: failed.code, message: failed.message, details } },
         statusCode as ContentfulStatusCode);
     }
   });

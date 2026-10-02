@@ -48,18 +48,22 @@ describe('Phase 2 invocation API', () => {
     expect(updated.status).toBe(200);
     return updated.json();
   };
-  const invoke = (body: unknown = { id: 7 }, path = '/api/v1/services/items/create/invoke') =>
-    app.request(path, {
+  let lastExecutionId = '';
+  const invoke = async (body: unknown = { id: 7 }, path = '/api/v1/services/items/create/invoke') => {
+    const res = await app.request(path, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: typeof body === 'string' ? body : JSON.stringify(body),
     });
+    lastExecutionId = res.headers.get('x-execution-id') ?? '';
+    return res;
+  };
   const recorded = async (result: any) => {
     // Execution recording is queued off the response path — drain deterministically.
     await drainExecutionQueue();
-    const res = await app.request(`/api/v1/executions/${result.meta.executionId}`);
+    const res = await app.request(`/api/v1/executions/${lastExecutionId}`);
     expect(res.status).toBe(200);
     const record = (await res.json()).data;
-    expect(await db.getExecutionLogs(result.meta.executionId)).toHaveLength(1);
+    expect(await db.getExecutionLogs(lastExecutionId)).toHaveLength(1);
     return record;
   };
 
@@ -94,11 +98,11 @@ describe('Phase 2 invocation API', () => {
     expect(headers.get('x-missing')).toBeNull();
     expect(headers.get('x-embedded-missing')).toBe('Bearer null');
     expect(headers.get('x-null')).toBeNull();
-    expect(headers.get('x-execution-id')).toBe(body.meta.executionId);
+    expect(headers.get('x-execution-id')).toBe(lastExecutionId);
     expect(headers.get('content-type')).toBe('application/json');
     expect(JSON.parse(String(calls[0].init?.body))).toEqual({ input: 7, nested: [7] });
     expect(await recorded(body)).toMatchObject({ status: 'COMPLETED', attempts: 1, result: body.data });
-    const [log] = await db.getExecutionLogs(body.meta.executionId);
+    const [log] = await db.getExecutionLogs(lastExecutionId);
     expect(log.requestData).not.toContain('headers');
     expect(JSON.parse(log.responseData!)).toEqual({ id: 'I-1' });
   });
@@ -109,8 +113,8 @@ describe('Phase 2 invocation API', () => {
       expect(res.status).toBe(400);
       const result = await res.json();
       expect(result).toMatchObject({ error: { code: 'VALIDATION_FAILED' } });
-      expect(result.meta.executionId).toBeString();
-      expect(await db.getExecution(result.meta.executionId)).toBeNull();
+      expect(lastExecutionId).toBeString();
+      expect(await db.getExecution(lastExecutionId)).toBeNull();
       expect(calls).toHaveLength(0);
     }
   );
@@ -120,7 +124,7 @@ describe('Phase 2 invocation API', () => {
     const result = await res.json();
     expect(res.status).toBe(404);
     expect(result.error.message).toBe('Service not found: items/create');
-    expect(await db.getExecutionLogs(result.meta.executionId)).toEqual([]);
+    expect(await db.getExecutionLogs(lastExecutionId)).toEqual([]);
     expect((await app.request('/api/v1/executions/missing')).status).toBe(404);
   });
 
@@ -132,7 +136,7 @@ describe('Phase 2 invocation API', () => {
       const result = await (await invoke()).json();
       expect(result).toMatchObject({ data: null, skippedExecution: true });
       expect(await recorded(result)).toMatchObject({ status: 'COMPLETED', attempts: 0, result: null });
-      expect((await db.getExecutionLogs(result.meta.executionId))[0].status).toBe('skipped');
+      expect((await db.getExecutionLogs(lastExecutionId))[0].status).toBe('skipped');
     }
     expect(calls).toHaveLength(0);
   });
@@ -155,7 +159,7 @@ describe('Phase 2 invocation API', () => {
     expect(record.result.itemResponse).toMatchObject({
       id: null, caller: 7, error: { code: 'VALIDATION_FAILED', details: [{ path: '{$output.id}' }] },
     });
-    expect(JSON.parse((await db.getExecutionLogs(result.meta.executionId))[0].responseData!)).toEqual(record.result);
+    expect(JSON.parse((await db.getExecutionLogs(lastExecutionId))[0].responseData!)).toEqual(record.result);
   });
 
   it('accepts the context both raw and wrapped in a lone { context } key', async () => {
@@ -177,8 +181,8 @@ describe('Phase 2 invocation API', () => {
     const result = await res.json();
     expect(result).toEqual({
       error: { code: 'EXTERNAL_ERROR', message: 'External API returned 500', details: { body: { errorCode: 'E1' } } },
-      meta: { executionId: expect.any(String), durationMs: expect.any(Number) },
     });
+    expect(lastExecutionId).toBeString();
   });
 
   it('preserves upstream failure as primary even when rules fail, and still transforms', async () => {
@@ -261,7 +265,7 @@ describe('Phase 2 invocation API', () => {
     expect(text).not.toContain('xy');
     const result = JSON.parse(text);
     const record = await recorded(result);
-    const audit = JSON.stringify([record, await db.getExecutionLogs(result.meta.executionId)]);
+    const audit = JSON.stringify([record, await db.getExecutionLogs(lastExecutionId)]);
     expect(audit).not.toContain('private');
     expect(audit).not.toContain('literal-password');
     expect(audit).not.toContain('xy');
@@ -299,7 +303,7 @@ describe('Phase 2 invocation API', () => {
     await register({ request, output: { default: { id: 'fallback' }, ...output } });
     const result = await (await invoke()).json();
     expect(result.data.itemResponse.id).toBe('fallback');
-    expect(JSON.parse((await db.getExecutionLogs(result.meta.executionId))[0].responseData!)).toBeNull();
+    expect(JSON.parse((await db.getExecutionLogs(lastExecutionId))[0].responseData!)).toBeNull();
   });
 
   it('does not send runtime output in fallback JSON/form payloads and GET has no body', async () => {
@@ -381,7 +385,7 @@ describe('Phase 2 invocation API', () => {
     await register({ request: { ...request, headers: { Authorization: '{$env.TOKEN}' } } });
     const result = await (await invoke({ id: 7, password: 'hunter2' })).json();
     expect(JSON.stringify(result)).not.toContain('hunter2');
-    const audit = JSON.stringify([await recorded(result), await db.getExecutionLogs(result.meta.executionId)]);
+    const audit = JSON.stringify([await recorded(result), await db.getExecutionLogs(lastExecutionId)]);
     expect(audit).not.toContain('hunter2');
     expect(calls[0].init?.body).toBe('{"id":7,"password":"hunter2"}');
   });
@@ -394,7 +398,7 @@ describe('Phase 2 invocation API', () => {
     });
     const result = await (await invoke({ echo: 'private-credential' })).json();
     expect(result.error.code).toBe('ENV_REF_UNRESOLVED');
-    const audit = JSON.stringify([await recorded(result), await db.getExecutionLogs(result.meta.executionId)]);
+    const audit = JSON.stringify([await recorded(result), await db.getExecutionLogs(lastExecutionId)]);
     expect(audit).not.toContain('private-credential');
     expect(calls).toHaveLength(0);
   });
@@ -407,7 +411,7 @@ describe('Phase 2 invocation API', () => {
     } });
     const result = await (await invoke()).json();
     expect(result.error.message).toBe('***');
-    const audit = JSON.stringify([await recorded(result), await db.getExecutionLogs(result.meta.executionId)]);
+    const audit = JSON.stringify([await recorded(result), await db.getExecutionLogs(lastExecutionId)]);
     expect(audit).not.toContain('hunter2');
     expect(audit).toContain('***');
   });
@@ -525,9 +529,14 @@ describe('Phase 3.5 script component', () => {
     drainExecutionQueue = created.drainExecutionQueue;
   };
 
-  const post = (url: string, body: unknown) => app.request(url, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-  });
+  let lastExecutionId = '';
+  const post = async (url: string, body: unknown) => {
+    const res = await app.request(url, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    lastExecutionId = res.headers.get('x-execution-id') ?? lastExecutionId;
+    return res;
+  };
 
   const registerScript = async (
     action: string, config: Record<string, unknown>, condition?: string
@@ -544,7 +553,7 @@ describe('Phase 3.5 script component', () => {
 
   const recordOf = async (result: any) => {
     await drainExecutionQueue();
-    const res = await app.request(`/api/v1/executions/${result.meta.executionId}`);
+    const res = await app.request(`/api/v1/executions/${lastExecutionId}`);
     expect(res.status).toBe(200);
     return (await res.json()).data;
   };
