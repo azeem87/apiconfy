@@ -20,15 +20,17 @@ it('runs every ordered REST and Script Postman example against deterministic loc
   const db = createSqliteAdapter(':memory:');
   await db.connect();
   const { app, drainExecutionQueue } = createApp({ port: 0, logLevel: 'silent' }, db, {
-    env: {},
+    env: { DEMO_PASSWORD: 'pw-1', ORDER_API_CLIENT_ID: 'cid', ORDER_API_CLIENT_SECRET: 'csecret' },
     fetch: (async (input, init) => {
       const path = new URL(String(input)).pathname;
+      if (path === '/oauth/token') return Response.json({ access_token: 'tok-1', token_type: 'Bearer' });
       if (path === '/health') return app.request('/health');
       if (path.startsWith('/status/')) return new Response(null, { status: Number(path.split('/').pop()) });
       const form = new Headers(init?.headers).get('content-type')?.startsWith('application/x-www-form-urlencoded');
+      const authorization = new Headers(init?.headers).get('authorization');
       return Response.json(form
-        ? { form: Object.fromEntries(new URLSearchParams(String(init?.body))) }
-        : { json: JSON.parse(String(init?.body)) });
+        ? { form: Object.fromEntries(new URLSearchParams(String(init?.body))), authorization }
+        : { json: JSON.parse(String(init?.body)), authorization });
     }) as typeof fetch,
   });
 
@@ -78,9 +80,11 @@ it('runs every ordered REST and Script Postman example against deterministic loc
     for (const item of tls!.item!) await executeItem(item);
 
     const auth = folders.find(item => item.name === 'REST')?.item?.find(item => item.name === 'Auth');
-    expect(auth?.item).toHaveLength(12);
+    expect(auth?.item).toHaveLength(14);
     for (const item of auth!.item!) {
       const body = await executeItem(item);
+      if (item.name === 'Invoke — basic auth') expect(body.data.authorization).toBe('***'); // the echoed credential is scrubbed from the response
+      if (item.name === 'Invoke — oauth2 client_credentials') expect(body.data.authorization).toBe('***');
       if (item.name.startsWith('501')) {
         expect(body.error.code).toBe('NOT_IMPLEMENTED');
         expect(body.error.details.unsupported).toEqual([

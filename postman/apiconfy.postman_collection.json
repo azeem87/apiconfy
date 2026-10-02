@@ -950,6 +950,26 @@
               }
             },
             {
+              "name": "Invoke — basic auth",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services/auth-demo/basic_post/invoke",
+                "body": { "mode": "raw", "raw": "{\n  \"orderId\": \"ord-1\",\n  \"amount\": 42\n}" },
+                "description": "Executes the basic_post registration. The runtime builds `Authorization: Basic base64(username:password)` from the config (the password is resolved from `DEMO_PASSWORD` on the server) and forwards the body as-is. Set `DEMO_PASSWORD` in the server environment first."
+              }
+            },
+            {
+              "name": "Invoke — oauth2 client_credentials",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services/auth-demo/oauth2_post/invoke",
+                "body": { "mode": "raw", "raw": "{\n  \"orderId\": \"ord-1\",\n  \"amount\": 42\n}" },
+                "description": "Executes the oauth2_post registration. The runtime fetches a token from `accessTokenUri` with client_credentials, caches it, sends `Authorization: Bearer <token>`, and replays once if the upstream answers 401. The caller never supplies a token. Point `accessTokenUri` at a real IdP and set `ORDER_API_CLIENT_ID` / `ORDER_API_CLIENT_SECRET` on the server first."
+              }
+            },
+            {
               "name": "Register — complex: Okta-style client_credentials (Basic auth, scope list, audience)",
               "request": {
                 "method": "POST",
@@ -1046,7 +1066,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "url": "{{base_url}}/api/v1/services/partner/sync_catalog/invoke",
                 "body": { "mode": "raw", "raw": "{\"catalogId\": \"cat-1\"}" },
-                "description": "Registration already validates the auth block, but `basic` and `oauth2` execute, but `jwt.local` signing and `jwt.external` are still Phase 4, so invoking a `jwt` block returns NOT_IMPLEMENTED with attempts=0 and no env resolution — the guard runs before dispatch, deliberately: sending the call without its auth header would be worse than refusing.\n\nExpected error envelope:\n```json\n{\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth.jwt\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth.jwt\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  }\n}\n```"
+                "description": "Registration already validates the auth block, but only `basic` and `oauth2` execute; `jwt.local` signing and `jwt.external` are still Phase 4, so invoking a `jwt` block returns NOT_IMPLEMENTED with attempts=0 and no env resolution — the guard runs before dispatch, deliberately: sending the call without its auth header would be worse than refusing.\n\nExpected error envelope:\n```json\n{\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth.jwt\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth.jwt\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  }\n}\n```"
               }
             }
           ]
