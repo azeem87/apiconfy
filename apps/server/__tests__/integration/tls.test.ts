@@ -130,7 +130,7 @@ describe('ssl config is read at invoke time', () => {
         service: 'tls', action: 'get', componentType: 'rest', config: config({ ca: [F.CA_CERT] }),
       })).json();
       let version = created.data.version as number;
-      const invoke = async () => (await api('/tls/get/invoke', 'POST', { context: {} })).status;
+      const invoke = async () => (await api('/tls/get/invoke', 'POST', {})).status;
       const update = async (ssl: unknown) => {
         const res = await api('/tls/actions/get', 'PUT', { componentType: 'rest', config: config(ssl), version });
         expect(res.status).toBe(200);
@@ -176,7 +176,7 @@ describe('ssl material supplied through {$env.NAME}', () => {
           ca: ['{$env.TLS_CA}'], cert: '{$env.TLS_CERT}', key: '{$env.TLS_KEY}', passphrase: '{$env.TLS_PASS}',
         });
         expect(created.status).toBe(201);
-        expect((await api('/tls-env/get/invoke', { context: {} })).status).toBe(200);
+        expect((await api('/tls-env/get/invoke', {})).status).toBe(200);
       } finally {
         await db.disconnect();
       }
@@ -204,7 +204,7 @@ describe('ssl material supplied through {$env.NAME}', () => {
     const { db, api } = await setup({ TLS_ROOT: F.CA_CERT });
     try {
       expect((await register(api, url(plain), { ca: [F.SERVER_CERT, '{$env.TLS_ROOT}'] })).status).toBe(201);
-      expect((await api('/tls-env/get/invoke', { context: {} })).status).toBe(200);
+      expect((await api('/tls-env/get/invoke', {})).status).toBe(200);
     } finally {
       await db.disconnect();
     }
@@ -214,7 +214,7 @@ describe('ssl material supplied through {$env.NAME}', () => {
     const missing = await setup({});
     try {
       await register(missing.api, url(plain), { ca: '{$env.TLS_CA}' });
-      const res = await missing.api('/tls-env/get/invoke', { context: {} });
+      const res = await missing.api('/tls-env/get/invoke', {});
       expect(res.status).toBe(500);
       expect((await res.json()).error.code).toBe('ENV_REF_UNRESOLVED');
     } finally {
@@ -223,7 +223,7 @@ describe('ssl material supplied through {$env.NAME}', () => {
     const leafOnly = await setup({ TLS_CA: F.SERVER_CERT });
     try {
       await register(leafOnly.api, url(plain), { ca: '{$env.TLS_CA}' });
-      expect((await leafOnly.api('/tls-env/get/invoke', { context: {} })).status).toBe(502);
+      expect((await leafOnly.api('/tls-env/get/invoke', {})).status).toBe(502);
     } finally {
       await leafOnly.db.disconnect();
     }

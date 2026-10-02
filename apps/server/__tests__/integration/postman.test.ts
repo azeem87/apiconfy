@@ -20,15 +20,17 @@ it('runs every ordered REST and Script Postman example against deterministic loc
   const db = createSqliteAdapter(':memory:');
   await db.connect();
   const { app, drainExecutionQueue } = createApp({ port: 0, logLevel: 'silent' }, db, {
-    env: {},
+    env: { DEMO_PASSWORD: 'pw-1', ORDER_API_CLIENT_ID: 'cid', ORDER_API_CLIENT_SECRET: 'csecret' },
     fetch: (async (input, init) => {
       const path = new URL(String(input)).pathname;
+      if (path === '/oauth/token') return Response.json({ access_token: 'tok-1', token_type: 'Bearer' });
       if (path === '/health') return app.request('/health');
       if (path.startsWith('/status/')) return new Response(null, { status: Number(path.split('/').pop()) });
       const form = new Headers(init?.headers).get('content-type')?.startsWith('application/x-www-form-urlencoded');
+      const authorization = new Headers(init?.headers).get('authorization');
       return Response.json(form
-        ? { form: Object.fromEntries(new URLSearchParams(String(init?.body))) }
-        : { json: JSON.parse(String(init?.body)) });
+        ? { form: Object.fromEntries(new URLSearchParams(String(init?.body))), authorization }
+        : { json: JSON.parse(String(init?.body)), authorization });
     }) as typeof fetch,
   });
 
@@ -52,7 +54,7 @@ it('runs every ordered REST and Script Postman example against deterministic loc
     const expected = /^\d{3}/.exec(item.name)?.[0];
     expect(result.status, item.name).toBe(expected ? Number(expected) : url.endsWith('/services') ? 201 : 200);
     const body = await result.json();
-    if (url.endsWith('/invoke') && body.meta?.executionId) executionId = body.meta.executionId;
+    if (url.endsWith('/invoke')) executionId = result.headers.get('execution-id') ?? executionId;
     return body;
   };
 
@@ -62,14 +64,14 @@ it('runs every ordered REST and Script Postman example against deterministic loc
       for (const item of group.item!) {
         const body = await executeItem(item);
         if (item.name === '2. Invoke mapped echo') expect(body.data.echoResponse.customerId).toBe('demo-123');
-        if (item.name === '5. Invoke form echo') expect(body.data.formEchoResponse.label).toBe('space & plus +');
-        if (item.name === '7. Invoke empty-body default') {
+        if (item.name === '2. Invoke form echo (wrapped in context)') expect(body.data.formEchoResponse.label).toBe('space & plus +');
+        if (item.name === '5. Invoke empty-body default') {
           expect(body.data.defaultResponse).toEqual({ status: 'empty', customerId: 'demo-123' });
         }
         restCount += 1;
       }
     }
-    expect(restCount).toBe(25);
+    expect(restCount).toBe(26);
 
     const tls = folders.find(item => item.name === 'REST')?.item?.find(item => item.name === 'TLS Certificates');
     expect(tls?.item).toHaveLength(14);
@@ -78,13 +80,15 @@ it('runs every ordered REST and Script Postman example against deterministic loc
     for (const item of tls!.item!) await executeItem(item);
 
     const auth = folders.find(item => item.name === 'REST')?.item?.find(item => item.name === 'Auth');
-    expect(auth?.item).toHaveLength(12);
+    expect(auth?.item).toHaveLength(14);
     for (const item of auth!.item!) {
       const body = await executeItem(item);
+      if (item.name === 'Invoke — basic auth') expect(body.data.authorization).toBe('***'); // the echoed credential is scrubbed from the response
+      if (item.name === 'Invoke — oauth2 client_credentials') expect(body.data.authorization).toBe('***');
       if (item.name.startsWith('501')) {
         expect(body.error.code).toBe('NOT_IMPLEMENTED');
         expect(body.error.details.unsupported).toEqual([
-          { field: 'config.request.auth', phase: 'Phase 4' },
+          { field: 'config.request.auth.jwt', phase: 'Phase 4' },
         ]);
       }
     }
@@ -105,7 +109,7 @@ it('runs every ordered REST and Script Postman example against deterministic loc
           expect(body.data.auditMarker.touchedBy).toBe('calc-script');
         }
         if (item.name === 'Invoke complex script — condition false') {
-          expect(body).toMatchObject({ success: true, data: null, skippedExecution: true });
+          expect(body).toMatchObject({ data: null, skippedExecution: true });
         }
         if (item.name === '500 — expression is not a function') {
           expect(body.error.details).toEqual({ reason: 'not-a-function' });

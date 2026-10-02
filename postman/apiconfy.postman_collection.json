@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Apiconfy",
-    "description": "API collection for Apiconfy integration runtime.\n\n## Setup\n1. Start the server with `pnpm dev` (install dependencies with pnpm only).\n2. Set base_url (default http://localhost:3000) and api_key if API_KEY is configured.\n3. REST > Invoke folders run in order: registration, invocation, execution lookup. Invoke scripts save execution_id. Execution recording is queued off the response path, so an execution-lookup request run immediately after invoke can occasionally 404 — rerun it once if that happens (Newman users: add a short delay or a retry-on-404 script).\n4. Complex/error examples use upstream_url (default https://httpbin.org). Use dummy data only, or your own httpbin-compatible upstream.\n\n## Structure — by component type\nHealth and Service Management retain existing requests. REST includes registration plus Phase 2 Invoke > Simple Examples, Complex Examples, Error Cases. Existing full auth registrations are registration-only; invoking them returns 501. TLS registrations (`request.ssl`, `disableSSL`) are executable since Phase 3.6, and a dedicated REST > Auth folder holds the auth examples — auth payloads must satisfy the Phase 4 schema because registration validates them even while the token runtime is pending. Runnable Phase 2 complex examples include every supported section and intentionally omit unsupported capabilities. Payload validation (request.validation.fields) is part of every complex example and has dedicated manual examples under REST > Payload Validation; the future component folders show the same block in their own sections. Mapper, Database, Script and SQS are future Phase 11 designs, not registered handlers in Phase 2; Scheduler is Phase 10.\n\n## Data bag\nInput uses {$context.*}; ephemeral raw upstream response uses {$output.*}. Response transformations wrap output under unique keys. Phase 2 returns transformed output directly and leaves context.output empty; callers must not supply context.output. Transformation still runs on failure: wire data is null, while GET /api/v1/executions/{{execution_id}} exposes the sanitized transformed, error-injected result. Merging into {$context.output.<uniqueKey>} is Phase 5 workflow behavior.\n\n## Limits\nOnly timeout.response is enforced, per attempt through body consumption. Auth (token runtime; registration-time validation is already live), connect/socket/idle (post-v1 — Bun's fetch exposes no per-request control for them), circuitBreaker and unsupported content types return 501. `request.ssl` and `disableSSL` execute since Phase 3.6, and `auth.ssl` governs the token endpoint. Phase 2 implementation verification is pending; this collection is not test-run evidence.",
+    "description": "API collection for Apiconfy integration runtime.\n\n## Setup\n1. Start the server with `pnpm dev` (install dependencies with pnpm only).\n2. Set base_url (default http://localhost:3000) and api_key if API_KEY is configured.\n3. REST > Invoke folders run in order: registration, invocation, execution lookup. Invoke scripts save execution_id. Execution recording is queued off the response path, so an execution-lookup request run immediately after invoke can occasionally 404 — rerun it once if that happens (Newman users: add a short delay or a retry-on-404 script).\n4. Complex/error examples use upstream_url (default https://httpbin.org). Use dummy data only, or your own httpbin-compatible upstream.\n\n## Structure — by component type\nHealth and Service Management retain existing requests. REST includes registration plus Phase 2 Invoke > Simple Examples, Complex Examples, Error Cases. `auth.basic` and `auth.oauth2` execute (the REST component fetches and caches the token and replays once on a 401); `auth.jwt` registrations are registration-only and invoking them returns 501. TLS registrations (`request.ssl`, `disableSSL`) are executable since Phase 3.6, and a dedicated REST > Auth folder holds the auth examples — auth payloads must satisfy the Phase 4 schema because registration validates them (`auth.jwt` execution is the remaining Phase 4 work). Runnable Phase 2 complex examples include every supported section and intentionally omit unsupported capabilities. Payload validation (request.validation.fields) is part of every complex example and has dedicated manual examples under REST > Payload Validation; the future component folders show the same block in their own sections. Mapper, Database, Script and SQS are future Phase 11 designs, not registered handlers in Phase 2; Scheduler is Phase 10.\n\n## Data bag\nThe invoke request body is the context itself — send the API payload as-is. Wrapping it as `{ \"context\": { ... } }` is also accepted and unwrapped (a few examples show this form). Invoke success is `{ data }`; failure is `{ error: { code, message, details } }`; the execution id is returned in the `Execution-Id` response header. The HTTP status carries success or failure, and upstream failures expose the upstream response as `error.details.body`. Input uses {$context.*}; ephemeral raw upstream response uses {$output.*}. Response transformations wrap output under unique keys. Phase 2 returns transformed output directly and leaves context.output empty; callers must not supply context.output. Transformation still runs on failure: wire data is null, while GET /api/v1/executions/{{execution_id}} exposes the sanitized transformed, error-injected result. Merging into {$context.output.<uniqueKey>} is Phase 5 workflow behavior.\n\n## Limits\nOnly timeout.response is enforced, per attempt through body consumption. `auth.jwt` (registration validates it; execution is pending), connect/socket/idle (post-v1 — Bun's fetch exposes no per-request control for them), circuitBreaker and unsupported content types return 501. `request.ssl` and `disableSSL` execute since Phase 3.6, and `auth.ssl` governs the token endpoint. Phase 2 implementation verification is pending; this collection is not test-run evidence.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "version": "1.0.0"
   },
@@ -113,11 +113,11 @@
     },
     {
       "name": "REST",
-      "description": "REST is the only implemented component type. Existing Complex Examples with auth, TLS, circuitBreaker or connect/socket/idle timeouts are REGISTRATION-ONLY: invocation returns 501. Invoke contains runnable Phase 2 examples with every supported config section; unsupported sections are intentionally omitted. Phase 2 final verification is pending. Never send real secrets to the public example upstream.",
+      "description": "REST is the only implemented component type. Existing Complex Examples with `auth.jwt`, circuitBreaker or connect/socket/idle timeouts are REGISTRATION-ONLY: invocation returns 501 (`auth.basic`, `auth.oauth2` and TLS execute). Invoke contains runnable Phase 2 examples with every supported config section; unsupported sections are intentionally omitted. Phase 2 final verification is pending. Never send real secrets to the public example upstream.",
       "item": [
         {
           "name": "Invoke",
-          "description": "Run each folder in order: register before invoke. Simple Examples use local /health. Complex and selected error examples require an httpbin-compatible upstream_url; default is public httpbin.org, so use dummy data only. Each invoke saves execution_id. Failure data is null on the wire; execution lookup exposes the sanitized transformed error-injected result. No workflow context merge in Phase 2. Payload validation runs before dispatch (after condition); see REST > Payload Validation for manual examples of request.validation.fields.",
+          "description": "Run each folder in order: register before invoke. Simple Examples use local /health. Complex and selected error examples require an httpbin-compatible upstream_url; default is public httpbin.org, so use dummy data only. Each invoke saves execution_id. Failures return only `error` on the wire; execution lookup exposes the sanitized transformed error-injected result. No workflow context merge in Phase 2. Payload validation runs before dispatch (after condition); see REST > Payload Validation for manual examples of request.validation.fields.",
           "event": [
             {
               "listen": "test",
@@ -125,8 +125,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (pm.request.url.toString().endsWith('/invoke')) {",
-                  "  const body = pm.response.json();",
-                  "  if (body.meta && body.meta.executionId) pm.collectionVariables.set('execution_id', body.meta.executionId);",
+                  "  const executionId = pm.response.headers.get('Execution-Id');",
+                  "  if (executionId) pm.collectionVariables.set('execution_id', executionId);",
                   "}"
                 ]
               }
@@ -152,8 +152,8 @@
                     "method": "POST",
                     "header": [{ "key": "Content-Type", "value": "application/json" }],
                     "url": "{{base_url}}/api/v1/services/phase2-simple/health/invoke",
-                    "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
-                    "description": "Expected 200 success, raw health body under data, meta.executionId and durationMs. Saves execution_id; one dispatch attempt."
+                    "body": { "mode": "raw", "raw": "{}" },
+                    "description": "Expected 200 success, raw health body under data and the execution id in the Execution-Id response header. Saves execution_id; one dispatch attempt."
                   }
                 },
                 {
@@ -190,7 +190,7 @@
                     "method": "POST",
                     "header": [{ "key": "Content-Type", "value": "application/json" }],
                     "url": "{{base_url}}/api/v1/services/phase2-complex/echo/invoke",
-                    "body": { "mode": "raw", "raw": "{ \"context\": { \"enabled\": true, \"id\": \"demo-123\", \"name\": \"Demo Customer\", \"label\": \"example\", \"items\": [{ \"sku\": \"demo\", \"quantity\": 2 }] } }" },
+                    "body": { "mode": "raw", "raw": "{\"enabled\": true, \"id\": \"demo-123\", \"name\": \"Demo Customer\", \"label\": \"example\", \"items\": [{\"sku\": \"demo\", \"quantity\": 2}]}" },
                     "description": "Expected 200; data.echoResponse preserves mapped JSON values. Raw response is audited; transformed output is persisted as execution result. X-Execution-Id is propagated upstream."
                   }
                 },
@@ -200,53 +200,63 @@
                     "method": "POST",
                     "header": [{ "key": "Content-Type", "value": "application/json" }],
                     "url": "{{base_url}}/api/v1/services/phase2-complex/echo/invoke",
-                    "body": { "mode": "raw", "raw": "{ \"context\": { \"enabled\": false } }" },
+                    "body": { "mode": "raw", "raw": "{\"enabled\": false}" },
                     "description": "Expected 200, skippedExecution=true, data=null. No upstream request, no env resolution, no limiter token; persisted attempts=0."
                   }
                 },
                 {
-                  "name": "4. Register form-urlencoded echo",
+                  "name": "4. Register empty-body default",
                   "request": {
                     "method": "POST",
                     "header": [{ "key": "Content-Type", "value": "application/json" }],
                     "url": "{{base_url}}/api/v1/services",
-                    "body": { "mode": "raw", "raw": "{\n  \"service\": \"phase2-complex\", \"action\": \"form\", \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": { \"uri\": \"{{upstream_url}}/anything\", \"method\": \"POST\", \"contentType\": \"application/x-www-form-urlencoded\", \"headers\": { \"X-Demo\": \"{$context.id}\" }, \"payloadTemplate\": { \"customerId\": \"{$context.id}\", \"label\": \"{$context.label}\" }, \"validation\": { \"fields\": [ { \"path\": \"id\", \"required\": true, \"type\": \"string\" }, { \"path\": \"label\", \"required\": true, \"type\": \"string\" } ] } },\n    \"timeout\": { \"response\": 5000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 100, \"backoff\": \"fixed\", \"maxDelay\": 500, \"retryOn\": [502, 503] },\n    \"output\": { \"validation\": { \"rules\": [{ \"expression\": \"{$output.form.customerId} != null\", \"message\": \"Missing form ID\", \"errorPath\": \"{$output.message}\" }] }, \"default\": { \"form\": {} }, \"transformation\": { \"formEchoResponse\": { \"customerId\": \"{$output.form.customerId}\", \"label\": \"{$output.form.label}\" } } }\n  },\n  \"condition\": \"{$context.id} != null\", \"metaData\": { \"example\": \"phase2-form\" }\n}" },
-                    "description": "Expected 201/200. Every supported section is shown; unsupported auth/TLS/circuitBreaker blocks are omitted. Form bodies are serialized with URLSearchParams."
+                    "body": { "mode": "raw", "raw": "{\n  \"service\": \"phase2-complex\", \"action\": \"default\", \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": { \"uri\": \"{{upstream_url}}/status/204\", \"method\": \"GET\", \"contentType\": \"application/json\", \"headers\": { \"X-Demo\": \"{$context.id}\" }, \"validation\": { \"fields\": [ { \"path\": \"id\", \"required\": true, \"type\": \"string\" } ] } },\n    \"timeout\": { \"response\": 5000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 100, \"backoff\": \"fixed\", \"maxDelay\": 500, \"retryOn\": [503] },\n    \"output\": { \"default\": { \"status\": \"empty\" }, \"transformation\": { \"defaultResponse\": { \"status\": \"{$output.status}\", \"customerId\": \"{$context.id}\" } } }\n  },\n  \"condition\": \"{$context.id} != null\", \"metaData\": { \"example\": \"phase2-default\" }\n}" },
+                    "description": "Expected 201/200. The upstream returns 204 with no body, so `output.default` supplies `{ status: \"empty\" }` before the transformation reads it."
                   }
                 },
                 {
-                  "name": "5. Invoke form echo",
-                  "request": {
-                    "method": "POST",
-                    "header": [{ "key": "Content-Type", "value": "application/json" }],
-                    "url": "{{base_url}}/api/v1/services/phase2-complex/form/invoke",
-                    "body": { "mode": "raw", "raw": "{ \"context\": { \"id\": \"demo-123\", \"label\": \"space & plus +\" } }" },
-                    "description": "Expected 200; data.formEchoResponse.label round-trips spaces, ampersand and plus."
-                  }
-                },
-                {
-                  "name": "6. Register empty-body default",
-                  "request": {
-                    "method": "POST",
-                    "header": [{ "key": "Content-Type", "value": "application/json" }],
-                    "url": "{{base_url}}/api/v1/services",
-                    "body": { "mode": "raw", "raw": "{\n  \"service\": \"phase2-complex\", \"action\": \"default\", \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": { \"uri\": \"{{upstream_url}}/status/204\", \"method\": \"GET\", \"contentType\": \"application/json\", \"headers\": { \"X-Demo\": \"{$context.id}\" }, \"payloadTemplate\": { \"unusedForGet\": \"{$context.id}\" }, \"validation\": { \"fields\": [ { \"path\": \"id\", \"required\": true, \"type\": \"string\" } ] } },\n    \"timeout\": { \"response\": 5000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 100, \"backoff\": \"fixed\", \"maxDelay\": 500, \"retryOn\": [503] },\n    \"output\": { \"validation\": { \"rules\": [{ \"expression\": \"true\", \"message\": \"Default scenario permits an empty response\" }] }, \"default\": { \"status\": \"empty\" }, \"transformation\": { \"defaultResponse\": { \"status\": \"{$output.status}\", \"customerId\": \"{$context.id}\" } } }\n  },\n  \"condition\": \"{$context.id} != null\", \"metaData\": { \"example\": \"phase2-default\" }\n}" },
-                    "description": "Expected 201/200. GET ignores payloadTemplate; all supported sections are shown. The true validation rule permits a 204 body, then default resolves context before transformation reads response."
-                  }
-                },
-                {
-                  "name": "7. Invoke empty-body default",
+                  "name": "5. Invoke empty-body default",
                   "request": {
                     "method": "POST",
                     "header": [{ "key": "Content-Type", "value": "application/json" }],
                     "url": "{{base_url}}/api/v1/services/phase2-complex/default/invoke",
-                    "body": { "mode": "raw", "raw": "{ \"context\": { \"id\": \"demo-123\" } }" },
+                    "body": { "mode": "raw", "raw": "{\"id\": \"demo-123\"}" },
                     "description": "Expected 200, data.defaultResponse={status:empty,customerId:demo-123}. Upstream status 204 still becomes a normal invocation envelope."
                   }
                 },
                 {
-                  "name": "8. Look up latest execution",
+                  "name": "6. Look up latest execution",
                   "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/executions/{{execution_id}}", "description": "Inspect sanitized result/context and real dispatch attempts." }
+                }
+              ]
+            },
+            {
+              "name": "Wrapped Context Example",
+              "description": "The only place the optional `{ \"context\": {...} }` wrapper is used. Run in order: register, invoke, look up. The registration is identical for a raw body; every other invoke example in this collection sends the raw payload.",
+              "item": [
+                {
+                  "name": "1. Register form-urlencoded echo",
+                  "request": {
+                    "method": "POST",
+                    "header": [{ "key": "Content-Type", "value": "application/json" }],
+                    "url": "{{base_url}}/api/v1/services",
+                    "body": { "mode": "raw", "raw": "{\n  \"service\": \"phase2-complex\", \"action\": \"form\", \"componentType\": \"rest\",\n  \"config\": {\n    \"request\": { \"uri\": \"{{upstream_url}}/anything\", \"method\": \"POST\", \"contentType\": \"application/x-www-form-urlencoded\", \"headers\": { \"X-Demo\": \"{$context.id}\" }, \"payloadTemplate\": { \"customerId\": \"{$context.id}\", \"label\": \"{$context.label}\" }, \"validation\": { \"fields\": [ { \"path\": \"id\", \"required\": true, \"type\": \"string\" }, { \"path\": \"label\", \"required\": true, \"type\": \"string\" } ] } },\n    \"timeout\": { \"response\": 5000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 100, \"backoff\": \"fixed\", \"maxDelay\": 500, \"retryOn\": [502, 503] },\n    \"output\": { \"validation\": { \"rules\": [{ \"expression\": \"{$output.form.customerId} != null\", \"message\": \"Missing form ID\", \"errorPath\": \"{$output.message}\" }] }, \"transformation\": { \"formEchoResponse\": { \"customerId\": \"{$output.form.customerId}\", \"label\": \"{$output.form.label}\" } } }\n  },\n  \"condition\": \"{$context.id} != null\", \"metaData\": { \"example\": \"phase2-form\" }\n}" },
+                    "description": "Expected 201/200. Same sections as the other Complex registrations, minus `output.default` (see `5. Invoke empty-body default` for that); unsupported auth/TLS/circuitBreaker blocks are omitted. Form bodies are serialized with URLSearchParams. Pair: `2. Invoke form echo (wrapped in context)` sends the payload wrapped in `{ \"context\": {...} }` — the registration is identical for a wrapped or raw body, because `{$context.*}` reads the same data either way."
+                  }
+                },
+                {
+                  "name": "2. Invoke form echo (wrapped in context)",
+                  "request": {
+                    "method": "POST",
+                    "header": [{ "key": "Content-Type", "value": "application/json" }],
+                    "url": "{{base_url}}/api/v1/services/phase2-complex/form/invoke",
+                    "body": { "mode": "raw", "raw": "{\"context\": {\"id\": \"demo-123\", \"label\": \"space & plus +\"}}" },
+                    "description": "Expected 200; data.formEchoResponse.label round-trips spaces, ampersand and plus. This is the wrapped form: `{ \"context\": {...} }` and the raw body `{ \"id\": ..., \"label\": ... }` give the same result with the registration in `1. Register form-urlencoded echo`."
+                  }
+                },
+                {
+                  "name": "3. Look up wrapped-context execution",
+                  "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/executions/{{execution_id}}", "description": "Inspect the execution of the wrapped invoke above: the stored context is the inner object, not the `{ \"context\": ... }` wrapper." }
                 }
               ]
             },
@@ -256,11 +266,11 @@
               "item": [
                 {
                   "name": "404 — unknown service",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-never-registered/missing/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_FOUND with execution metadata; failed record attempts=0.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_FOUND\",\n    \"message\": \"Service not found: phase2-never-registered/missing\"\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 5\n  }\n}\n```" }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-never-registered/missing/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "NOT_FOUND with execution metadata; failed record attempts=0.\n\nExpected error envelope:\n```json\n{\n  \"error\": {\n    \"code\": \"NOT_FOUND\",\n    \"message\": \"Service not found: phase2-never-registered/missing\"\n  }\n}\n```" }
                 },
                 {
-                  "name": "400 — missing context",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-simple/health/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "VALIDATION_FAILED before execution. Do not expect a persisted invocation for an invalid request body." }
+                  "name": "400 — body is not a JSON object",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-simple/health/invoke", "body": { "mode": "raw", "raw": "[]" }, "description": "VALIDATION_FAILED before execution. Do not expect a persisted invocation for an invalid request body." }
                 },
                 {
                   "name": "Register validation failure",
@@ -268,7 +278,7 @@
                 },
                 {
                   "name": "422 — response validation still transforms",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/validation/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "VALIDATION_FAILED, wire data=null. Lookup must contain validationFailureResponse.upstream and injected validationFailureResponse.error.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"VALIDATION_FAILED\",\n    \"message\": \"Intentional demo validation failure\",\n    \"details\": [\n      {\n        \"rule\": \"false\",\n        \"message\": \"Intentional demo validation failure\",\n        \"path\": \"false\"\n      }\n    ]\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 15\n  }\n}\n```" }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/validation/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "VALIDATION_FAILED, wire data=null. Lookup must contain validationFailureResponse.upstream and injected validationFailureResponse.error.\n\nExpected error envelope:\n```json\n{\n  \"error\": {\n    \"code\": \"VALIDATION_FAILED\",\n    \"message\": \"Intentional demo validation failure\",\n    \"details\": [\n      {\n        \"rule\": \"false\",\n        \"message\": \"Intentional demo validation failure\",\n        \"path\": \"false\"\n      }\n    ]\n  }\n}\n```" }
                 },
                 {
                   "name": "Look up failed transformed result",
@@ -276,11 +286,11 @@
                 },
                 {
                   "name": "Register unsupported auth",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services", "body": { "mode": "raw", "raw": "{ \"service\": \"phase2-errors\", \"action\": \"auth\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{base_url}}/health\", \"method\": \"GET\", \"auth\": { \"basic\": { \"username\": \"{$env.DEMO_USERNAME}\", \"password\": \"{$env.DEMO_PASSWORD}\" } } } } }" }, "description": "Expected 201/200. Registration-only capability; env references are masked. No environment variables need setting: the invocation guard runs before env resolution." }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services", "body": { "mode": "raw", "raw": "{ \"service\": \"phase2-errors\", \"action\": \"auth\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{base_url}}/health\", \"method\": \"GET\", \"auth\": { \"jwt\": { \"local\": { \"algorithm\": \"HS256\", \"secretOrPrivateKey\": \"{$env.DEMO_JWT_KEY}\" } } } } } }" }, "description": "Expected 201/200. Registration-only capability (jwt.local signing is not implemented yet; basic and oauth2 execute); env references are masked. No environment variables need setting: the invocation guard runs before env resolution." }
                 },
                 {
                   "name": "501 — auth guard",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/auth/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_IMPLEMENTED, attempts=0, no env resolution or unauthenticated upstream dispatch.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 3\n  }\n}\n```" }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/auth/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "NOT_IMPLEMENTED, attempts=0, no env resolution or unauthenticated upstream dispatch.\n\nExpected error envelope:\n```json\n{\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth.jwt\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth.jwt\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  }\n}\n```" }
                 },
                 {
                   "name": "Register unsupported connect timeout",
@@ -288,7 +298,7 @@
                 },
                 {
                   "name": "501 — connect timeout guard",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/connect/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_IMPLEMENTED, attempts=0. socket/idle and circuitBreaker are guarded similarly and are all labeled `post-v1` — they need transport-level control that Bun's `fetch` does not expose. Custom SSL is NOT guarded: `request.ssl` and `disableSSL` execute since Phase 3.6 (see REST > TLS Certificates), and token-endpoint TLS lives in `auth.ssl`." }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/connect/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "NOT_IMPLEMENTED, attempts=0. socket/idle and circuitBreaker are guarded similarly and are all labeled `post-v1` — they need transport-level control that Bun's `fetch` does not expose. Custom SSL is NOT guarded: `request.ssl` and `disableSSL` execute since Phase 3.6 (see REST > TLS Certificates), and token-endpoint TLS lives in `auth.ssl`." }
                 },
                 {
                   "name": "Register upstream status error with retry",
@@ -296,11 +306,11 @@
                 },
                 {
                   "name": "503 — retryable upstream 503",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{ \"context\": { \"status\": 503 } }" }, "description": "EXTERNAL_ERROR after two actual attempts. One execution and one audit row; failed transformed result contains upstreamFailureResponse.error.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"EXTERNAL_ERROR\",\n    \"message\": \"External API returned 503\",\n    \"details\": {\n      \"downstream\": {\n        \"status\": 503,\n        \"body\": {}\n      }\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 250\n  }\n}\n```" }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{\"status\": 503}" }, "description": "EXTERNAL_ERROR after two actual attempts. One execution and one audit row; failed transformed result contains upstreamFailureResponse.error.\n\nExpected error envelope:\n```json\n{\n  \"error\": {\n    \"code\": \"EXTERNAL_ERROR\",\n    \"message\": \"External API returned 503\",\n    \"details\": {\n      \"body\": {}\n    }\n  }\n}\n```" }
                 },
                 {
                   "name": "404 — nonretryable upstream 404",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{ \"context\": { \"status\": 404 } }" }, "description": "EXTERNAL_ERROR after one attempt. Upstream 404 is not the runtime's own NOT_FOUND.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"EXTERNAL_ERROR\",\n    \"message\": \"External API returned 404\",\n    \"details\": {\n      \"downstream\": {\n        \"status\": 404,\n        \"body\": {}\n      }\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 120\n  }\n}\n```" }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{\"status\": 404}" }, "description": "EXTERNAL_ERROR after one attempt. Upstream 404 is not the runtime's own NOT_FOUND.\n\nExpected error envelope:\n```json\n{\n  \"error\": {\n    \"code\": \"EXTERNAL_ERROR\",\n    \"message\": \"External API returned 404\",\n    \"details\": {\n      \"body\": {}\n    }\n  }\n}\n```" }
                 },
                 {
                   "name": "Look up latest failure",
@@ -428,7 +438,7 @@
                 "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"context\":{\"userId\":\"u-123\",\"customer\":{\"email\":\"demo@example.com\"},\"items\":[{\"sku\":\"A-1\",\"qty\":2}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                  "raw": "{\"userId\": \"u-123\", \"customer\": {\"email\": \"demo@example.com\"}, \"items\": [{\"sku\": \"A-1\", \"qty\": 2}], \"meta\": {\"external-id\": \"ext-9\"}}"
                 },
                 "description": "Expected 200; data.validatedResponse.customerId is the mapped payload value. Validation passed before the upstream call."
               }
@@ -446,9 +456,9 @@
                 "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"context\":{\"customer\":{\"email\":\"demo@example.com\"},\"items\":[{\"sku\":\"A-1\"}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                  "raw": "{\"customer\": {\"email\": \"demo@example.com\"}, \"items\": [{\"sku\": \"A-1\"}], \"meta\": {\"external-id\": \"ext-9\"}}"
                 },
-                "description": "VALIDATION_FAILED before dispatch, attempts=0, no upstream request.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"VALIDATION_FAILED\",\n    \"message\": \"userId is required\",\n    \"details\": [\n      { \"path\": [\"userId\"], \"message\": \"userId is required\" }\n    ]\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 2\n  }\n}\n```"
+                "description": "VALIDATION_FAILED before dispatch, attempts=0, no upstream request.\n\nExpected error envelope:\n```json\n{\n  \"error\": {\n    \"code\": \"VALIDATION_FAILED\",\n    \"message\": \"userId is required\",\n    \"details\": [\n      { \"path\": [\"userId\"], \"message\": \"userId is required\" }\n    ]\n  }\n}\n```"
               }
             },
             {
@@ -464,7 +474,7 @@
                 "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"context\":{\"userId\":42,\"customer\":{\"email\":\"demo@example.com\"},\"items\":[{\"sku\":\"A-1\",\"qty\":2}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                  "raw": "{\"userId\": 42, \"customer\": {\"email\": \"demo@example.com\"}, \"items\": [{\"sku\": \"A-1\", \"qty\": 2}], \"meta\": {\"external-id\": \"ext-9\"}}"
                 },
                 "description": "VALIDATION_FAILED: userId must be a string. Strict typing — a number is not accepted for a string field."
               }
@@ -482,7 +492,7 @@
                 "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"context\":{\"userId\":\"u-123\",\"customer\":{\"email\":\"demo@example.com\"},\"items\":[],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                  "raw": "{\"userId\": \"u-123\", \"customer\": {\"email\": \"demo@example.com\"}, \"items\": [], \"meta\": {\"external-id\": \"ext-9\"}}"
                 },
                 "description": "VALIDATION_FAILED: items must contain at least one entry. required accepts [], so emptiness needs minItems; wildcard element rules pass vacuously on an empty array."
               }
@@ -500,7 +510,7 @@
                 "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"context\":{\"userId\":\"u-123\",\"customer\":{\"email\":\"\"},\"items\":[{\"sku\":\"A-1\",\"qty\":2}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                  "raw": "{\"userId\": \"u-123\", \"customer\": {\"email\": \"\"}, \"items\": [{\"sku\": \"A-1\", \"qty\": 2}], \"meta\": {\"external-id\": \"ext-9\"}}"
                 },
                 "description": "VALIDATION_FAILED: customer.email must have at least 1 character. required accepts \"\", so blank strings need minLength."
               }
@@ -518,7 +528,7 @@
                 "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"context\":{\"userId\":\"u-123\",\"customer\":{\"email\":\"demo@example.com\"},\"items\":[{\"sku\":\"A-1\"},{\"qty\":2}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                  "raw": "{\"userId\": \"u-123\", \"customer\": {\"email\": \"demo@example.com\"}, \"items\": [{\"sku\": \"A-1\"}, {\"qty\": 2}], \"meta\": {\"external-id\": \"ext-9\"}}"
                 },
                 "description": "VALIDATION_FAILED with the concrete element index: path [\"items\", 1, \"sku\"], message \"items[1].sku is required\". Wildcard rules report the first failing element only."
               }
@@ -936,7 +946,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "url": "{{base_url}}/api/v1/services",
                 "body": { "mode": "raw", "raw": "{ \"service\": \"auth-demo\", \"action\": \"basic_post\", \"componentType\": \"rest\", \"description\": \"Minimal basic auth: username + password. The password is an {$env} reference so it never reaches the database as a literal.\", \"config\": { \"request\": { \"uri\": \"{{upstream_url}}/post\", \"method\": \"POST\", \"auth\": { \"basic\": { \"username\": \"svc-account\", \"password\": \"{$env.DEMO_PASSWORD}\" } } } } }" },
-                "description": "Expected 201. Required keys: `username`, `password`. `username` must not contain `:` (the Basic credential separator, RFC 7617). Registration-only until the Phase 4 runtime — invoking returns 501. Read it back via GET to see the password masked as `***`."
+                "description": "Expected 201. Required keys: `username`, `password`. `username` must not contain `:` (the Basic credential separator, RFC 7617). Executes at invoke time (sent as `Authorization: Basic base64(username:password)`). Read it back via GET to see the password masked as `***`."
               }
             },
             {
@@ -950,12 +960,32 @@
               }
             },
             {
+              "name": "Invoke — basic auth",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services/auth-demo/basic_post/invoke",
+                "body": { "mode": "raw", "raw": "{\n  \"orderId\": \"ord-1\",\n  \"amount\": 42\n}" },
+                "description": "Executes the basic_post registration. The runtime builds `Authorization: Basic base64(username:password)` from the config (the password is resolved from `DEMO_PASSWORD` on the server) and forwards the body as-is. Set `DEMO_PASSWORD` in the server environment first."
+              }
+            },
+            {
+              "name": "Invoke — oauth2 client_credentials",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{base_url}}/api/v1/services/auth-demo/oauth2_post/invoke",
+                "body": { "mode": "raw", "raw": "{\n  \"orderId\": \"ord-1\",\n  \"amount\": 42\n}" },
+                "description": "Executes the oauth2_post registration. The runtime fetches a token from `accessTokenUri` with client_credentials, caches it, sends `Authorization: Bearer <token>`, and replays once if the upstream answers 401. The caller never supplies a token. Point `accessTokenUri` at a real IdP and set `ORDER_API_CLIENT_ID` / `ORDER_API_CLIENT_SECRET` on the server first."
+              }
+            },
+            {
               "name": "Register — complex: Okta-style client_credentials (Basic auth, scope list, audience)",
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "url": "{{base_url}}/api/v1/services",
-                "body": { "mode": "raw", "raw": "{\n  \"service\": \"ek\",\n  \"action\": \"get_eligibility\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: client_credentials with clientAuth basic (Authorization: Basic base64(id:secret)), a space-delimited scope list, an audience parameter and its own token-endpoint TLS via auth.ssl. Registration-only until the Phase 4 runtime.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/olci/v1/eligibility\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Correlation-Id\": \"{$context.correlationId}\" },\n      \"auth\": {\n        \"ssl\": { \"ca\": \"{$env.IDP_CA_PEM}\" },\n        \"oauth2\": {\n          \"clientId\": \"{$env.EMIRATES_CLIENT_ID}\",\n          \"clientSecret\": \"{$env.EMIRATES_CLIENT_SECRET}\",\n          \"accessTokenUri\": \"https://authuat.emirates.dev/oauth2/<authServerId>/v1/token\",\n          \"clientAuth\": \"basic\",\n          \"scope\": \"ek.olci.onlineCheckIn.randomizer.get.eligibility ek.cab.rebooking.eligibility.post ek.ibe.flightPricing.airFares.get\",\n          \"audience\": \"api://skywards\"\n        }\n      },\n      \"payloadTemplate\": { \"pnr\": \"{$context.pnr}\", \"channel\": \"resConnect\" },\n      \"validation\": {\n        \"fields\": [\n          { \"path\": \"pnr\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"channel\", \"required\": true, \"type\": \"string\" }\n        ]\n      }\n    },\n    \"timeout\": { \"response\": 10000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 300, \"backoff\": \"exponential\", \"retryOn\": [502, 503, 504] },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.eligible} != null\", \"message\": \"eligible flag is missing\" }] },\n      \"transformation\": { \"getEligibilityResponse\": { \"eligible\": \"{$output.eligible}\", \"pnr\": \"{$context.pnr}\" } }\n    }\n  },\n  \"condition\": \"{$context.pnr} != null\",\n  \"metaData\": { \"owner\": \"ek-integrations\", \"auth\": \"oauth2-client-credentials\" }\n}" },
+                "body": { "mode": "raw", "raw": "{\n  \"service\": \"ek\",\n  \"action\": \"get_eligibility\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: client_credentials with clientAuth basic (Authorization: Basic base64(id:secret)), a space-delimited scope list, an audience parameter and its own token-endpoint TLS via auth.ssl. Executes at invoke time (the token is fetched with client_credentials and cached); the hosts in this example are placeholders, so invoking it as-is fails to connect.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/olci/v1/eligibility\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Correlation-Id\": \"{$context.correlationId}\" },\n      \"auth\": {\n        \"ssl\": { \"ca\": \"{$env.IDP_CA_PEM}\" },\n        \"oauth2\": {\n          \"clientId\": \"{$env.EMIRATES_CLIENT_ID}\",\n          \"clientSecret\": \"{$env.EMIRATES_CLIENT_SECRET}\",\n          \"accessTokenUri\": \"https://authuat.emirates.dev/oauth2/<authServerId>/v1/token\",\n          \"clientAuth\": \"basic\",\n          \"scope\": \"ek.olci.onlineCheckIn.randomizer.get.eligibility ek.cab.rebooking.eligibility.post ek.ibe.flightPricing.airFares.get\",\n          \"audience\": \"api://skywards\"\n        }\n      },\n      \"payloadTemplate\": { \"pnr\": \"{$context.pnr}\", \"channel\": \"resConnect\" },\n      \"validation\": {\n        \"fields\": [\n          { \"path\": \"pnr\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"channel\", \"required\": true, \"type\": \"string\" }\n        ]\n      }\n    },\n    \"timeout\": { \"response\": 10000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 300, \"backoff\": \"exponential\", \"retryOn\": [502, 503, 504] },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.eligible} != null\", \"message\": \"eligible flag is missing\" }] },\n      \"transformation\": { \"getEligibilityResponse\": { \"eligible\": \"{$output.eligible}\", \"pnr\": \"{$context.pnr}\" } }\n    }\n  },\n  \"condition\": \"{$context.pnr} != null\",\n  \"metaData\": { \"owner\": \"ek-integrations\", \"auth\": \"oauth2-client-credentials\" }\n}" },
                 "description": "Expected 201. `clientAuth: \"basic\"` puts the credentials in `Authorization: Basic …` (RFC 6749 §2.3.1 — the shape the Okta-style endpoint in the estate uses). `scope` is ONE space-delimited string (13 `ek.*` scopes in the real call; shortened here) and is omitted entirely when empty. `audience` is the extra token-request parameter Okta needs when the API's `aud` is not the auth server default — the decoded access token carries `aud: api://skywards`. `auth.ssl` is the TOKEN ENDPOINT's TLS policy (a different host from `request.uri`), not the API call's; `request.ssl` still governs the API call. `ssl.disableSSL` cannot be combined with `ca`/`cert`/`key`."
               }
             },
@@ -965,7 +995,7 @@
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "url": "{{base_url}}/api/v1/services",
-                "body": { "mode": "raw", "raw": "{\n  \"service\": \"resconnect\",\n  \"action\": \"search_offers\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: the second real client-auth shape — clientAuth body sends client_id/client_secret as form fields instead of a Basic header, with no scope at all. Registration-only until the Phase 4 runtime.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/flightOffers/search\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Request-Id\": \"{$context.requestId}\" },\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"resconnectapi_client\",\n          \"clientSecret\": \"{$env.SSO_CLIENT_SECRET}\",\n          \"accessTokenUri\": \"https://ssostg.emirates.dev/as/token.oauth2\",\n          \"clientAuth\": \"body\"\n        }\n      },\n      \"payloadTemplate\": { \"origin\": \"{$context.origin}\", \"destination\": \"{$context.destination}\", \"date\": \"{$context.date}\" },\n      \"validation\": {\n        \"fields\": [\n          { \"path\": \"origin\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"destination\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"date\", \"required\": true, \"type\": \"string\" }\n        ]\n      }\n    },\n    \"timeout\": { \"response\": 15000 },\n    \"resilience\": { \"retryCount\": 2, \"retryDelay\": 500, \"backoff\": \"fixed\", \"retryOn\": [502, 503] },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.offers} != null\", \"message\": \"offers missing\" }] },\n      \"transformation\": { \"searchOffersResponse\": { \"count\": \"{$output.count}\", \"origin\": \"{$context.origin}\" } }\n    }\n  },\n  \"condition\": \"{$context.origin} != null\",\n  \"metaData\": { \"owner\": \"resconnect-integrations\", \"auth\": \"oauth2-client-credentials-body\" }\n}" },
+                "body": { "mode": "raw", "raw": "{\n  \"service\": \"resconnect\",\n  \"action\": \"search_offers\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: the second real client-auth shape — clientAuth body sends client_id/client_secret as form fields instead of a Basic header, with no scope at all. Executes at invoke time (the token is fetched with client_credentials and cached); the hosts in this example are placeholders, so invoking it as-is fails to connect.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://api.example.com/flightOffers/search\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Request-Id\": \"{$context.requestId}\" },\n      \"auth\": {\n        \"oauth2\": {\n          \"clientId\": \"resconnectapi_client\",\n          \"clientSecret\": \"{$env.SSO_CLIENT_SECRET}\",\n          \"accessTokenUri\": \"https://ssostg.emirates.dev/as/token.oauth2\",\n          \"clientAuth\": \"body\"\n        }\n      },\n      \"payloadTemplate\": { \"origin\": \"{$context.origin}\", \"destination\": \"{$context.destination}\", \"date\": \"{$context.date}\" },\n      \"validation\": {\n        \"fields\": [\n          { \"path\": \"origin\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"destination\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"date\", \"required\": true, \"type\": \"string\" }\n        ]\n      }\n    },\n    \"timeout\": { \"response\": 15000 },\n    \"resilience\": { \"retryCount\": 2, \"retryDelay\": 500, \"backoff\": \"fixed\", \"retryOn\": [502, 503] },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.offers} != null\", \"message\": \"offers missing\" }] },\n      \"transformation\": { \"searchOffersResponse\": { \"count\": \"{$output.count}\", \"origin\": \"{$context.origin}\" } }\n    }\n  },\n  \"condition\": \"{$context.origin} != null\",\n  \"metaData\": { \"owner\": \"resconnect-integrations\", \"auth\": \"oauth2-client-credentials-body\" }\n}" },
                 "description": "Expected 201. Both client-auth shapes exist in the estate, which is why `clientAuth` exists at all. `clientAuth` defaults to `basic` — if the IdP expects the credentials in the body and returns 401, set `clientAuth: \"body\"` (the error carries that hint). Sending both at once is forbidden by RFC 6749 §2.3.1. This endpoint returns no `scope`, and that is fine — a token response may omit it (§5.1). Chart the flow: cache a token, reuse it across calls, and on a 401 invalidate, re-acquire and replay the request once."
               }
             },
@@ -975,7 +1005,7 @@
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "url": "{{base_url}}/api/v1/services",
-                "body": { "mode": "raw", "raw": "{\n  \"service\": \"erp\",\n  \"action\": \"post_shipment\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: legacy IdP token fetch — POST a body, pull the token out of a nested path, send it under a custom header. Password-grant shaped, which RFC 9700 section 2.4 prohibits (MUST NOT be used); this block exists only for IdPs that offer nothing else. Registration-only until the Phase 4 runtime.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://erp.legacy.local/shipments\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Env\": \"{$context.environment}\" },\n      \"auth\": {\n        \"ssl\": { \"ca\": \"{$env.ERP_CA_PEM}\" },\n        \"jwt\": {\n          \"external\": {\n            \"username\": \"apiconfy-user\",\n            \"password\": \"{$env.ERP_PASSWORD}\",\n            \"accessTokenUri\": \"https://erp.legacy.local/auth/token\",\n            \"credentialPlacement\": \"body\",\n            \"contentType\": \"application/x-www-form-urlencoded\",\n            \"requestBody\": { \"grant_type\": \"password\", \"audience\": \"erp-api\" },\n            \"responsePath\": \"data.accessToken\",\n            \"requestHeader\": \"X-ERP-Token\",\n            \"tokenPrefix\": \"\"\n          }\n        }\n      },\n      \"payloadTemplate\": { \"shipmentId\": \"{$context.shipmentId}\", \"carrier\": \"{$context.carrier}\" },\n      \"validation\": {\n        \"fields\": [\n          { \"path\": \"shipmentId\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"carrier\", \"required\": true, \"type\": \"string\" }\n        ]\n      }\n    },\n    \"timeout\": { \"response\": 15000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 500, \"backoff\": \"fixed\", \"retryOn\": [502, 503] },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.shipmentId} != null\", \"message\": \"shipmentId missing\" }] },\n      \"transformation\": { \"postShipmentResponse\": { \"shipmentId\": \"{$output.shipmentId}\", \"acceptedAt\": \"{$output.acceptedAt}\" } }\n    }\n  },\n  \"condition\": \"{$context.shipmentId} != null\",\n  \"metaData\": { \"owner\": \"logistics-team\", \"auth\": \"legacy-token-endpoint\" }\n}" },
+                "body": { "mode": "raw", "raw": "{\n  \"service\": \"erp\",\n  \"action\": \"post_shipment\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: legacy IdP token fetch — POST a body, pull the token out of a nested path, send it under a custom header. Password-grant shaped, which RFC 9700 section 2.4 prohibits (MUST NOT be used); this block exists only for IdPs that offer nothing else. Registration-only: jwt.local / jwt.external execution is not implemented yet, so invoking returns 501.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://erp.legacy.local/shipments\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Env\": \"{$context.environment}\" },\n      \"auth\": {\n        \"ssl\": { \"ca\": \"{$env.ERP_CA_PEM}\" },\n        \"jwt\": {\n          \"external\": {\n            \"username\": \"apiconfy-user\",\n            \"password\": \"{$env.ERP_PASSWORD}\",\n            \"accessTokenUri\": \"https://erp.legacy.local/auth/token\",\n            \"credentialPlacement\": \"body\",\n            \"contentType\": \"application/x-www-form-urlencoded\",\n            \"requestBody\": { \"grant_type\": \"password\", \"audience\": \"erp-api\" },\n            \"responsePath\": \"data.accessToken\",\n            \"requestHeader\": \"X-ERP-Token\",\n            \"tokenPrefix\": \"\"\n          }\n        }\n      },\n      \"payloadTemplate\": { \"shipmentId\": \"{$context.shipmentId}\", \"carrier\": \"{$context.carrier}\" },\n      \"validation\": {\n        \"fields\": [\n          { \"path\": \"shipmentId\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"carrier\", \"required\": true, \"type\": \"string\" }\n        ]\n      }\n    },\n    \"timeout\": { \"response\": 15000 },\n    \"resilience\": { \"retryCount\": 1, \"retryDelay\": 500, \"backoff\": \"fixed\", \"retryOn\": [502, 503] },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.shipmentId} != null\", \"message\": \"shipmentId missing\" }] },\n      \"transformation\": { \"postShipmentResponse\": { \"shipmentId\": \"{$output.shipmentId}\", \"acceptedAt\": \"{$output.acceptedAt}\" } }\n    }\n  },\n  \"condition\": \"{$context.shipmentId} != null\",\n  \"metaData\": { \"owner\": \"logistics-team\", \"auth\": \"legacy-token-endpoint\" }\n}" },
                 "description": "Expected 201. Required keys: `username`, `password`, `accessTokenUri`. Optional with defaults: `credentialPlacement` (`body`), `contentType` (form-urlencoded), `requestBody` (extra params — it must NOT redefine `username`/`password`, which come from the block fields), `responsePath` (`access_token`; a missing path is an error, never an empty token), `requestHeader` (`Authorization`), `tokenPrefix` (`Bearer ` — an empty string is legal, as here, for a bare custom header). The name is misleading: RFC 7523's JWT grant carries a signed `assertion`, which this is not. `disableSSL` is no longer accepted here — it lives in `auth.ssl`."
               }
             },
@@ -985,7 +1015,7 @@
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "url": "{{base_url}}/api/v1/services",
-                "body": { "mode": "raw", "raw": "{\n  \"service\": \"partner\",\n  \"action\": \"sync_catalog\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: no token endpoint at all — the JWT is signed locally on every call (HS256 here, RS256 also supported) with iss/aud/sub and a 300 s exp. Registration-only until the Phase 4 runtime.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/catalog/sync\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Request-Id\": \"{$context.requestId}\" },\n      \"auth\": {\n        \"jwt\": {\n          \"local\": {\n            \"algorithm\": \"HS256\",\n            \"secretOrPrivateKey\": \"{$env.PARTNER_JWT_SECRET}\",\n            \"claims\": { \"issuer\": \"apiconfy\", \"audience\": \"partner-api\", \"subject\": \"svc-catalog\" },\n            \"expiresInSeconds\": 300,\n            \"requestHeader\": \"Authorization\",\n            \"tokenPrefix\": \"Bearer \"\n          }\n        }\n      },\n      \"payloadTemplate\": { \"catalogId\": \"{$context.catalogId}\", \"full\": true },\n      \"validation\": {\n        \"fields\": [\n          { \"path\": \"catalogId\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"full\", \"required\": true, \"type\": \"boolean\" }\n        ]\n      }\n    },\n    \"timeout\": { \"response\": 8000 },\n    \"resilience\": { \"retryCount\": 2, \"retryDelay\": 300, \"backoff\": \"exponential\", \"retryOn\": [502, 503] },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.synced} != null\", \"message\": \"synced flag missing\" }] },\n      \"transformation\": { \"syncCatalogResponse\": { \"synced\": \"{$output.synced}\", \"catalogId\": \"{$context.catalogId}\" } }\n    }\n  },\n  \"condition\": \"{$context.catalogId} != null\",\n  \"metaData\": { \"owner\": \"partner-integrations\", \"auth\": \"jwt-local\" }\n}" },
+                "body": { "mode": "raw", "raw": "{\n  \"service\": \"partner\",\n  \"action\": \"sync_catalog\",\n  \"componentType\": \"rest\",\n  \"description\": \"Complex: no token endpoint at all — the JWT is signed locally on every call (HS256 here, RS256 also supported) with iss/aud/sub and a 300 s exp. Registration-only: jwt.local / jwt.external execution is not implemented yet, so invoking returns 501.\",\n  \"config\": {\n    \"request\": {\n      \"uri\": \"https://partner.example.com/catalog/sync\",\n      \"method\": \"POST\",\n      \"contentType\": \"application/json\",\n      \"headers\": { \"X-Request-Id\": \"{$context.requestId}\" },\n      \"auth\": {\n        \"jwt\": {\n          \"local\": {\n            \"algorithm\": \"HS256\",\n            \"secretOrPrivateKey\": \"{$env.PARTNER_JWT_SECRET}\",\n            \"claims\": { \"issuer\": \"apiconfy\", \"audience\": \"partner-api\", \"subject\": \"svc-catalog\" },\n            \"expiresInSeconds\": 300,\n            \"requestHeader\": \"Authorization\",\n            \"tokenPrefix\": \"Bearer \"\n          }\n        }\n      },\n      \"payloadTemplate\": { \"catalogId\": \"{$context.catalogId}\", \"full\": true },\n      \"validation\": {\n        \"fields\": [\n          { \"path\": \"catalogId\", \"required\": true, \"type\": \"string\" },\n          { \"path\": \"full\", \"required\": true, \"type\": \"boolean\" }\n        ]\n      }\n    },\n    \"timeout\": { \"response\": 8000 },\n    \"resilience\": { \"retryCount\": 2, \"retryDelay\": 300, \"backoff\": \"exponential\", \"retryOn\": [502, 503] },\n    \"output\": {\n      \"validation\": { \"rules\": [{ \"expression\": \"{$output.synced} != null\", \"message\": \"synced flag missing\" }] },\n      \"transformation\": { \"syncCatalogResponse\": { \"synced\": \"{$output.synced}\", \"catalogId\": \"{$context.catalogId}\" } }\n    }\n  },\n  \"condition\": \"{$context.catalogId} != null\",\n  \"metaData\": { \"owner\": \"partner-integrations\", \"auth\": \"jwt-local\" }\n}" },
                 "description": "Expected 201. Required keys: `algorithm` (`HS256`/`HS384`/`HS512`/`RS256` — `none` is not expressible), `secretOrPrivateKey`. An inline HS* key must be at least 32 bytes (RFC 7518 §3.1); an `{$env.NAME}` reference is length-checked at invoke. `claims` + `expiresInSeconds` (default 300) are what make the JWT acceptable to a real IdP — without them it carries no `exp` and is a non-expiring credential. `secretOrPrivateKey` is name-masked on read: a literal comes back `***`."
               }
             },
@@ -1044,9 +1074,9 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "url": "{{base_url}}/api/v1/services/auth-demo/basic_post/invoke",
-                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
-                "description": "Registration already validates the auth block, but the token runtime is Phase 4, so invoking returns NOT_IMPLEMENTED with attempts=0 and no env resolution — the guard runs before dispatch, deliberately: sending the call without its auth header would be worse than refusing.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 2\n  }\n}\n```"
+                "url": "{{base_url}}/api/v1/services/partner/sync_catalog/invoke",
+                "body": { "mode": "raw", "raw": "{\"catalogId\": \"cat-1\"}" },
+                "description": "Registration already validates the auth block, but only `basic` and `oauth2` execute; `jwt.local` signing and `jwt.external` are still Phase 4, so invoking a `jwt` block returns NOT_IMPLEMENTED with attempts=0 and no env resolution — the guard runs before dispatch, deliberately: sending the call without its auth header would be worse than refusing.\n\nExpected error envelope:\n```json\n{\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth.jwt\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth.jwt\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  }\n}\n```"
               }
             }
           ]
@@ -1292,7 +1322,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"context\": { \"a\": 2, \"b\": 3 } }" },
+                "body": { "mode": "raw", "raw": "{\"a\": 2, \"b\": 3}" },
                 "url": { "raw": "{{base_url}}/api/v1/services/calc-service/add_numbers/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "add_numbers", "invoke"] },
                 "description": "Expected 200 with data.sum = 5 — the contribution delta is the response."
               }
@@ -1336,7 +1366,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"context\": { \"subtotal\": 100, \"customer\": { \"id\": \"C-1\", \"name\": \"Ada\" } } }" },
+                "body": { "mode": "raw", "raw": "{\"subtotal\": 100, \"customer\": {\"id\": \"C-1\", \"name\": \"Ada\"}}" },
                 "url": { "raw": "{{base_url}}/api/v1/services/calc-service/calculate_total/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "calculate_total", "invoke"] },
                 "description": "Expected 200: total 110, label \"Order for Ada\", echoOk true, customer.verified true, auditMarker present; the nested echo call is a separate execution row."
               }
@@ -1346,7 +1376,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"context\": { \"skip\": true } }" },
+                "body": { "mode": "raw", "raw": "{\"skip\": true}" },
                 "url": { "raw": "{{base_url}}/api/v1/services/calc-service/calculate_total/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "calculate_total", "invoke"] },
                 "description": "Expected 200, skippedExecution: true, data null, attempts=0."
               }
@@ -1410,7 +1440,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                "body": { "mode": "raw", "raw": "{}" },
                 "url": { "raw": "{{base_url}}/api/v1/services/calc-service/non_function/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "non_function", "invoke"] },
                 "description": "SCRIPT_ERROR with details.reason = \"not-a-function\"."
               }
@@ -1430,7 +1460,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                "body": { "mode": "raw", "raw": "{}" },
                 "url": { "raw": "{{base_url}}/api/v1/services/calc-service/throwing/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "throwing", "invoke"] },
                 "description": "SCRIPT_ERROR with details.reason = \"threw\"; the message never reaches the wire."
               }
@@ -1450,7 +1480,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                "body": { "mode": "raw", "raw": "{}" },
                 "url": { "raw": "{{base_url}}/api/v1/services/calc-service/big_int/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "big_int", "invoke"] },
                 "description": "SCRIPT_ERROR with details.reason = \"not-serializable\"."
               }
@@ -1470,7 +1500,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                "body": { "mode": "raw", "raw": "{}" },
                 "url": { "raw": "{{base_url}}/api/v1/services/calc-service/looping/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "looping", "invoke"] },
                 "description": "TIMEOUT: the worker is terminated at ~timeout.response; attempts=1."
               }

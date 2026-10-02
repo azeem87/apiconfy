@@ -133,21 +133,25 @@ POST /api/v1/services/customer-service/create_customer/invoke
 Content-Type: application/json
 
 {
-  "context": {
-    "id": "12345"
-  }
+  "id": "12345"
 }
 ```
+
+The body is the context itself — send the API payload as-is. Wrapping it as
+`{ "context": { "id": "12345" } }` is also accepted.
 
 **Response:**
 
 ```json
 {
-  "success": true,
-  "data": { "createCustomerResponse": { "customerId": "12345" } },
-  "meta": { "executionId": "uuid", "durationMs": 25 }
+  "data": { "createCustomerResponse": { "customerId": "12345" } }
 }
 ```
+
+On failure the HTTP status carries the outcome and the body is
+`{ "error": { "code", "message", "details" } }`. The execution id is returned in the
+`Execution-Id` response header (use it with `GET /api/v1/executions/:id`).
+For upstream failures `error.details.body` is the upstream's own response body.
 
 The runtime looks up the stored definition, executes it against the external system, applies the response mapping, and returns the transformed result — no custom client code required. This mirrors a register-once, invoke-anywhere model rather than a static config file checked into the repo, since definitions are expected to be created, updated, and queried at runtime (e.g. from an admin UI or another service).
 
@@ -436,13 +440,13 @@ A [Postman collection](postman/apiconfy.postman_collection.json) is included for
 
 The collection is organized **by component type**. REST → Invoke and **Script** contain ordered
 Simple Examples, Complex Examples and Error Cases: register each example before invoking it.
-Invoke scripts save `meta.executionId` as `execution_id` for execution lookup. The simple
+Invoke scripts save the `Execution-Id` response header as `execution_id` for execution lookup. The simple
 scenario calls the local health endpoint; the Script complex example calls a registered REST
 echo through the script bridge. Complex scenarios use `upstream_url` (default
 `https://httpbin.org`); send only dummy data or point it at your own compatible server.
 
-Existing auth/circuit-breaker complex examples are **registration-only** until their
-execution capabilities arrive. Runnable complex examples include every supported
+Complex examples with `auth.jwt` or circuit-breaker are **registration-only** until their
+execution capabilities arrive (`auth.basic` and `auth.oauth2` execute). Runnable complex examples include every supported
 section (request, timeout, retry, condition, request-payload validation, response
 validation, transformation and metadata) and intentionally omit unsupported
 auth/circuit-breaker fields. The REST → TLS Certificates group is registration-only
@@ -451,7 +455,7 @@ component folders (Mapper, Database, SQS) show the same `validation` block in th
 
 ### Phase 2 invocation behavior
 
-- `POST /api/v1/services/:service/:action/invoke` requires `{ "context": { ... } }`.
+- `POST /api/v1/services/:service/:action/invoke` takes the context as the JSON body, raw or wrapped in a lone `{ "context": { ... } }`.
   False conditions return a successful skip without resolving environment references or
   calling upstream.
 - Request fields live under `config.request`. JSON and form-urlencoded bodies are supported.
@@ -476,8 +480,12 @@ component folders (Mapper, Database, SQS) show the same `validation` block in th
 - `timeout.response` defaults to 30 seconds **per attempt**, including response-body reads.
   Retries use fixed/exponential backoff; never retry 4xx. Retrying writes may duplicate
   upstream side effects unless that upstream provides idempotency.
-- Auth, circuit breakers, connect/socket/idle timeouts and unsupported request content types
+- `auth.jwt`, circuit breakers, connect/socket/idle timeouts and unsupported request content types
   return `501 NOT_IMPLEMENTED` at invocation.
+- **Auth (REST):** `auth.basic` sends `Authorization: Basic base64(username:password)`. `auth.oauth2`
+  fetches a `client_credentials` token (`clientAuth: basic|body`, `scope`, `audience`, `auth.ssl` for the
+  token endpoint), caches it in memory, and replays the call once after a 401 with a fresh token. No
+  `accessToken` is passed by the caller; credentials come from config (use `{$env.*}` references).
 - **TLS certificates (REST):** trust an HTTPS API's private CA with `request.ssl.ca`. Give one list
   entry per certificate file: `"ssl": { "ca": ["<root>", "<issuing CA>"] }` (a single string also
   works). Each entry is either the **text of a PEM file** (starts with `-----BEGIN CERTIFICATE-----`;
@@ -552,7 +560,7 @@ without `API_KEY`.
 
 ## Project Status
 
-🚧 **Early Development — Phase 3 complete; Phase 3.5 implemented on a feature branch**
+🚧 **Early Development — Phases 0–3.6 complete; Phase 4 (auth) in progress**
 
 - ✅ Phase 0 (Foundation): monorepo scaffolded, Hono API server running, SQLite DB adapter operational, PostgreSQL adapter seam, CI pipeline active.
 - ✅ Phase 1 (Component Registry): register, list, get, and delete component definitions via REST API.
@@ -561,15 +569,18 @@ without `API_KEY`.
   executable Postman scenarios, alongside the Phase 1 regression suite.
 - ✅ Phase 3 (Multi-DB): PostgreSQL, Oracle, MongoDB and Couchbase adapters pass the
   shared parity suite alongside SQLite.
-- 🟡 Phase 3.5 (Local Script Component): `componentType: "script"` — mutation-only contract,
+- ✅ Phase 3.5 (Local Script Component): `componentType: "script"` — mutation-only contract,
   `apiconfy` bridge tools with fully audited nested invokes, Worker-per-invocation with a hard
-  deadline. Implemented on `feature/phase3.5-script-component`, pending merge.
+  deadline.
+- ✅ Phase 3.6 (REST TLS certificates): `request.ssl` (PEM/DER `ca`, mTLS) and `disableSSL`.
+- 🟡 Phase 4 (Auth): the auth config surface is merged; `auth.basic` and `auth.oauth2`
+  (`client_credentials`) execute with token caching and a single replay on 401. The invoke body is
+  the context itself, and responses are slimmed to `{ data }` / `{ error }` with the execution id in
+  the `Execution-Id` header. `auth.jwt` (local/external) execution is still pending.
 
 See the [Implementation Roadmap](plans/roadmap.md) for phase-by-phase details.
 
-**Next milestone:** merge Phase 3.5, then Phase 3.6 — REST TLS certificates
-(`plans/tls-certificates.md`), then Phase 4 — auth & connection handling (`plans/auth-proxy.md`),
-then Phase 5 workflows.
+**Next milestone:** `auth.jwt` execution (`plans/auth-proxy.md`), then Phase 5 workflows.
 
 ---
 

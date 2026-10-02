@@ -42,27 +42,29 @@ it('executes through two real HTTP servers and returns a queryable redacted exec
     expect(registration.status).toBe(201);
     const invocation = await fetch(new URL('/api/v1/services/network/create/invoke', server.url), {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ context: { id: 42, password: 'caller-password' } }),
+      body: JSON.stringify({ id: 42, password: 'caller-password' }),
     });
     expect(invocation.status).toBe(200);
     const result = await invocation.json();
+    const executionId = invocation.headers.get('execution-id')!;
+    expect(result).not.toHaveProperty('meta');
     expect(result.data).toEqual({ networkResponse: { id: 'network-1', echo: '***' } });
-    expect(requests).toEqual([{ path: '/items/42', executionId: result.meta.executionId, body: { number: 42 } }]);
+    expect(requests).toEqual([{ path: '/items/42', executionId: executionId, body: { number: 42 } }]);
     // Execution recording is queued off the response path (see QueuedExecutionRecorder);
     // drain deterministically instead of polling for the write to land.
     await drainExecutionQueue();
-    const retrieved = await fetch(new URL(`/api/v1/executions/${result.meta.executionId}`, server.url));
+    const retrieved = await fetch(new URL(`/api/v1/executions/${executionId}`, server.url));
     expect(retrieved.status).toBe(200);
     const execution = (await retrieved.json()).data;
     expect(execution).toMatchObject({ status: 'COMPLETED', attempts: 1, context: { password: '***' } });
-    expect(await db.getExecutionLogs(result.meta.executionId)).toHaveLength(1);
+    expect(await db.getExecutionLogs(executionId)).toHaveLength(1);
     const skipped = await fetch(new URL('/api/v1/services/network/create/invoke', server.url), {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"context":{"id":null}}',
     });
     expect((await skipped.json()).skippedExecution).toBe(true);
     const rejected = await fetch(new URL('/api/v1/services/network/create/invoke', server.url), {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ context: { id: 1 } }),
+      body: JSON.stringify({ id: 1 }),
     });
     expect(rejected.status).toBe(400);
     expect((await rejected.json()).error).toMatchObject({
