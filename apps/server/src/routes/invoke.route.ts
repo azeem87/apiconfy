@@ -6,7 +6,16 @@ import { AppError, ValidationError, generateId } from '@/lib/index.js';
 import { toInvocationFailure } from '@/lib/envelope.js';
 
 // The request body is the invocation context itself — the caller sends the API payload as-is.
+// A body whose only key is an object-valued `context` is also accepted and unwrapped.
 const InvocationRequestSchema = z.record(z.unknown());
+
+function unwrapContext(body: Record<string, unknown>): Record<string, unknown> {
+  const keys = Object.keys(body);
+  const wrapped = body.context;
+  const isWrapped = keys.length === 1 && keys[0] === 'context'
+    && wrapped !== null && typeof wrapped === 'object' && !Array.isArray(wrapped);
+  return isWrapped ? wrapped as Record<string, unknown> : body;
+}
 
 export function invokeRoute(executor: RuntimeExecutor): Hono {
   const router = new Hono();
@@ -20,10 +29,11 @@ export function invokeRoute(executor: RuntimeExecutor): Hono {
           path: issue.path, message: issue.message,
         })));
       }
-      return c.json(await executor.invoke({
+      const { success: _success, ...result } = await executor.invoke({
         service: c.req.param('service'), action: c.req.param('action'),
-        context: parsed.data, executionId, startedAtMs,
-      }));
+        context: unwrapContext(parsed.data), executionId, startedAtMs,
+      });
+      return c.json(result);
     } catch (caught) {
       const failure = toInvocationFailure(caught, executionId, startedAtMs);
       // Surface the upstream's own status (e.g. 401) instead of the gateway's generic 502.
@@ -32,7 +42,11 @@ export function invokeRoute(executor: RuntimeExecutor): Hono {
         : undefined;
       const error = caught instanceof AppError ? caught : new AppError('Internal server error', 'INTERNAL_ERROR');
       const statusCode = downstreamStatus ?? error.statusCode;
-      return c.json(failure, statusCode as ContentfulStatusCode);
+      const { error: failed, meta } = failure;
+      const downstream = (failed.details as { downstream?: { body?: unknown } } | undefined)?.downstream;
+      const details = failed.code === 'EXTERNAL_ERROR' && downstream ? { body: downstream.body } : failed.details;
+      return c.json({ error: { code: failed.code, message: failed.message, details }, meta },
+        statusCode as ContentfulStatusCode);
     }
   });
   return router;

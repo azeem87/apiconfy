@@ -108,7 +108,7 @@ describe('Phase 2 invocation API', () => {
       const res = await invoke(body);
       expect(res.status).toBe(400);
       const result = await res.json();
-      expect(result).toMatchObject({ success: false, data: null, error: { code: 'VALIDATION_FAILED' } });
+      expect(result).toMatchObject({ error: { code: 'VALIDATION_FAILED' } });
       expect(result.meta.executionId).toBeString();
       expect(await db.getExecution(result.meta.executionId)).toBeNull();
       expect(calls).toHaveLength(0);
@@ -130,7 +130,7 @@ describe('Phase 2 invocation API', () => {
     }, '{$context.id} == null');
     for (let index = 0; index < 2; index += 1) {
       const result = await (await invoke()).json();
-      expect(result).toMatchObject({ success: true, data: null, skippedExecution: true });
+      expect(result).toMatchObject({ data: null, skippedExecution: true });
       expect(await recorded(result)).toMatchObject({ status: 'COMPLETED', attempts: 0, result: null });
       expect((await db.getExecutionLogs(result.meta.executionId))[0].status).toBe('skipped');
     }
@@ -146,7 +146,7 @@ describe('Phase 2 invocation API', () => {
     const res = await invoke();
     const result = await res.json();
     expect(res.status).toBe(422);
-    expect(result.data).toBeNull();
+    expect(result).not.toHaveProperty('data');
     expect(result.error).toEqual({
       code: 'VALIDATION_FAILED', message: 'false',
       details: { expression: '{$output.id} != null', errorPath: '{$output.message}' },
@@ -156,6 +156,29 @@ describe('Phase 2 invocation API', () => {
       id: null, caller: 7, error: { code: 'VALIDATION_FAILED', details: [{ path: '{$output.id}' }] },
     });
     expect(JSON.parse((await db.getExecutionLogs(result.meta.executionId))[0].responseData!)).toEqual(record.result);
+  });
+
+  it('accepts the context both raw and wrapped in a lone { context } key', async () => {
+    await register({ request: { ...request, payloadTemplate: { input: '{$context.id}' } }, output });
+    for (const body of [{ id: 7 }, { context: { id: 7 } }]) {
+      const res = await invoke(body);
+      expect(res.status).toBe(200);
+      expect((await res.json()).data.itemResponse).toBeDefined();
+    }
+    expect(calls.map(call => JSON.parse(String(call.init?.body)))).toEqual([{ input: 7 }, { input: 7 }]);
+    expect(calls.map(call => call.uri)).toEqual(['https://example.test/items/7', 'https://example.test/items/7']);
+  });
+
+  it('returns upstream failures as { error: { details: { body } } } without success, data or downstream', async () => {
+    upstream = async () => json({ errorCode: 'E1' }, 500);
+    await register({ request, output });
+    const res = await invoke();
+    expect(res.status).toBe(500);
+    const result = await res.json();
+    expect(result).toEqual({
+      error: { code: 'EXTERNAL_ERROR', message: 'External API returned 500', details: { body: { errorCode: 'E1' } } },
+      meta: { executionId: expect.any(String), durationMs: expect.any(Number) },
+    });
   });
 
   it('preserves upstream failure as primary even when rules fail, and still transforms', async () => {
@@ -179,7 +202,7 @@ describe('Phase 2 invocation API', () => {
     } });
     upstream = async () => calls.length < 3 ? json({}, 503) : json({ ok: true });
     const result = await (await invoke()).json();
-    expect(result.success).toBe(true);
+    expect(result).not.toHaveProperty('error');
     expect((await recorded(result)).attempts).toBe(3);
     await register({ request, resilience: { retryCount: 2, retryDelay: 1 } });
     upstream = async () => json({}, 500);
@@ -397,8 +420,6 @@ describe('Phase 2 invocation API', () => {
     expect(res.status).toBe(400);
     const result = await res.json();
     expect(result).toMatchObject({
-      success: false,
-      data: null,
       error: {
         code: 'VALIDATION_FAILED',
         message: 'userId is required',
@@ -453,7 +474,7 @@ describe('Phase 2 invocation API', () => {
       request: { ...request, validation: { fields: [{ path: 'userId', required: true }] } },
     }, '{$context.enabled} == true');
     const result = await (await invoke({})).json();
-    expect(result).toMatchObject({ success: true, data: null, skippedExecution: true });
+    expect(result).toMatchObject({ data: null, skippedExecution: true });
     expect(calls).toHaveLength(0);
   });
 
@@ -543,7 +564,7 @@ describe('Phase 3.5 script component', () => {
 
     expect(res.status).toBe(200);
     const result = await res.json();
-    expect(result.success).toBe(true);
+    expect(result).not.toHaveProperty('error');
     expect(result.data).toEqual({ sum: 5 });
     expect(calls).toHaveLength(0);
 
@@ -568,7 +589,7 @@ describe('Phase 3.5 script component', () => {
     );
     const result = await (await invokeScript('skippy', { run: false })).json();
 
-    expect(result).toMatchObject({ success: true, data: null, skippedExecution: true });
+    expect(result).toMatchObject({ data: null, skippedExecution: true });
     expect((await recordOf(result)).attempts).toBe(0);
   });
 
@@ -635,7 +656,7 @@ describe('Phase 3.5 script component', () => {
     });
     const result = await (await invokeScript('wf')).json();
 
-    expect(result.success).toBe(true);
+    expect(result).not.toHaveProperty('error');
     expect(result.data.wf.success).toBe(false);
     expect(result.data.wf.error.code).toBe('NOT_IMPLEMENTED');
   });

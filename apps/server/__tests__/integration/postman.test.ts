@@ -105,7 +105,7 @@ it('runs every ordered REST and Script Postman example against deterministic loc
           expect(body.data.auditMarker.touchedBy).toBe('calc-script');
         }
         if (item.name === 'Invoke complex script — condition false') {
-          expect(body).toMatchObject({ success: true, data: null, skippedExecution: true });
+          expect(body).toMatchObject({ data: null, skippedExecution: true });
         }
         if (item.name === '500 — expression is not a function') {
           expect(body.error.details).toEqual({ reason: 'not-a-function' });

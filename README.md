@@ -133,21 +133,25 @@ POST /api/v1/services/customer-service/create_customer/invoke
 Content-Type: application/json
 
 {
-  "context": {
-    "id": "12345"
-  }
+  "id": "12345"
 }
 ```
+
+The body is the context itself — send the API payload as-is. Wrapping it as
+`{ "context": { "id": "12345" } }` is also accepted.
 
 **Response:**
 
 ```json
 {
-  "success": true,
   "data": { "createCustomerResponse": { "customerId": "12345" } },
   "meta": { "executionId": "uuid", "durationMs": 25 }
 }
 ```
+
+On failure the HTTP status carries the outcome and the body is
+`{ "error": { "code", "message", "details" }, "meta": { "executionId", "durationMs" } }`.
+For upstream failures `error.details.body` is the upstream's own response body.
 
 The runtime looks up the stored definition, executes it against the external system, applies the response mapping, and returns the transformed result — no custom client code required. This mirrors a register-once, invoke-anywhere model rather than a static config file checked into the repo, since definitions are expected to be created, updated, and queried at runtime (e.g. from an admin UI or another service).
 
@@ -451,7 +455,7 @@ component folders (Mapper, Database, SQS) show the same `validation` block in th
 
 ### Phase 2 invocation behavior
 
-- `POST /api/v1/services/:service/:action/invoke` requires `{ "context": { ... } }`.
+- `POST /api/v1/services/:service/:action/invoke` takes the context as the JSON body, raw or wrapped in a lone `{ "context": { ... } }`.
   False conditions return a successful skip without resolving environment references or
   calling upstream.
 - Request fields live under `config.request`. JSON and form-urlencoded bodies are supported.
