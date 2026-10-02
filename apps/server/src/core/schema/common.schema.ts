@@ -255,8 +255,20 @@ export const JwtExternalConfigSchema = z.object({
       message: 'requestBody must not redefine username, password or client_secret — use the block fields',
     });
   }
-  // Header placement sends the credentials as a Basic header.
-  if (config.credentialPlacement !== 'body' && config.username.includes(':')) {
+  // This block carries username/password and rejects `client_secret` above, so a client_credentials
+  // grant can never authenticate here — that shape is the oauth2 block's job.
+  const grantType = Object.entries(config.requestBody ?? {})
+    .find(([key]) => key.toLowerCase() === 'grant_type')?.[1];
+  if (typeof grantType === 'string' && grantType.toLowerCase() === 'client_credentials') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['requestBody'],
+      message: 'grant_type "client_credentials" belongs in the oauth2 block (clientId/clientSecret, clientAuth "basic" or "body") — jwt.external is the password/bespoke shape',
+    });
+  }
+  // Only explicit header placement builds a Basic header. The default is 'body', where the username
+  // is a form-encoded value and ':' is legal.
+  if (config.credentialPlacement === 'header' && config.username.includes(':')) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['username'], message: BASIC_USERNAME_MESSAGE });
   }
 });

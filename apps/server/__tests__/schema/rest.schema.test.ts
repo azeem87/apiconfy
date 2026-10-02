@@ -132,12 +132,28 @@ describe('RestConfigSchema', () => {
       expect(RestConfigSchema.safeParse(withAuth({ oauth2 })).success).toBe(true);
     });
 
-    it('rejects a ":" username for jwt.external header placement only', () => {
+    it('rejects a ":" username only for explicit header placement (the default is body)', () => {
       const colon = { ...external, username: 'a:b' };
-      expect(RestConfigSchema.safeParse(withAuth({ jwt: { external: colon } })).success).toBe(false);
+      // Omitted credentialPlacement is the documented 'body' default, where the username is a
+      // form-encoded value and ':' is legal.
+      expect(RestConfigSchema.safeParse(withAuth({ jwt: { external: colon } })).success)
+        .toBe(true);
       expect(RestConfigSchema.safeParse(withAuth({
         jwt: { external: { ...colon, credentialPlacement: 'body' } },
       })).success).toBe(true);
+      expect(RestConfigSchema.safeParse(withAuth({
+        jwt: { external: { ...colon, credentialPlacement: 'header' } },
+      })).success).toBe(false);
+    });
+
+    it('rejects a client_credentials grant inside jwt.external', () => {
+      const externalGrant = (requestBody: unknown) =>
+        withAuth({ jwt: { external: { ...external, requestBody } } });
+      expect(RestConfigSchema.safeParse(externalGrant({ grant_type: 'client_credentials' })).success)
+        .toBe(false);
+      expect(RestConfigSchema.safeParse(externalGrant({ Grant_Type: 'client_credentials' })).success)
+        .toBe(false);
+      expect(RestConfigSchema.safeParse(externalGrant({ grant_type: 'password' })).success).toBe(true);
     });
 
     it('requires a PEM private key for RS256 unless it is an {$env} reference', () => {
