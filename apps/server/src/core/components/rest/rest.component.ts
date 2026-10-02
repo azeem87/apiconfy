@@ -1,10 +1,12 @@
 import type {
   ComponentExecuteParams, ComponentExecuteResult, ComponentHandler, ComponentRequestSummary,
 } from '@/core/components/base.js';
-import type { RequestConfig, ValidationField } from '@/core/types.js';
+import type { RequestConfig, TimeoutConfig, ValidationField } from '@/core/types.js';
 import { resolveTemplate } from '@/core/transform/index.js';
 import { AuthRuntime, type AuthBlock } from '@/core/auth/authenticator.js';
 import { buildTlsOptions } from './tls.js';
+import { DEFAULT_TIMEOUT_MS } from '@/core/runtime/resilience-executor.js';
+import { timedRequest } from './timed-transport.js';
 import { mediaType, parseResponseBody } from '@/lib/http.js';
 import {
   AppError, ConnectionError, ExternalServiceError, NotImplementedError, TimeoutError, TransformationError,
@@ -18,21 +20,24 @@ export class RestComponent implements ComponentHandler {
 
   private readonly authRuntime: AuthRuntime;
 
-  constructor(private readonly httpRequest: typeof fetch = globalThis.fetch) {
-    this.authRuntime = new AuthRuntime(httpRequest);
+  private readonly httpRequest: typeof fetch;
+
+  /** An injected `httpRequest` (tests) replaces both transports; connect/read timeouts need the default. */
+  private readonly useSocketTransport: boolean;
+
+  constructor(httpRequest?: typeof fetch) {
+    this.useSocketTransport = httpRequest === undefined;
+    this.httpRequest = httpRequest ?? globalThis.fetch;
+    this.authRuntime = new AuthRuntime(this.httpRequest);
   }
 
   assertExecutable(config: Record<string, unknown>): void {
     const request = (config.request ?? {}) as Partial<RequestConfig>;
-    const timeout = (config.timeout ?? {}) as Record<string, unknown>;
     const resilience = (config.resilience ?? {}) as Record<string, unknown>;
     const unsupported: Array<{ field: string; phase: string }> = [];
     if (request.auth?.jwt !== undefined) unsupported.push({ field: 'config.request.auth.jwt', phase: 'Phase 4' });
     if (resilience.circuitBreaker !== undefined) {
       unsupported.push({ field: 'config.resilience.circuitBreaker', phase: 'post-v1' });
-    }
-    for (const field of ['connect', 'socket', 'idle']) {
-      if (timeout[field] !== undefined) unsupported.push({ field: `config.timeout.${field}`, phase: 'post-v1' });
     }
     if (request.contentType && ![JSON_TYPE, FORM_TYPE].includes(mediaType(request.contentType))) {
       unsupported.push({ field: 'config.request.contentType', phase: 'unscheduled' });
@@ -43,6 +48,17 @@ export class RestComponent implements ComponentHandler {
         { unsupported }
       );
     }
+  }
+
+  private dispatch(uri: string, init: RequestInit, timeouts: TimeoutConfig | undefined): Promise<Response> {
+    // With every timeout at its 60 s default, requestTimeout fires first, so fetch suffices.
+    const needsSocketTransport = timeouts?.connectTimeout !== undefined || timeouts?.readTimeout !== undefined
+      || (timeouts?.requestTimeout ?? 0) > DEFAULT_TIMEOUT_MS;
+    if (!this.useSocketTransport || !needsSocketTransport) return this.httpRequest(uri, init);
+    return timedRequest(uri, init, {
+      connectTimeout: timeouts?.connectTimeout ?? DEFAULT_TIMEOUT_MS,
+      readTimeout: timeouts?.readTimeout ?? DEFAULT_TIMEOUT_MS,
+    });
   }
 
   validationFields(config: Record<string, unknown>): ValidationField[] {
@@ -99,15 +115,16 @@ export class RestComponent implements ComponentHandler {
     params.onRequest?.(summary);
     const tls = buildTlsOptions(request.ssl, request.disableSSL);
     const auth = request.auth as AuthBlock | undefined;
+    const timeouts = params.config.timeout as TimeoutConfig | undefined;
     const onSecret = params.onSecret ?? (() => {});
     const send = async (): Promise<Response> => {
       if (auth) {
         const material = await this.authRuntime.resolve(auth, params.signal, onSecret);
         headers.set(material.name, material.value);
       }
-      return this.httpRequest(uri, {
+      return this.dispatch(uri, {
         method: request.method, headers, body, signal: params.signal, ...(tls ? { tls } : {}),
-      } as RequestInit);
+      } as RequestInit, timeouts);
     };
     try {
       let response = await send();

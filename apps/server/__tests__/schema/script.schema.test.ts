@@ -55,10 +55,8 @@ describe('ScriptConfigSchema', () => {
       { ssl: {} },
       { payloadTemplate: {} },
       { resilience: { retryCount: 1 } },
-      { timeout: { response: 1000 } },
-      { timeout: { connect: 1000 } },
-      { timeout: { socket: 1000 } },
-      { timeout: { idle: 1000 } },
+      { timeout: { readTimeout: 1000 } },
+      { timeout: { connectTimeout: 1000 } },
     ]) {
       expect(
         ScriptConfigSchema.safeParse({ ...minimal, ...extra }).success,

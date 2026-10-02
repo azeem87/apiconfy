@@ -21,7 +21,7 @@ const SCRIPT_DEFAULT_TIMEOUT_MS = 60_000;
 
 /** A script's `timeout` is a bare number of ms (default 60 s); REST uses the object form. */
 function toTimeoutConfig(componentType: string, timeout: unknown): TimeoutConfig | undefined {
-  if (componentType === 'script') return { response: typeof timeout === 'number' ? timeout : SCRIPT_DEFAULT_TIMEOUT_MS };
+  if (componentType === 'script') return { requestTimeout: typeof timeout === 'number' ? timeout : SCRIPT_DEFAULT_TIMEOUT_MS };
   return timeout as TimeoutConfig | undefined;
 }
 

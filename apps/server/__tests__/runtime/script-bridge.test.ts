@@ -40,9 +40,7 @@ describe('createScriptHostBridge', () => {
 
     expect(result.success).toBe(true);
     expect((result as { data: unknown }).data).toEqual({ echoed: 'items' });
-    expect(typeof result.meta.executionId).toBe('string');
-    expect(result.meta.executionId.length).toBeGreaterThan(0);
-    expect(result.meta.durationMs).toBeGreaterThanOrEqual(0);
+    expect(result).not.toHaveProperty('meta');
     // The executor received the caller's context verbatim.
     expect(captured.params.context).toEqual({ id: 7 });
     expect(captured.params.service).toBe('items');
@@ -59,7 +57,7 @@ describe('createScriptHostBridge', () => {
     expect(result.data).toBeNull();
     expect((result as { error: { code: string } }).error.code).toBe('NOT_FOUND');
     expect((result as { error: { message: string } }).error.message).toBe('Service not found: x/y');
-    expect(typeof result.meta.executionId).toBe('string');
+    expect(result).not.toHaveProperty('meta');
   });
 
   it('maps a non-AppError throw to INTERNAL_ERROR', async () => {

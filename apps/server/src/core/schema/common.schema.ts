@@ -6,10 +6,9 @@ import { isEnvRef } from '@/core/env-ref/index.js';
 import { hasSelfSignedRoot, isCertificateMaterial, isPrivateKeyPem } from '@/lib/tls-material.js';
 
 export const TimeoutConfigSchema = z.object({
-  connect: z.number().int().positive().optional(),
-  socket: z.number().int().positive().optional(),
-  response: z.number().int().positive().max(120_000).optional(),
-  idle: z.number().int().positive().optional(),
+  connectTimeout: z.number().int().positive().optional(),
+  readTimeout: z.number().int().positive().max(120_000).optional(),
+  requestTimeout: z.number().int().positive().max(120_000).optional(),
 }).strict();
 
 export const CircuitBreakerConfigSchema = z.object({
@@ -23,7 +22,7 @@ export const ResilienceConfigSchema = z.object({
   retryCount: z.number().int().min(0).max(10).optional(),
   retryDelay: z.number().int().positive().optional(),
   backoff: z.enum(['fixed', 'exponential']).optional(),
-  maxDelay: z.number().int().positive().max(60_000).optional(),
+  maxElapsedTime: z.number().int().positive().max(300_000).optional(),
   retryOn: z.array(z.number().int()).optional(),
   circuitBreaker: CircuitBreakerConfigSchema.optional(),
 }).strict();

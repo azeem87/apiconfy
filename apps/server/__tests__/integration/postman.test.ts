@@ -104,7 +104,6 @@ it('runs every ordered REST and Script Postman example against deterministic loc
           expect(body.data.calculateTotalResponse.total).toBeCloseTo(110, 10);
           expect(body.data.calculateTotalResponse.label).toBe('Order for Ada');
           expect(body.data.calculateTotalResponse.echoOk).toBe(true);
-          expect(typeof body.data.calculateTotalResponse.echoExecution).toBe('string');
           expect(body.data.customer.verified).toBe(true);
           expect(body.data.auditMarker.touchedBy).toBe('calc-script');
         }

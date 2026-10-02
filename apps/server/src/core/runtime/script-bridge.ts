@@ -46,12 +46,17 @@ export type WorkflowExecutionResult =
       meta: Record<string, unknown>;
     };
 
+/** Same slim shape as the invoke route's body — the execution id is not echoed to the script. */
+export type ScriptInvokeResult =
+  | Omit<InvocationResult, 'meta'>
+  | Omit<InvocationFailure, 'meta'>;
+
 export interface ScriptHostBridge {
   /**
    * Runs a nested invoke through the in-process executor. Every call is a first-class execution:
    * its own audit rows, retries/duration, retrievable via `GET /api/v1/executions/:executionId`.
    */
-  invoke(request: ScriptInvokeRequest): Promise<InvocationResult | InvocationFailure>;
+  invoke(request: ScriptInvokeRequest): Promise<ScriptInvokeResult>;
   /** Phase 5: returns NOT_IMPLEMENTED until `createApp` passes a `WorkflowExecutor` (§4.7 seam). */
   executeWorkflow(request: ScriptWorkflowRequest): Promise<WorkflowExecutionResult>;
   /** Phase 5+: returns NOT_IMPLEMENTED until the `$gen.*` registry ships (§4.7 seam). */
@@ -92,10 +97,14 @@ export function createScriptHostBridge(deps: ScriptBridgeDeps): ScriptHostBridge
       const executionId = generateId();
       const startedAtMs = Date.now();
       try {
-        return await deps.runtime().invoke({ service, action, context, executionId, startedAtMs });
+        const { meta: _meta, ...result } = await deps.runtime().invoke({
+          service, action, context, executionId, startedAtMs,
+        });
+        return result;
       } catch (caught) {
         deps.logger.warn({ executionId, service, action }, 'Script-initiated invoke failed');
-        return toInvocationFailure(caught, executionId, startedAtMs);
+        const { meta: _meta, ...failure } = toInvocationFailure(caught, executionId, startedAtMs);
+        return failure;
       }
     },
 
@@ -126,8 +135,8 @@ export function createScriptHostBridge(deps: ScriptBridgeDeps): ScriptHostBridge
 export function unavailableScriptBridge(): ScriptHostBridge {
   const unavailable = { code: 'NOT_IMPLEMENTED', message: 'Script bridge is not wired in this build' };
   return {
-    async invoke(): Promise<InvocationResult | InvocationFailure> {
-      return { success: false, data: null, error: unavailable, meta: { executionId: '', durationMs: 0 } };
+    async invoke(): Promise<ScriptInvokeResult> {
+      return { success: false, data: null, error: unavailable };
     },
     async executeWorkflow({ workflowName }): Promise<WorkflowExecutionResult> {
       return { success: false, data: null, error: unavailable, meta: { workflowName } };

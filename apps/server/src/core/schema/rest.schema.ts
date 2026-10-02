@@ -30,6 +30,24 @@ export const RestConfigSchema = z.object({
   resilience: ResilienceConfigSchema.optional(),
   output: OutputConfigSchema.optional(),
 }).strict().superRefine((config, ctx) => {
+  const maxElapsedTime = config.resilience?.maxElapsedTime;
+  if (maxElapsedTime !== undefined) {
+    if (!config.resilience?.retryCount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['resilience', 'maxElapsedTime'],
+        message: 'maxElapsedTime requires resilience.retryCount > 0',
+      });
+    }
+    const requestTimeout = config.timeout?.requestTimeout;
+    if (requestTimeout !== undefined && maxElapsedTime < requestTimeout) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['resilience', 'maxElapsedTime'],
+        message: 'maxElapsedTime must be >= timeout.requestTimeout',
+      });
+    }
+  }
   // Template fields only: `auth`/`ssl` carry credentials and PEM material, which the runtime never
   // template-resolves, so a literal `{$` there must not be treated as an expression.
   const templateFields: Array<[string[], unknown]> = [

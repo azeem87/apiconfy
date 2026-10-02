@@ -7,6 +7,8 @@ import { healthRoute } from '@/routes/health.js';
 import { servicesRoute } from '@/routes/services.route.js';
 import { invokeRoute } from '@/routes/invoke.route.js';
 import { executionsRoute } from '@/routes/executions.route.js';
+import { workflowsRoute } from '@/routes/workflows.route.js';
+import { WorkflowService } from '@/services/workflow.service.js';
 import { authMiddleware } from '@/middleware/auth.js';
 import { errorHandler } from '@/middleware/error.js';
 import { requestLogger } from '@/middleware/logger.js';
@@ -103,6 +105,7 @@ export function createApp(config: AppConfig, db: DBAdapter, deps: AppDependencie
   )));
   app.route('/api', invokeRoute(executor));
   app.route('/api', executionsRoute(executions));
+  app.route('/api', workflowsRoute(new WorkflowService(db, components, executor)));
 
   if (!config.apiKey) {
     logger.warn(

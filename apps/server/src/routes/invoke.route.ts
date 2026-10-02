@@ -3,7 +3,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import type { RuntimeExecutor } from '@/core/runtime/runtime-executor.js';
 import { AppError, ValidationError, generateId } from '@/lib/index.js';
-import { toInvocationFailure } from '@/lib/envelope.js';
+import { toInvokeErrorResponse } from '@/lib/envelope.js';
 
 // The request body is the invocation context itself — the caller sends the API payload as-is.
 // A body whose only key is an object-valued `context` is also accepted and unwrapped.
@@ -39,19 +39,9 @@ export function invokeRoute(executor: RuntimeExecutor): Hono {
       c.header(EXECUTION_ID_HEADER, meta.executionId);
       return c.json(result);
     } catch (caught) {
-      const failure = toInvocationFailure(caught, executionId, startedAtMs);
-      // Surface the upstream's own status (e.g. 401) instead of the gateway's generic 502.
-      const downstreamStatus = failure.error.code === 'EXTERNAL_ERROR'
-        ? (failure.error.details as { downstream?: { status?: number } } | undefined)?.downstream?.status
-        : undefined;
-      const error = caught instanceof AppError ? caught : new AppError('Internal server error', 'INTERNAL_ERROR');
-      const statusCode = downstreamStatus ?? error.statusCode;
-      const { error: failed } = failure;
-      const downstream = (failed.details as { downstream?: { body?: unknown } } | undefined)?.downstream;
-      const details = failed.code === 'EXTERNAL_ERROR' && downstream ? { body: downstream.body } : failed.details;
+      const { status, body } = toInvokeErrorResponse(caught);
       c.header(EXECUTION_ID_HEADER, executionId);
-      return c.json({ error: { code: failed.code, message: failed.message, details } },
-        statusCode as ContentfulStatusCode);
+      return c.json(body, status as ContentfulStatusCode);
     }
   });
   return router;

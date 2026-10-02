@@ -31,13 +31,35 @@ export function toInvocationFailure(
   executionId: string,
   startedAtMs: number
 ): InvocationFailure {
-  const error = caught instanceof AppError
-    ? caught
-    : new AppError('Internal server error', 'INTERNAL_ERROR');
   return {
     success: false,
     data: null,
-    error: { code: error.code, message: error.message, details: error.details },
+    error: toInvokeErrorResponse(caught).body.error,
     meta: { executionId, durationMs: Date.now() - startedAtMs },
+  };
+}
+
+/**
+ * The error body every invoke-style route returns: `{ error: { code, message, details } }`, with
+ * an upstream failure's `downstream` wrapper replaced by its `body`, placed directly in `details`. The status surfaces the
+ * upstream's own status (e.g. 401/422) instead of the gateway's generic 502.
+ */
+export function toInvokeErrorResponse(caught: unknown): {
+  status: number;
+  body: { error: { code: string; message: string; details: unknown } };
+} {
+  const appError = caught instanceof AppError ? caught : new AppError('Internal server error', 'INTERNAL_ERROR');
+  const downstream = appError.code === 'EXTERNAL_ERROR'
+    ? (appError.details as { downstream?: { status?: number; body?: unknown } } | undefined)?.downstream
+    : undefined;
+  return {
+    status: downstream?.status ?? appError.statusCode,
+    body: {
+      error: {
+        code: appError.code,
+        message: appError.message,
+        details: downstream ? downstream.body : appError.details,
+      },
+    },
   };
 }

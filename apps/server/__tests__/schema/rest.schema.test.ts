@@ -274,7 +274,7 @@ describe('RestConfigSchema', () => {
     const result = RestConfigSchema.safeParse({
       ...minimal,
       resilience: {
-        retryCount: 3, retryDelay: 100, backoff: 'exponential', maxDelay: 5000,
+        retryCount: 3, retryDelay: 100, backoff: 'exponential', maxElapsedTime: 60_000,
         retryOn: [502, 503],
         circuitBreaker: {
           failureThreshold: 5, windowSize: 60000, openDuration: 30000, halfOpenMaxAttempts: 2,
@@ -285,28 +285,33 @@ describe('RestConfigSchema', () => {
   });
 
   it('rejects a negative timeout', () => {
-    expect(RestConfigSchema.safeParse({ ...minimal, timeout: { connect: -1 } }).success).toBe(false);
+    expect(RestConfigSchema.safeParse({ ...minimal, timeout: { connectTimeout: -1 } }).success).toBe(false);
   });
 
-  it('rejects retryCount, maxDelay and timeout.response above their caps', () => {
+  it('rejects retryCount and timeout caps above their caps', () => {
     expect(RestConfigSchema.safeParse({
       ...minimal, resilience: { retryCount: 11 },
     }).success).toBe(false);
     expect(RestConfigSchema.safeParse({
-      ...minimal, resilience: { maxDelay: 61_000 },
-    }).success).toBe(false);
-    expect(RestConfigSchema.safeParse({
-      ...minimal, timeout: { response: 120_001 },
+      ...minimal, timeout: { readTimeout: 120_001, requestTimeout: 120_001 },
     }).success).toBe(false);
   });
 
-  it('accepts retryCount, maxDelay and timeout.response at their caps', () => {
+  it('accepts retryCount and timeout caps at their caps', () => {
     expect(RestConfigSchema.safeParse({
-      ...minimal, resilience: { retryCount: 10, maxDelay: 60_000 },
+      ...minimal, resilience: { retryCount: 10 },
     }).success).toBe(true);
     expect(RestConfigSchema.safeParse({
-      ...minimal, timeout: { response: 120_000 },
+      ...minimal, timeout: { connectTimeout: 3000, readTimeout: 120_000, requestTimeout: 120_000 },
     }).success).toBe(true);
+  });
+
+  it('validates resilience.maxElapsedTime against retryCount and requestTimeout', () => {
+    const parse = (extra: object) => RestConfigSchema.safeParse({ ...minimal, ...extra }).success;
+    expect(parse({ resilience: { maxElapsedTime: 60_000 } })).toBe(false);
+    expect(parse({ resilience: { retryCount: 2, maxElapsedTime: 10_000 }, timeout: { requestTimeout: 15_000 } })).toBe(false);
+    expect(parse({ resilience: { retryCount: 2, maxElapsedTime: 300_001 } })).toBe(false);
+    expect(parse({ resilience: { retryCount: 2, maxElapsedTime: 60_000 }, timeout: { requestTimeout: 15_000 } })).toBe(true);
   });
 
   it('accepts a {$env.} reference in a string-typed field', () => {
@@ -322,7 +327,7 @@ describe('RestConfigSchema', () => {
   it('rejects a {$env.} reference in a number-typed field', () => {
     const result = RestConfigSchema.safeParse({
       ...minimal,
-      timeout: { connect: '{$env.CRM_TIMEOUT}' },
+      timeout: { connectTimeout: '{$env.CRM_TIMEOUT}' },
     });
     expect(result.success).toBe(false);
   });
