@@ -19,6 +19,8 @@ export interface ResilienceExecutor {
 }
 
 export const DEFAULT_TIMEOUT_MS = 60_000;
+export const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
+export const DEFAULT_READ_TIMEOUT_MS = 30_000;
 export const DEFAULT_RETRY_DELAY_MS = 1000;
 export const DEFAULT_MAX_DELAY_MS = 30_000;
 export const DEFAULT_RETRY_ON = [500, 502, 503];

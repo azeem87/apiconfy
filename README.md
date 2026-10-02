@@ -477,7 +477,7 @@ component folders (Mapper, Database, SQS) show the same `validation` block in th
   including failed transformed output and actual dispatch attempts (zero before dispatch).
   Recording is queued off the response path (best-effort, not durable workflow recovery),
   so a lookup immediately after an invoke response can briefly 404 until the write lands.
-- `timeout.connectTimeout` bounds the TCP (+TLS) connect (`502 CONNECTION_ERROR`), `timeout.readTimeout` the idle time waiting for response data, re-armed per chunk (`504 TIMEOUT`), and `timeout.requestTimeout` (default 60 s, max 120 s) is the hard deadline of one attempt including body reads. connect/read timeouts use a socket-level transport that does not follow redirects.
+- `timeout.connectTimeout` (default 15 s) bounds the TCP (+TLS) connect (`502 CONNECTION_ERROR`), `timeout.readTimeout` (default 30 s) the idle time waiting for response data, re-armed per chunk (`504 TIMEOUT`), and `timeout.requestTimeout` (default 60 s, max 120 s) is the hard deadline of one attempt including body reads. connect/read timeouts use a socket-level transport that does not follow redirects.
 - `resilience.maxElapsedTime` (ms, max 300000) budgets all attempts plus backoff; it requires `retryCount > 0` and `>= timeout.requestTimeout`.
   Retries use fixed/exponential backoff; never retry 4xx. Retrying writes may duplicate
   upstream side effects unless that upstream provides idempotency.

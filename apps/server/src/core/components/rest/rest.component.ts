@@ -5,7 +5,7 @@ import type { RequestConfig, TimeoutConfig, ValidationField } from '@/core/types
 import { resolveTemplate } from '@/core/transform/index.js';
 import { AuthRuntime, type AuthBlock } from '@/core/auth/authenticator.js';
 import { buildTlsOptions } from './tls.js';
-import { DEFAULT_TIMEOUT_MS } from '@/core/runtime/resilience-executor.js';
+import { DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS } from '@/core/runtime/resilience-executor.js';
 import { timedRequest } from './timed-transport.js';
 import { mediaType, parseResponseBody } from '@/lib/http.js';
 import {
@@ -51,13 +51,10 @@ export class RestComponent implements ComponentHandler {
   }
 
   private dispatch(uri: string, init: RequestInit, timeouts: TimeoutConfig | undefined): Promise<Response> {
-    // With every timeout at its 60 s default, requestTimeout fires first, so fetch suffices.
-    const needsSocketTransport = timeouts?.connectTimeout !== undefined || timeouts?.readTimeout !== undefined
-      || (timeouts?.requestTimeout ?? 0) > DEFAULT_TIMEOUT_MS;
-    if (!this.useSocketTransport || !needsSocketTransport) return this.httpRequest(uri, init);
+    if (!this.useSocketTransport) return this.httpRequest(uri, init);
     return timedRequest(uri, init, {
-      connectTimeout: timeouts?.connectTimeout ?? DEFAULT_TIMEOUT_MS,
-      readTimeout: timeouts?.readTimeout ?? DEFAULT_TIMEOUT_MS,
+      connectTimeout: timeouts?.connectTimeout ?? DEFAULT_CONNECT_TIMEOUT_MS,
+      readTimeout: timeouts?.readTimeout ?? DEFAULT_READ_TIMEOUT_MS,
     });
   }
 
