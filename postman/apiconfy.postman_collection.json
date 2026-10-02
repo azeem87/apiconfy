@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Apiconfy",
-    "description": "API collection for Apiconfy integration runtime.\n\n## Setup\n1. Start the server with `pnpm dev` (install dependencies with pnpm only).\n2. Set base_url (default http://localhost:3000) and api_key if API_KEY is configured.\n3. REST > Invoke folders run in order: registration, invocation, execution lookup. Invoke scripts save execution_id. Execution recording is queued off the response path, so an execution-lookup request run immediately after invoke can occasionally 404 — rerun it once if that happens (Newman users: add a short delay or a retry-on-404 script).\n4. Complex/error examples use upstream_url (default https://httpbin.org). Use dummy data only, or your own httpbin-compatible upstream.\n\n## Structure — by component type\nHealth and Service Management retain existing requests. REST includes registration plus Phase 2 Invoke > Simple Examples, Complex Examples, Error Cases. Existing full auth registrations are registration-only; invoking them returns 501. TLS registrations (`request.ssl`, `disableSSL`) are executable since Phase 3.6, and a dedicated REST > Auth folder holds the auth examples — auth payloads must satisfy the Phase 4 schema because registration validates them even while the token runtime is pending. Runnable Phase 2 complex examples include every supported section and intentionally omit unsupported capabilities. Payload validation (request.validation.fields) is part of every complex example and has dedicated manual examples under REST > Payload Validation; the future component folders show the same block in their own sections. Mapper, Database, Script and SQS are future Phase 11 designs, not registered handlers in Phase 2; Scheduler is Phase 10.\n\n## Data bag\nInput uses {$context.*}; ephemeral raw upstream response uses {$output.*}. Response transformations wrap output under unique keys. Phase 2 returns transformed output directly and leaves context.output empty; callers must not supply context.output. Transformation still runs on failure: wire data is null, while GET /api/v1/executions/{{execution_id}} exposes the sanitized transformed, error-injected result. Merging into {$context.output.<uniqueKey>} is Phase 5 workflow behavior.\n\n## Limits\nOnly timeout.response is enforced, per attempt through body consumption. Auth (token runtime; registration-time validation is already live), connect/socket/idle (post-v1 — Bun's fetch exposes no per-request control for them), circuitBreaker and unsupported content types return 501. `request.ssl` and `disableSSL` execute since Phase 3.6, and `auth.ssl` governs the token endpoint. Phase 2 implementation verification is pending; this collection is not test-run evidence.",
+    "description": "API collection for Apiconfy integration runtime.\n\n## Setup\n1. Start the server with `pnpm dev` (install dependencies with pnpm only).\n2. Set base_url (default http://localhost:3000) and api_key if API_KEY is configured.\n3. REST > Invoke folders run in order: registration, invocation, execution lookup. Invoke scripts save execution_id. Execution recording is queued off the response path, so an execution-lookup request run immediately after invoke can occasionally 404 — rerun it once if that happens (Newman users: add a short delay or a retry-on-404 script).\n4. Complex/error examples use upstream_url (default https://httpbin.org). Use dummy data only, or your own httpbin-compatible upstream.\n\n## Structure — by component type\nHealth and Service Management retain existing requests. REST includes registration plus Phase 2 Invoke > Simple Examples, Complex Examples, Error Cases. Existing full auth registrations are registration-only; invoking them returns 501. TLS registrations (`request.ssl`, `disableSSL`) are executable since Phase 3.6, and a dedicated REST > Auth folder holds the auth examples — auth payloads must satisfy the Phase 4 schema because registration validates them even while the token runtime is pending. Runnable Phase 2 complex examples include every supported section and intentionally omit unsupported capabilities. Payload validation (request.validation.fields) is part of every complex example and has dedicated manual examples under REST > Payload Validation; the future component folders show the same block in their own sections. Mapper, Database, Script and SQS are future Phase 11 designs, not registered handlers in Phase 2; Scheduler is Phase 10.\n\n## Data bag\nThe invoke request body is the context itself (a flat JSON object, no `context` wrapper). Input uses {$context.*}; ephemeral raw upstream response uses {$output.*}. Response transformations wrap output under unique keys. Phase 2 returns transformed output directly and leaves context.output empty; callers must not supply context.output. Transformation still runs on failure: wire data is null, while GET /api/v1/executions/{{execution_id}} exposes the sanitized transformed, error-injected result. Merging into {$context.output.<uniqueKey>} is Phase 5 workflow behavior.\n\n## Limits\nOnly timeout.response is enforced, per attempt through body consumption. Auth (token runtime; registration-time validation is already live), connect/socket/idle (post-v1 — Bun's fetch exposes no per-request control for them), circuitBreaker and unsupported content types return 501. `request.ssl` and `disableSSL` execute since Phase 3.6, and `auth.ssl` governs the token endpoint. Phase 2 implementation verification is pending; this collection is not test-run evidence.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "version": "1.0.0"
   },
@@ -152,7 +152,7 @@
                     "method": "POST",
                     "header": [{ "key": "Content-Type", "value": "application/json" }],
                     "url": "{{base_url}}/api/v1/services/phase2-simple/health/invoke",
-                    "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                    "body": { "mode": "raw", "raw": "{}" },
                     "description": "Expected 200 success, raw health body under data, meta.executionId and durationMs. Saves execution_id; one dispatch attempt."
                   }
                 },
@@ -190,7 +190,7 @@
                     "method": "POST",
                     "header": [{ "key": "Content-Type", "value": "application/json" }],
                     "url": "{{base_url}}/api/v1/services/phase2-complex/echo/invoke",
-                    "body": { "mode": "raw", "raw": "{ \"context\": { \"enabled\": true, \"id\": \"demo-123\", \"name\": \"Demo Customer\", \"label\": \"example\", \"items\": [{ \"sku\": \"demo\", \"quantity\": 2 }] } }" },
+                    "body": { "mode": "raw", "raw": "{\"enabled\": true, \"id\": \"demo-123\", \"name\": \"Demo Customer\", \"label\": \"example\", \"items\": [{\"sku\": \"demo\", \"quantity\": 2}]}" },
                     "description": "Expected 200; data.echoResponse preserves mapped JSON values. Raw response is audited; transformed output is persisted as execution result. X-Execution-Id is propagated upstream."
                   }
                 },
@@ -200,7 +200,7 @@
                     "method": "POST",
                     "header": [{ "key": "Content-Type", "value": "application/json" }],
                     "url": "{{base_url}}/api/v1/services/phase2-complex/echo/invoke",
-                    "body": { "mode": "raw", "raw": "{ \"context\": { \"enabled\": false } }" },
+                    "body": { "mode": "raw", "raw": "{\"enabled\": false}" },
                     "description": "Expected 200, skippedExecution=true, data=null. No upstream request, no env resolution, no limiter token; persisted attempts=0."
                   }
                 },
@@ -220,7 +220,7 @@
                     "method": "POST",
                     "header": [{ "key": "Content-Type", "value": "application/json" }],
                     "url": "{{base_url}}/api/v1/services/phase2-complex/form/invoke",
-                    "body": { "mode": "raw", "raw": "{ \"context\": { \"id\": \"demo-123\", \"label\": \"space & plus +\" } }" },
+                    "body": { "mode": "raw", "raw": "{\"id\": \"demo-123\", \"label\": \"space & plus +\"}" },
                     "description": "Expected 200; data.formEchoResponse.label round-trips spaces, ampersand and plus."
                   }
                 },
@@ -240,7 +240,7 @@
                     "method": "POST",
                     "header": [{ "key": "Content-Type", "value": "application/json" }],
                     "url": "{{base_url}}/api/v1/services/phase2-complex/default/invoke",
-                    "body": { "mode": "raw", "raw": "{ \"context\": { \"id\": \"demo-123\" } }" },
+                    "body": { "mode": "raw", "raw": "{\"id\": \"demo-123\"}" },
                     "description": "Expected 200, data.defaultResponse={status:empty,customerId:demo-123}. Upstream status 204 still becomes a normal invocation envelope."
                   }
                 },
@@ -256,11 +256,11 @@
               "item": [
                 {
                   "name": "404 — unknown service",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-never-registered/missing/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_FOUND with execution metadata; failed record attempts=0.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_FOUND\",\n    \"message\": \"Service not found: phase2-never-registered/missing\"\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 5\n  }\n}\n```" }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-never-registered/missing/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "NOT_FOUND with execution metadata; failed record attempts=0.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_FOUND\",\n    \"message\": \"Service not found: phase2-never-registered/missing\"\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 5\n  }\n}\n```" }
                 },
                 {
-                  "name": "400 — missing context",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-simple/health/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "VALIDATION_FAILED before execution. Do not expect a persisted invocation for an invalid request body." }
+                  "name": "400 — body is not a JSON object",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-simple/health/invoke", "body": { "mode": "raw", "raw": "[]" }, "description": "VALIDATION_FAILED before execution. Do not expect a persisted invocation for an invalid request body." }
                 },
                 {
                   "name": "Register validation failure",
@@ -268,7 +268,7 @@
                 },
                 {
                   "name": "422 — response validation still transforms",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/validation/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "VALIDATION_FAILED, wire data=null. Lookup must contain validationFailureResponse.upstream and injected validationFailureResponse.error.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"VALIDATION_FAILED\",\n    \"message\": \"Intentional demo validation failure\",\n    \"details\": [\n      {\n        \"rule\": \"false\",\n        \"message\": \"Intentional demo validation failure\",\n        \"path\": \"false\"\n      }\n    ]\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 15\n  }\n}\n```" }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/validation/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "VALIDATION_FAILED, wire data=null. Lookup must contain validationFailureResponse.upstream and injected validationFailureResponse.error.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"VALIDATION_FAILED\",\n    \"message\": \"Intentional demo validation failure\",\n    \"details\": [\n      {\n        \"rule\": \"false\",\n        \"message\": \"Intentional demo validation failure\",\n        \"path\": \"false\"\n      }\n    ]\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 15\n  }\n}\n```" }
                 },
                 {
                   "name": "Look up failed transformed result",
@@ -280,7 +280,7 @@
                 },
                 {
                   "name": "501 — auth guard",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/auth/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_IMPLEMENTED, attempts=0, no env resolution or unauthenticated upstream dispatch.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth.jwt\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth.jwt\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 3\n  }\n}\n```" }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/auth/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "NOT_IMPLEMENTED, attempts=0, no env resolution or unauthenticated upstream dispatch.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth.jwt\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth.jwt\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 3\n  }\n}\n```" }
                 },
                 {
                   "name": "Register unsupported connect timeout",
@@ -288,7 +288,7 @@
                 },
                 {
                   "name": "501 — connect timeout guard",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/connect/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_IMPLEMENTED, attempts=0. socket/idle and circuitBreaker are guarded similarly and are all labeled `post-v1` — they need transport-level control that Bun's `fetch` does not expose. Custom SSL is NOT guarded: `request.ssl` and `disableSSL` execute since Phase 3.6 (see REST > TLS Certificates), and token-endpoint TLS lives in `auth.ssl`." }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/connect/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "NOT_IMPLEMENTED, attempts=0. socket/idle and circuitBreaker are guarded similarly and are all labeled `post-v1` — they need transport-level control that Bun's `fetch` does not expose. Custom SSL is NOT guarded: `request.ssl` and `disableSSL` execute since Phase 3.6 (see REST > TLS Certificates), and token-endpoint TLS lives in `auth.ssl`." }
                 },
                 {
                   "name": "Register upstream status error with retry",
@@ -296,11 +296,11 @@
                 },
                 {
                   "name": "503 — retryable upstream 503",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{ \"context\": { \"status\": 503 } }" }, "description": "EXTERNAL_ERROR after two actual attempts. One execution and one audit row; failed transformed result contains upstreamFailureResponse.error.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"EXTERNAL_ERROR\",\n    \"message\": \"External API returned 503\",\n    \"details\": {\n      \"downstream\": {\n        \"status\": 503,\n        \"body\": {}\n      }\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 250\n  }\n}\n```" }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{\"status\": 503}" }, "description": "EXTERNAL_ERROR after two actual attempts. One execution and one audit row; failed transformed result contains upstreamFailureResponse.error.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"EXTERNAL_ERROR\",\n    \"message\": \"External API returned 503\",\n    \"details\": {\n      \"downstream\": {\n        \"status\": 503,\n        \"body\": {}\n      }\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 250\n  }\n}\n```" }
                 },
                 {
                   "name": "404 — nonretryable upstream 404",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{ \"context\": { \"status\": 404 } }" }, "description": "EXTERNAL_ERROR after one attempt. Upstream 404 is not the runtime's own NOT_FOUND.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"EXTERNAL_ERROR\",\n    \"message\": \"External API returned 404\",\n    \"details\": {\n      \"downstream\": {\n        \"status\": 404,\n        \"body\": {}\n      }\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 120\n  }\n}\n```" }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/upstream/invoke", "body": { "mode": "raw", "raw": "{\"status\": 404}" }, "description": "EXTERNAL_ERROR after one attempt. Upstream 404 is not the runtime's own NOT_FOUND.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"EXTERNAL_ERROR\",\n    \"message\": \"External API returned 404\",\n    \"details\": {\n      \"downstream\": {\n        \"status\": 404,\n        \"body\": {}\n      }\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 120\n  }\n}\n```" }
                 },
                 {
                   "name": "Look up latest failure",
@@ -428,7 +428,7 @@
                 "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"context\":{\"userId\":\"u-123\",\"customer\":{\"email\":\"demo@example.com\"},\"items\":[{\"sku\":\"A-1\",\"qty\":2}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                  "raw": "{\"userId\": \"u-123\", \"customer\": {\"email\": \"demo@example.com\"}, \"items\": [{\"sku\": \"A-1\", \"qty\": 2}], \"meta\": {\"external-id\": \"ext-9\"}}"
                 },
                 "description": "Expected 200; data.validatedResponse.customerId is the mapped payload value. Validation passed before the upstream call."
               }
@@ -446,7 +446,7 @@
                 "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"context\":{\"customer\":{\"email\":\"demo@example.com\"},\"items\":[{\"sku\":\"A-1\"}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                  "raw": "{\"customer\": {\"email\": \"demo@example.com\"}, \"items\": [{\"sku\": \"A-1\"}], \"meta\": {\"external-id\": \"ext-9\"}}"
                 },
                 "description": "VALIDATION_FAILED before dispatch, attempts=0, no upstream request.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"VALIDATION_FAILED\",\n    \"message\": \"userId is required\",\n    \"details\": [\n      { \"path\": [\"userId\"], \"message\": \"userId is required\" }\n    ]\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 2\n  }\n}\n```"
               }
@@ -464,7 +464,7 @@
                 "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"context\":{\"userId\":42,\"customer\":{\"email\":\"demo@example.com\"},\"items\":[{\"sku\":\"A-1\",\"qty\":2}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                  "raw": "{\"userId\": 42, \"customer\": {\"email\": \"demo@example.com\"}, \"items\": [{\"sku\": \"A-1\", \"qty\": 2}], \"meta\": {\"external-id\": \"ext-9\"}}"
                 },
                 "description": "VALIDATION_FAILED: userId must be a string. Strict typing — a number is not accepted for a string field."
               }
@@ -482,7 +482,7 @@
                 "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"context\":{\"userId\":\"u-123\",\"customer\":{\"email\":\"demo@example.com\"},\"items\":[],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                  "raw": "{\"userId\": \"u-123\", \"customer\": {\"email\": \"demo@example.com\"}, \"items\": [], \"meta\": {\"external-id\": \"ext-9\"}}"
                 },
                 "description": "VALIDATION_FAILED: items must contain at least one entry. required accepts [], so emptiness needs minItems; wildcard element rules pass vacuously on an empty array."
               }
@@ -500,7 +500,7 @@
                 "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"context\":{\"userId\":\"u-123\",\"customer\":{\"email\":\"\"},\"items\":[{\"sku\":\"A-1\",\"qty\":2}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                  "raw": "{\"userId\": \"u-123\", \"customer\": {\"email\": \"\"}, \"items\": [{\"sku\": \"A-1\", \"qty\": 2}], \"meta\": {\"external-id\": \"ext-9\"}}"
                 },
                 "description": "VALIDATION_FAILED: customer.email must have at least 1 character. required accepts \"\", so blank strings need minLength."
               }
@@ -518,7 +518,7 @@
                 "url": "{{base_url}}/api/v1/services/phase2-validation/validated/invoke",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"context\":{\"userId\":\"u-123\",\"customer\":{\"email\":\"demo@example.com\"},\"items\":[{\"sku\":\"A-1\"},{\"qty\":2}],\"meta\":{\"external-id\":\"ext-9\"}}}"
+                  "raw": "{\"userId\": \"u-123\", \"customer\": {\"email\": \"demo@example.com\"}, \"items\": [{\"sku\": \"A-1\"}, {\"qty\": 2}], \"meta\": {\"external-id\": \"ext-9\"}}"
                 },
                 "description": "VALIDATION_FAILED with the concrete element index: path [\"items\", 1, \"sku\"], message \"items[1].sku is required\". Wildcard rules report the first failing element only."
               }
@@ -1045,7 +1045,7 @@
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "url": "{{base_url}}/api/v1/services/partner/sync_catalog/invoke",
-                "body": { "mode": "raw", "raw": "{ \"context\": { \"catalogId\": \"cat-1\" } }" },
+                "body": { "mode": "raw", "raw": "{\"catalogId\": \"cat-1\"}" },
                 "description": "Registration already validates the auth block, but `basic` and `oauth2` execute, but `jwt.local` signing and `jwt.external` are still Phase 4, so invoking a `jwt` block returns NOT_IMPLEMENTED with attempts=0 and no env resolution — the guard runs before dispatch, deliberately: sending the call without its auth header would be worse than refusing.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth.jwt\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth.jwt\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 2\n  }\n}\n```"
               }
             }
@@ -1292,7 +1292,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"context\": { \"a\": 2, \"b\": 3 } }" },
+                "body": { "mode": "raw", "raw": "{\"a\": 2, \"b\": 3}" },
                 "url": { "raw": "{{base_url}}/api/v1/services/calc-service/add_numbers/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "add_numbers", "invoke"] },
                 "description": "Expected 200 with data.sum = 5 — the contribution delta is the response."
               }
@@ -1336,7 +1336,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"context\": { \"subtotal\": 100, \"customer\": { \"id\": \"C-1\", \"name\": \"Ada\" } } }" },
+                "body": { "mode": "raw", "raw": "{\"subtotal\": 100, \"customer\": {\"id\": \"C-1\", \"name\": \"Ada\"}}" },
                 "url": { "raw": "{{base_url}}/api/v1/services/calc-service/calculate_total/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "calculate_total", "invoke"] },
                 "description": "Expected 200: total 110, label \"Order for Ada\", echoOk true, customer.verified true, auditMarker present; the nested echo call is a separate execution row."
               }
@@ -1346,7 +1346,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"context\": { \"skip\": true } }" },
+                "body": { "mode": "raw", "raw": "{\"skip\": true}" },
                 "url": { "raw": "{{base_url}}/api/v1/services/calc-service/calculate_total/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "calculate_total", "invoke"] },
                 "description": "Expected 200, skippedExecution: true, data null, attempts=0."
               }
@@ -1410,7 +1410,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                "body": { "mode": "raw", "raw": "{}" },
                 "url": { "raw": "{{base_url}}/api/v1/services/calc-service/non_function/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "non_function", "invoke"] },
                 "description": "SCRIPT_ERROR with details.reason = \"not-a-function\"."
               }
@@ -1430,7 +1430,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                "body": { "mode": "raw", "raw": "{}" },
                 "url": { "raw": "{{base_url}}/api/v1/services/calc-service/throwing/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "throwing", "invoke"] },
                 "description": "SCRIPT_ERROR with details.reason = \"threw\"; the message never reaches the wire."
               }
@@ -1450,7 +1450,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                "body": { "mode": "raw", "raw": "{}" },
                 "url": { "raw": "{{base_url}}/api/v1/services/calc-service/big_int/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "big_int", "invoke"] },
                 "description": "SCRIPT_ERROR with details.reason = \"not-serializable\"."
               }
@@ -1470,7 +1470,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
+                "body": { "mode": "raw", "raw": "{}" },
                 "url": { "raw": "{{base_url}}/api/v1/services/calc-service/looping/invoke", "host": ["{{base_url}}"], "path": ["api", "v1", "services", "calc-service", "looping", "invoke"] },
                 "description": "TIMEOUT: the worker is terminated at ~timeout.response; attempts=1."
               }

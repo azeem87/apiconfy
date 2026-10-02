@@ -42,7 +42,7 @@ it('executes through two real HTTP servers and returns a queryable redacted exec
     expect(registration.status).toBe(201);
     const invocation = await fetch(new URL('/api/v1/services/network/create/invoke', server.url), {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ context: { id: 42, password: 'caller-password' } }),
+      body: JSON.stringify({ id: 42, password: 'caller-password' }),
     });
     expect(invocation.status).toBe(200);
     const result = await invocation.json();
@@ -62,7 +62,7 @@ it('executes through two real HTTP servers and returns a queryable redacted exec
     expect((await skipped.json()).skippedExecution).toBe(true);
     const rejected = await fetch(new URL('/api/v1/services/network/create/invoke', server.url), {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ context: { id: 1 } }),
+      body: JSON.stringify({ id: 1 }),
     });
     expect(rejected.status).toBe(400);
     expect((await rejected.json()).error).toMatchObject({

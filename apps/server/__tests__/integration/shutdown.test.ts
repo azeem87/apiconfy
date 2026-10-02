@@ -63,7 +63,7 @@ it('flushes queued execution records before exiting on SIGTERM', async () => {
     const invoked = await fetch(`http://127.0.0.1:${port}/api/v1/services/self/ping/invoke`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ context: {} }),
+      body: JSON.stringify({}),
     });
     const executionId = ((await invoked.json()) as { meta: { executionId: string } }).meta.executionId;
 
