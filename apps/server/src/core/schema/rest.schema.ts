@@ -32,11 +32,11 @@ export const RestConfigSchema = z.object({
 }).strict().superRefine((config, ctx) => {
   const maxElapsedTime = config.resilience?.maxElapsedTime;
   if (maxElapsedTime !== undefined) {
-    if (!config.resilience?.retryCount) {
+    if (!config.resilience?.retryCount && config.timeout?.requestTimeout !== 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['resilience', 'maxElapsedTime'],
-        message: 'maxElapsedTime requires resilience.retryCount > 0',
+        message: 'maxElapsedTime requires resilience.retryCount > 0 (or timeout.requestTimeout: 0)',
       });
     }
     const requestTimeout = config.timeout?.requestTimeout;

@@ -36,3 +36,24 @@ describe('resilience maxElapsedTime', () => {
     expect(result).toEqual({ value: 'ok', attempts: 3 });
   });
 });
+
+describe('requestTimeout: 0 (unbounded)', () => {
+  it('does not cap an attempt', async () => {
+    const executor = new DefaultResilienceExecutor();
+    const result = await executor.execute(
+      () => new Promise<string>(resolve => setTimeout(() => resolve('ok'), 50)),
+      { timeout: { requestTimeout: 0 }, resilience: {} }
+    );
+    expect(result.value).toBe('ok');
+  });
+
+  it('maxElapsedTime still bounds the call', async () => {
+    const executor = new DefaultResilienceExecutor();
+    const started = Date.now();
+    await expect(executor.execute(
+      () => new Promise<string>(() => {}),
+      { timeout: { requestTimeout: 0 }, resilience: { maxElapsedTime: 100 } }
+    )).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+});

@@ -298,7 +298,15 @@
                 },
                 {
                   "name": "200 — connectTimeout honoured",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/connect/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "connectTimeout bounds the wait for the response to start (502 CONNECTION_ERROR when exceeded, retried per resilience). circuitBreaker is still guarded (501, post-v1). Custom SSL is NOT guarded: `request.ssl` and `disableSSL` execute since Phase 3.6 (see REST > TLS Certificates), and token-endpoint TLS lives in `auth.ssl`." }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/connect/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "Defaults when `timeout` is omitted: connectTimeout 15000 (TCP+TLS connect, 502 CONNECTION_ERROR), readTimeout 30000 (idle wait for data, re-armed per chunk, 504 TIMEOUT — catches stalled responses) and requestTimeout 60000 (hard per-attempt cap, max 120000, 504 TIMEOUT). All timeouts are retried per resilience. circuitBreaker is still guarded circuitBreaker is still guarded (501, post-v1). Custom SSL is NOT guarded: `request.ssl` and `disableSSL` execute since Phase 3.6 (see REST > TLS Certificates), and token-endpoint TLS lives in `auth.ssl`." }
+                },
+                {
+                  "name": "Register unbounded requestTimeout (0)",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services", "body": { "mode": "raw", "raw": "{ \"service\": \"phase2-errors\", \"action\": \"unbounded\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{base_url}}/health\", \"method\": \"GET\" }, \"timeout\": { \"connectTimeout\": 15000, \"readTimeout\": 30000, \"requestTimeout\": 0 }, \"resilience\": { \"maxElapsedTime\": 120000 } } }" }, "description": "Expected 201/200. `timeout.requestTimeout: 0` removes the per-attempt cap, for streaming or very long downloads. It is an explicit opt-out, never the default (default 60000).\n\nWith 0, `readTimeout` becomes the only protection against a stalled response, so keep it set (default 30000). A response that keeps trickling data is never cut off by the runtime.\n\n`resilience.maxElapsedTime` still bounds the whole call (all attempts and delays) even when requestTimeout is 0, and is then allowed without `retryCount`. Without it a 0 call is bounded only by readTimeout. The REST socket transport is always used (connect/read timeouts apply to every REST call), so 0 needs no special switch." }
+                },
+                {
+                  "name": "200 — unbounded requestTimeout",
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/unbounded/invoke", "body": { "mode": "raw", "raw": "{}" }, "description": "Succeeds with no per-attempt deadline; readTimeout and maxElapsedTime remain in force." }
                 },
                 {
                   "name": "Register upstream status error with retry",

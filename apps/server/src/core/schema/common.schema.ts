@@ -8,7 +8,8 @@ import { hasSelfSignedRoot, isCertificateMaterial, isPrivateKeyPem } from '@/lib
 export const TimeoutConfigSchema = z.object({
   connectTimeout: z.number().int().positive().optional(),
   readTimeout: z.number().int().positive().max(120_000).optional(),
-  requestTimeout: z.number().int().positive().max(120_000).optional(),
+  // 0 = no per-attempt cap (streaming / long downloads); readTimeout then is the only stall protection
+  requestTimeout: z.number().int().min(0).max(120_000).optional(),
 }).strict();
 
 export const CircuitBreakerConfigSchema = z.object({

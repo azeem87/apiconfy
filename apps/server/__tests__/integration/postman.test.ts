@@ -71,7 +71,7 @@ it('runs every ordered REST and Script Postman example against deterministic loc
         restCount += 1;
       }
     }
-    expect(restCount).toBe(26);
+    expect(restCount).toBe(28);
 
     const tls = folders.find(item => item.name === 'REST')?.item?.find(item => item.name === 'TLS Certificates');
     expect(tls?.item).toHaveLength(14);

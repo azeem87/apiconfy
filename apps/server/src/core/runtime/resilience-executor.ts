@@ -55,11 +55,14 @@ export class DefaultResilienceExecutor implements ResilienceExecutor {
       const controller = new AbortController();
       let timer: ReturnType<typeof setTimeout> | undefined;
       let lastError: unknown;
+      const requestTimeout = policy.timeout?.requestTimeout ?? DEFAULT_TIMEOUT_MS;
+      const attemptLimit = Math.min(requestTimeout === 0 ? Infinity : requestTimeout, remainingBudget());
       const deadline = new Promise<never>((_resolve, reject) => {
+        if (attemptLimit === Infinity) return;
         timer = setTimeout(() => {
           reject(new TimeoutError());
           controller.abort();
-        }, Math.min(policy.timeout?.requestTimeout ?? DEFAULT_TIMEOUT_MS, remainingBudget()));
+        }, attemptLimit);
       });
 
       try {
