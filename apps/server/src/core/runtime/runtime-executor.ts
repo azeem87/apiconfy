@@ -17,9 +17,12 @@ import { AuditWriteError } from '@/core/db/repositories/execution.repository.js'
 
 const MAX_DOWNSTREAM_BODY_SIZE = 1024; // 1KB
 
-/** A script's `timeout` is a bare number of ms (its response deadline); REST uses the object form. */
-function toTimeoutConfig(timeout: unknown): TimeoutConfig | undefined {
-  return typeof timeout === 'number' ? { response: timeout } : timeout as TimeoutConfig | undefined;
+const SCRIPT_DEFAULT_TIMEOUT_MS = 60_000;
+
+/** A script's `timeout` is a bare number of ms (default 60 s); REST uses the object form. */
+function toTimeoutConfig(componentType: string, timeout: unknown): TimeoutConfig | undefined {
+  if (componentType === 'script') return { response: typeof timeout === 'number' ? timeout : SCRIPT_DEFAULT_TIMEOUT_MS };
+  return timeout as TimeoutConfig | undefined;
 }
 
 function truncateResponseBody(body: unknown): unknown {
@@ -118,7 +121,7 @@ export class DefaultRuntimeExecutor implements RuntimeExecutor {
           onRequest: summary => { request = summary; },
           onSecret: secret => { secrets.push(secret); },
         });
-      }, { timeout: toTimeoutConfig(config.timeout), resilience });
+      }, { timeout: toTimeoutConfig(record.componentType, config.timeout), resilience });
       request = outcome.value.request ?? request;
       rawResponse = outcome.value.data;
       secrets.push(...collectSensitiveValues(rawResponse));
