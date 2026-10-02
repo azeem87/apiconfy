@@ -192,39 +192,118 @@ export const SSLConfigSchema = z.object({
   }
 });
 
+const BASIC_USERNAME_MESSAGE = 'username must not contain ":" — it is the Basic credential separator (RFC 7617)';
+
 export const BasicAuthSchema = z.object({
-  username: z.string().min(1),
+  username: z.string().min(1).refine((value) => !value.includes(':'), { message: BASIC_USERNAME_MESSAGE }),
   password: z.string().min(1),
 }).strict();
+
+// Client credentials travel over `accessTokenUri` and RFC 6749 §2.3.1 requires TLS, so the URI must
+// be https (a {$env.NAME} reference is resolved and re-checked at invoke, like ssl material).
+// `disableSSL` means "do not verify the certificate", never "send it in cleartext".
+const httpsAccessTokenUri = z.string().min(1).superRefine((value, ctx) => {
+  if (isEnvRef(value) || /^https:\/\//i.test(value)) return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: 'accessTokenUri must be an absolute https:// URL or a {$env.NAME} reference',
+  });
+});
+
+// RFC 6749 §3.3: scope = scope-token *( SP scope-token )
+//                scope-token = 1*( %x21 / %x23-5B / %x5D-7E ) — no space, quote or backslash.
+const SCOPE_TOKEN_PATTERN = /^[\x21\x23-\x5B\x5D-\x7E]+$/;
+const scopeSchema = z.string().min(1).refine(
+  (value) => value.split(' ').every((token) => SCOPE_TOKEN_PATTERN.test(token)),
+  {
+    message:
+      'scope must be single-space-delimited tokens containing no quotes, backslashes or other whitespace (RFC 6749 §3.3)',
+  }
+);
 
 export const OAuth2ConfigSchema = z.object({
   clientId: z.string().min(1),
   clientSecret: z.string().min(1),
-  accessTokenUri: z.string().min(1),
-  scope: z.string().optional(),
+  accessTokenUri: httpsAccessTokenUri,
+  scope: scopeSchema.optional(),
+  /** How clientId/clientSecret reach the token endpoint. Default 'basic' (RFC 6749 §2.3.1). */
+  clientAuth: z.enum(['basic', 'body']).optional(),
+  /** IdP-specific extra token-request parameter (e.g. Okta's `audience`). */
+  audience: z.string().min(1).optional(),
 }).strict();
+
+const RESERVED_BODY_KEYS = new Set(['username', 'password', 'client_secret']);
 
 export const JwtExternalConfigSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
   credentialPlacement: z.enum(['header', 'body']).optional(),
-  accessTokenUri: z.string().min(1),
-  contentType: z.string().optional(),
+  accessTokenUri: httpsAccessTokenUri,
+  contentType: z.string().min(1).optional(),
   requestBody: z.record(z.unknown()).optional(),
-  disableSSL: z.boolean().optional(),
-  responsePath: z.string().optional(),
-  requestHeader: z.string().optional(),
+  responsePath: z.string().min(1).optional(),
+  requestHeader: z.string().min(1).optional(),
   tokenPrefix: z.string().optional(),
-}).strict();
+}).strict().superRefine((config, ctx) => {
+  // The credentials come from the fields above; a duplicate in requestBody hides which one wins.
+  const redefinesCredentials = Object.keys(config.requestBody ?? {})
+    .some((key) => RESERVED_BODY_KEYS.has(key.toLowerCase()));
+  if (redefinesCredentials) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['requestBody'],
+      message: 'requestBody must not redefine username, password or client_secret — use the block fields',
+    });
+  }
+  // This block carries username/password and rejects `client_secret` above, so a client_credentials
+  // grant can never authenticate here — that shape is the oauth2 block's job.
+  const grantType = Object.entries(config.requestBody ?? {})
+    .find(([key]) => key.toLowerCase() === 'grant_type')?.[1];
+  if (typeof grantType === 'string' && grantType.toLowerCase() === 'client_credentials') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['requestBody'],
+      message: 'grant_type "client_credentials" belongs in the oauth2 block (clientId/clientSecret, clientAuth "basic" or "body") — jwt.external is the password/bespoke shape',
+    });
+  }
+  // Only explicit header placement builds a Basic header. The default is 'body', where the username
+  // is a form-encoded value and ':' is legal.
+  if (config.credentialPlacement === 'header' && config.username.includes(':')) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['username'], message: BASIC_USERNAME_MESSAGE });
+  }
+});
+
+/** RFC 7518 §3.1 — an HMAC key MUST be at least the hash output size. */
+const MIN_HS_KEY_BYTES = 32;
 
 export const JwtLocalConfigSchema = z.object({
   algorithm: z.enum(['HS256', 'HS384', 'HS512', 'RS256']),
   secretOrPrivateKey: z.string().min(1),
-  requestHeader: z.string().optional(),
+  /** Without claims and expiresInSeconds the signed JWT carries no `exp`; most IdPs reject that. */
+  claims: z.object({
+    issuer: z.string().min(1).optional(),
+    audience: z.string().min(1).optional(),
+    subject: z.string().min(1).optional(),
+  }).strict().optional(),
+  expiresInSeconds: z.number().int().positive().optional(),
+  requestHeader: z.string().min(1).optional(),
   tokenPrefix: z.string().optional(),
-}).strict();
+}).strict().superRefine((config, ctx) => {
+  const key = config.secretOrPrivateKey;
+  if (isEnvRef(key)) return;
+  const issue = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['secretOrPrivateKey'], message });
+  if (config.algorithm.startsWith('HS')) {
+    if (Buffer.byteLength(key, 'utf8') < MIN_HS_KEY_BYTES) {
+      issue(`an HS* signing key must be at least ${MIN_HS_KEY_BYTES} bytes (RFC 7518 §3.1)`);
+    }
+  } else if (!isPrivateKeyPem(key)) {
+    issue('an RS256 signing key must be a PEM private key or a {$env.NAME} reference');
+  }
+});
 
 export const AuthConfigSchema = z.object({
+  /** Token-endpoint TLS — a different host from `request.uri`. Reuses SSLConfigSchema, which already carries `disableSSL`. */
+  ssl: SSLConfigSchema.optional(),
   basic: BasicAuthSchema.optional(),
   oauth2: OAuth2ConfigSchema.optional(),
   jwt: z.object({
@@ -237,4 +316,7 @@ export const AuthConfigSchema = z.object({
 }).strict().refine(
   (auth) => [auth.basic, auth.oauth2, auth.jwt].filter(Boolean).length <= 1,
   { message: 'Only one of basic, oauth2, or jwt may be configured' }
+).refine(
+  (auth) => !auth.ssl || auth.oauth2 || auth.jwt?.external,
+  { path: ['ssl'], message: 'auth.ssl applies to the token endpoint — it needs oauth2 or jwt.external' }
 );

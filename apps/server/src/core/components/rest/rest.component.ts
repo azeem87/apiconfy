@@ -27,7 +27,7 @@ export class RestComponent implements ComponentHandler {
       unsupported.push({ field: 'config.resilience.circuitBreaker', phase: 'post-v1' });
     }
     for (const field of ['connect', 'socket', 'idle']) {
-      if (timeout[field] !== undefined) unsupported.push({ field: `config.timeout.${field}`, phase: 'Phase 4' });
+      if (timeout[field] !== undefined) unsupported.push({ field: `config.timeout.${field}`, phase: 'post-v1' });
     }
     if (request.contentType && ![JSON_TYPE, FORM_TYPE].includes(mediaType(request.contentType))) {
       unsupported.push({ field: 'config.request.contentType', phase: 'unscheduled' });

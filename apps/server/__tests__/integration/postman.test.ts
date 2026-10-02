@@ -77,6 +77,18 @@ it('runs every ordered REST and Script Postman example against deterministic loc
     expect(firstTlsBody.config.request.ssl.ca).toEqual([TLS_FIXTURES.CA_CERT]);
     for (const item of tls!.item!) await executeItem(item);
 
+    const auth = folders.find(item => item.name === 'REST')?.item?.find(item => item.name === 'Auth');
+    expect(auth?.item).toHaveLength(12);
+    for (const item of auth!.item!) {
+      const body = await executeItem(item);
+      if (item.name.startsWith('501')) {
+        expect(body.error.code).toBe('NOT_IMPLEMENTED');
+        expect(body.error.details.unsupported).toEqual([
+          { field: 'config.request.auth', phase: 'Phase 4' },
+        ]);
+      }
+    }
+
     let scriptCount = 0;
     for (const group of script!.item ?? []) {
       for (const item of group.item ?? []) {
