@@ -190,7 +190,7 @@ describe('Phase 2 invocation API', () => {
   it('guards every unsupported capability before resolving credentials or dispatching', async () => {
     await register({
       request: {
-        ...request, auth: { basic: { username: 'user', password: '{$env.MISSING}' } },
+        ...request, auth: { jwt: { local: { algorithm: 'HS256', secretOrPrivateKey: '{$env.MISSING}' } } },
         ssl: { ca: CA_CERT }, contentType: 'multipart/form-data',
       },
       timeout: { connect: 1, socket: 1, idle: 1 },
@@ -203,7 +203,7 @@ describe('Phase 2 invocation API', () => {
       const result = await res.json();
       expect(res.status).toBe(501);
       expect((result.error.details.unsupported as Array<{ field: string }>).map(item => item.field)).toEqual([
-        'config.request.auth', 'config.resilience.circuitBreaker', 'config.timeout.connect',
+        'config.request.auth.jwt', 'config.resilience.circuitBreaker', 'config.timeout.connect',
         'config.timeout.socket', 'config.timeout.idle', 'config.request.contentType',
       ]);
       expect((await recorded(result)).attempts).toBe(0);

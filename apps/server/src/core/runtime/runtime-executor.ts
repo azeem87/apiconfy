@@ -111,6 +111,7 @@ export class DefaultRuntimeExecutor implements RuntimeExecutor {
         return handler.execute({
           config, context: bag, signal, executionId,
           onRequest: summary => { request = summary; },
+          onSecret: secret => { secrets.push(secret); },
         });
       }, { timeout: config.timeout as TimeoutConfig | undefined, resilience });
       request = outcome.value.request ?? request;

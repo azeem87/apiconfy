@@ -18,6 +18,8 @@ export interface ComponentExecuteParams {
   executionId: string;
   /** Capture a header-free audit summary even when transport fails. */
   onRequest?(request: ComponentRequestSummary): void;
+  /** Register an acquired credential (e.g. a token) for scrubbing before it can reach a log or audit row. */
+  onSecret?(secret: string): void;
 }
 
 export interface ComponentRequestSummary {

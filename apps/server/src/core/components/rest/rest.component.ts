@@ -3,7 +3,8 @@ import type {
 } from '@/core/components/base.js';
 import type { RequestConfig, ValidationField } from '@/core/types.js';
 import { resolveTemplate } from '@/core/transform/index.js';
-import { hasSelfSignedRoot, normalizeCertificate, normalizePrivateKey } from '@/lib/tls-material.js';
+import { AuthRuntime, type AuthBlock } from '@/core/auth/authenticator.js';
+import { buildTlsOptions } from './tls.js';
 import { mediaType, parseResponseBody } from '@/lib/http.js';
 import {
   AppError, ConnectionError, ExternalServiceError, NotImplementedError, TimeoutError, TransformationError,
@@ -15,14 +16,18 @@ const FORM_TYPE = 'application/x-www-form-urlencoded';
 export class RestComponent implements ComponentHandler {
   readonly componentType = 'rest';
 
-  constructor(private readonly httpRequest: typeof fetch = globalThis.fetch) {}
+  private readonly authRuntime: AuthRuntime;
+
+  constructor(private readonly httpRequest: typeof fetch = globalThis.fetch) {
+    this.authRuntime = new AuthRuntime(httpRequest);
+  }
 
   assertExecutable(config: Record<string, unknown>): void {
     const request = (config.request ?? {}) as Partial<RequestConfig>;
     const timeout = (config.timeout ?? {}) as Record<string, unknown>;
     const resilience = (config.resilience ?? {}) as Record<string, unknown>;
     const unsupported: Array<{ field: string; phase: string }> = [];
-    if (request.auth !== undefined) unsupported.push({ field: 'config.request.auth', phase: 'Phase 4' });
+    if (request.auth?.jwt !== undefined) unsupported.push({ field: 'config.request.auth.jwt', phase: 'Phase 4' });
     if (resilience.circuitBreaker !== undefined) {
       unsupported.push({ field: 'config.resilience.circuitBreaker', phase: 'post-v1' });
     }
@@ -38,26 +43,6 @@ export class RestComponent implements ComponentHandler {
         { unsupported }
       );
     }
-  }
-
-  private buildTls(request: RequestConfig): Record<string, unknown> | undefined {
-    const { ssl } = request;
-    const tls: Record<string, unknown> = {};
-    try {
-      if (ssl?.ca !== undefined) tls.ca = normalizeCertificate(ssl.ca);
-      if (ssl?.cert !== undefined) tls.cert = normalizeCertificate(ssl.cert);
-      if (ssl?.key !== undefined) tls.key = normalizePrivateKey(ssl.key);
-    } catch {
-      const field = ssl?.ca !== undefined && !('ca' in tls) ? 'ssl.ca' : ssl?.cert !== undefined && !('cert' in tls) ? 'ssl.cert' : 'ssl.key';
-      throw new ConnectionError(`${field} is not valid ${field === 'ssl.key' ? 'PEM private key' : 'PEM or base64-encoded DER certificate'} material`);
-    }
-    // Env-supplied `ca` is only visible here, so the registration-time root rule is re-checked.
-    if (typeof tls.ca === 'string' && !hasSelfSignedRoot(tls.ca)) {
-      throw new ConnectionError('ssl.ca must include the self-signed root certificate of the server chain');
-    }
-    if (ssl?.passphrase !== undefined) tls.passphrase = ssl.passphrase;
-    if (request.disableSSL === true || ssl?.disableSSL === true) tls.rejectUnauthorized = false;
-    return Object.keys(tls).length ? tls : undefined;
   }
 
   validationFields(config: Record<string, unknown>): ValidationField[] {
@@ -112,11 +97,26 @@ export class RestComponent implements ComponentHandler {
     }
     const summary: ComponentRequestSummary = { uri, method: request.method, ...(body !== undefined ? { body: payload } : {}) };
     params.onRequest?.(summary);
-    const tls = this.buildTls(request);
-    try {
-      const response = await this.httpRequest(uri, {
+    const tls = buildTlsOptions(request.ssl, request.disableSSL);
+    const auth = request.auth as AuthBlock | undefined;
+    const onSecret = params.onSecret ?? (() => {});
+    const send = async (): Promise<Response> => {
+      if (auth) {
+        const material = await this.authRuntime.resolve(auth, params.signal, onSecret);
+        headers.set(material.name, material.value);
+      }
+      return this.httpRequest(uri, {
         method: request.method, headers, body, signal: params.signal, ...(tls ? { tls } : {}),
       } as RequestInit);
+    };
+    try {
+      let response = await send();
+      // A 401 may mean the cached token expired or was revoked: drop it and replay once.
+      if (response.status === 401 && auth && this.authRuntime.canReplay(auth)) {
+        await response.body?.cancel();
+        this.authRuntime.invalidate(auth);
+        response = await send();
+      }
       let data: unknown;
       try {
         data = await parseResponseBody(response);
