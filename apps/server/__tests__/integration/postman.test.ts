@@ -64,14 +64,14 @@ it('runs every ordered REST and Script Postman example against deterministic loc
       for (const item of group.item!) {
         const body = await executeItem(item);
         if (item.name === '2. Invoke mapped echo') expect(body.data.echoResponse.customerId).toBe('demo-123');
-        if (item.name === '5. Invoke form echo') expect(body.data.formEchoResponse.label).toBe('space & plus +');
-        if (item.name === '7. Invoke empty-body default') {
+        if (item.name === '2. Invoke form echo (wrapped in context)') expect(body.data.formEchoResponse.label).toBe('space & plus +');
+        if (item.name === '5. Invoke empty-body default') {
           expect(body.data.defaultResponse).toEqual({ status: 'empty', customerId: 'demo-123' });
         }
         restCount += 1;
       }
     }
-    expect(restCount).toBe(25);
+    expect(restCount).toBe(26);
 
     const tls = folders.find(item => item.name === 'REST')?.item?.find(item => item.name === 'TLS Certificates');
     expect(tls?.item).toHaveLength(14);
