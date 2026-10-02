@@ -1,10 +1,8 @@
 import { z } from 'zod';
 import { assertValidScriptExpression } from '@/core/transform/script-expression.js';
 
-/** Deadline override only — connect/socket/idle describe transports a script does not have (§D6). */
-const ScriptTimeoutSchema = z.object({
-  response: z.number().int().positive().max(120_000).optional(),
-}).strict();
+/** Deadline in ms — a script has no transport, so there is no connect/socket/idle to configure (§D6). */
+const ScriptTimeoutSchema = z.number().int().positive().max(120_000);
 
 /**
  * Phase 3.5 — a local context transformer (plans/script-component.md).

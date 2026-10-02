@@ -1356,9 +1356,9 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"calculate_total\",\n  \"componentType\": \"script\",\n  \"description\": \"Marks an audit variable, calls echo with the implicit $context, then computes the total\",\n  \"condition\": \"{$context.skip} != true\",\n  \"metaData\": { \"owner\": \"platform-team\" },\n  \"config\": {\n    \"expression\": \"async function ($context) { $context.auditMarker = { touchedBy: 'calc-script' }; const echoed = await apiconfy.invoke('echo-service', 'echo'); $context.calculateTotalResponse = { total: $context.subtotal * 1.1, label: `Order for ${$context?.customer?.name ?? 'anonymous'}`, echoOk: echoed?.success === true, echoExecution: echoed?.meta?.executionId }; $context.customer = { ...$context.customer, verified: true }; }\",\n    \"timeout\": { \"response\": 5000 }\n  }\n}" },
+                "body": { "mode": "raw", "raw": "{\n  \"service\": \"calc-service\",\n  \"action\": \"calculate_total\",\n  \"componentType\": \"script\",\n  \"description\": \"Marks an audit variable, calls echo with the implicit $context, then computes the total\",\n  \"condition\": \"{$context.skip} != true\",\n  \"metaData\": { \"owner\": \"platform-team\" },\n  \"config\": {\n    \"expression\": \"async function ($context) { $context.auditMarker = { touchedBy: 'calc-script' }; const echoed = await apiconfy.invoke('echo-service', 'echo'); $context.calculateTotalResponse = { total: $context.subtotal * 1.1, label: `Order for ${$context?.customer?.name ?? 'anonymous'}`, echoOk: echoed?.success === true, echoExecution: echoed?.meta?.executionId }; $context.customer = { ...$context.customer, verified: true }; }\",\n    \"timeout\": 5000\n  }\n}" },
                 "url": { "raw": "{{base_url}}/api/v1/services", "host": ["{{base_url}}"], "path": ["api", "v1", "services"] },
-                "description": "Every supported option: description, metaData, condition, optional `timeout.response` (5 s deadline for this script; omit it for the 30 s default, as `Register simple script` does), async/await + bridge call + template literals + optional chaining + add + modify. Expected 201."
+                "description": "Every supported option: description, metaData, condition, optional `timeout` in ms (5 s deadline for this script; omit it for the 30 s default, as `Register simple script` does), async/await + bridge call + template literals + optional chaining + add + modify. Expected 201."
               }
             },
             {
@@ -1490,7 +1490,7 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{ \"service\": \"calc-service\", \"action\": \"looping\", \"componentType\": \"script\", \"config\": { \"expression\": \"function ($context) { while (true) {} }\", \"timeout\": { \"response\": 25 } } }" },
+                "body": { "mode": "raw", "raw": "{ \"service\": \"calc-service\", \"action\": \"looping\", \"componentType\": \"script\", \"config\": { \"expression\": \"function ($context) { while (true) {} }\", \"timeout\": 25 } }" },
                 "url": { "raw": "{{base_url}}/api/v1/services", "host": ["{{base_url}}"], "path": ["api", "v1", "services"] },
                 "description": "Expected 201 — timeout.response is the hard deadline."
               }

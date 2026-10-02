@@ -534,7 +534,7 @@ POST /api/v1/services
   "componentType": "script",
   "config": {
     "expression": "async function ($context) { $context.sum = $context.a + $context.b; }",
-    "timeout": { "response": 15000 }
+    "timeout": 15000
   }
 }
 ```
@@ -545,7 +545,7 @@ POST /api/v1/services
   (returns `NOT_IMPLEMENTED` until the `$gen.*` registry ships) and `executionId` — all awaited.
   `context` defaults to the live `$context` snapshot at call time. Each nested invoke is a
   first-class execution with its own audit row, and never throws — branch on `r.success`.
-- Config is `expression` plus optional `timeout.response` (default 30 s, max 120 s) only; every
+- Config is `expression` plus optional `timeout` — a number of ms (default 30 s, max 120 s) — only; every
   REST-only field — including the whole `output` block — and `$env.` inside the expression are
   rejected with `400`.
 - Failures: `SCRIPT_ERROR` `500` (`not-a-function`, `threw`, `not-serializable`,

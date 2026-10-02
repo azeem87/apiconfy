@@ -8,10 +8,10 @@ describe('ScriptConfigSchema', () => {
     expect(ScriptConfigSchema.safeParse(minimal).success).toBe(true);
   });
 
-  it('accepts async expressions and timeout.response up to 120 000', () => {
+  it('accepts async expressions and timeout up to 120 000', () => {
     expect(ScriptConfigSchema.safeParse({
       expression: 'async function ($context) { await apiconfy.invoke("svc", "act"); }',
-      timeout: { response: 120_000 },
+      timeout: 120_000,
     }).success).toBe(true);
   });
 
@@ -55,6 +55,7 @@ describe('ScriptConfigSchema', () => {
       { ssl: {} },
       { payloadTemplate: {} },
       { resilience: { retryCount: 1 } },
+      { timeout: { response: 1000 } },
       { timeout: { connect: 1000 } },
       { timeout: { socket: 1000 } },
       { timeout: { idle: 1000 } },
@@ -66,10 +67,10 @@ describe('ScriptConfigSchema', () => {
     }
   });
 
-  it('rejects timeout.response out of bounds and non-integers', () => {
-    expect(ScriptConfigSchema.safeParse({ ...minimal, timeout: { response: 120_001 } }).success).toBe(false);
-    expect(ScriptConfigSchema.safeParse({ ...minimal, timeout: { response: 0 } }).success).toBe(false);
-    expect(ScriptConfigSchema.safeParse({ ...minimal, timeout: { response: -1 } }).success).toBe(false);
-    expect(ScriptConfigSchema.safeParse({ ...minimal, timeout: { response: 12.5 } }).success).toBe(false);
+  it('rejects timeout out of bounds and non-integers', () => {
+    expect(ScriptConfigSchema.safeParse({ ...minimal, timeout: 120_001 }).success).toBe(false);
+    expect(ScriptConfigSchema.safeParse({ ...minimal, timeout: 0 }).success).toBe(false);
+    expect(ScriptConfigSchema.safeParse({ ...minimal, timeout: -1 }).success).toBe(false);
+    expect(ScriptConfigSchema.safeParse({ ...minimal, timeout: 12.5 }).success).toBe(false);
   });
 });

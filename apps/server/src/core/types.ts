@@ -198,5 +198,5 @@ export interface RestConfig {
  */
 export interface ScriptConfig {
   expression: string;
-  timeout?: Pick<TimeoutConfig, 'response'>;
+  timeout?: number;
 }

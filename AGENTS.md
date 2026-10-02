@@ -67,6 +67,7 @@ Git & Commits
 - **NEVER commit directly to the `main` branch.** This is a hard rule.
 - **Always create a feature branch** before starting work on a task. Use a descriptive name based on the feature or fix (e.g., `feature/add-oauth-login`, `fix/db-connection-timeout`, `refactor/auth-middleware`).
 - **Verify branch before committing:** Before running any `git commit` or `git push` command, explicitly check the current branch (`git branch --show-current`). If it is `main`, abort the commit, create a new branch, and then proceed.
+- **Ask the user before every `git push`.** Run `git branch --show-current` before every commit — never commit on `main`.
 - Follow Conventional Commits format (`feat:`, `fix:`, `docs:`, `chore:`, etc.)
 - Never add `Co-Authored-By` lines to commit messages
 

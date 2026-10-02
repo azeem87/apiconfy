@@ -622,10 +622,10 @@ describe('Phase 3.5 script component', () => {
     expect((await res.json()).error.details).toEqual({ reason: 'not-serializable' });
   });
 
-  it('kills an infinite loop at timeout.response with 504 and one attempt', async () => {
+  it('kills an infinite loop at timeout with 504 and one attempt', async () => {
     await registerScript('spin', {
       expression: 'function ($c) { while (true) {} }',
-      timeout: { response: 25 },
+      timeout: 25,
     });
     const res = await invokeScript('spin');
 
