@@ -276,11 +276,11 @@
                 },
                 {
                   "name": "Register unsupported auth",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services", "body": { "mode": "raw", "raw": "{ \"service\": \"phase2-errors\", \"action\": \"auth\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{base_url}}/health\", \"method\": \"GET\", \"auth\": { \"basic\": { \"username\": \"{$env.DEMO_USERNAME}\", \"password\": \"{$env.DEMO_PASSWORD}\" } } } } }" }, "description": "Expected 201/200. Registration-only capability; env references are masked. No environment variables need setting: the invocation guard runs before env resolution." }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services", "body": { "mode": "raw", "raw": "{ \"service\": \"phase2-errors\", \"action\": \"auth\", \"componentType\": \"rest\", \"config\": { \"request\": { \"uri\": \"{{base_url}}/health\", \"method\": \"GET\", \"auth\": { \"jwt\": { \"local\": { \"algorithm\": \"HS256\", \"secretOrPrivateKey\": \"{$env.DEMO_JWT_KEY}\" } } } } } }" }, "description": "Expected 201/200. Registration-only capability (jwt.local signing is not implemented yet; basic and oauth2 execute); env references are masked. No environment variables need setting: the invocation guard runs before env resolution." }
                 },
                 {
                   "name": "501 — auth guard",
-                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/auth/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_IMPLEMENTED, attempts=0, no env resolution or unauthenticated upstream dispatch.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 3\n  }\n}\n```" }
+                  "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/api/v1/services/phase2-errors/auth/invoke", "body": { "mode": "raw", "raw": "{ \"context\": {} }" }, "description": "NOT_IMPLEMENTED, attempts=0, no env resolution or unauthenticated upstream dispatch.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth.jwt\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth.jwt\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 3\n  }\n}\n```" }
                 },
                 {
                   "name": "Register unsupported connect timeout",
@@ -1044,9 +1044,9 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "url": "{{base_url}}/api/v1/services/auth-demo/basic_post/invoke",
-                "body": { "mode": "raw", "raw": "{ \"context\": {} }" },
-                "description": "Registration already validates the auth block, but the token runtime is Phase 4, so invoking returns NOT_IMPLEMENTED with attempts=0 and no env resolution — the guard runs before dispatch, deliberately: sending the call without its auth header would be worse than refusing.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 2\n  }\n}\n```"
+                "url": "{{base_url}}/api/v1/services/partner/sync_catalog/invoke",
+                "body": { "mode": "raw", "raw": "{ \"context\": { \"catalogId\": \"cat-1\" } }" },
+                "description": "Registration already validates the auth block, but `basic` and `oauth2` execute, but `jwt.local` signing and `jwt.external` are still Phase 4, so invoking a `jwt` block returns NOT_IMPLEMENTED with attempts=0 and no env resolution — the guard runs before dispatch, deliberately: sending the call without its auth header would be worse than refusing.\n\nExpected error envelope:\n```json\n{\n  \"success\": false,\n  \"data\": null,\n  \"error\": {\n    \"code\": \"NOT_IMPLEMENTED\",\n    \"message\": \"Configured but not implemented: config.request.auth.jwt\",\n    \"details\": {\n      \"unsupported\": [\n        { \"field\": \"config.request.auth.jwt\", \"phase\": \"Phase 4\" }\n      ]\n    }\n  },\n  \"meta\": {\n    \"executionId\": \"uuid\",\n    \"durationMs\": 2\n  }\n}\n```"
               }
             }
           ]

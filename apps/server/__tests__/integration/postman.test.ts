@@ -84,7 +84,7 @@ it('runs every ordered REST and Script Postman example against deterministic loc
       if (item.name.startsWith('501')) {
         expect(body.error.code).toBe('NOT_IMPLEMENTED');
         expect(body.error.details.unsupported).toEqual([
-          { field: 'config.request.auth', phase: 'Phase 4' },
+          { field: 'config.request.auth.jwt', phase: 'Phase 4' },
         ]);
       }
     }
